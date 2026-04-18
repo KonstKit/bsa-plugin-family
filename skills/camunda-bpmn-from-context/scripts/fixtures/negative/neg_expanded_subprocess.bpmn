@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_neg_expanded" targetNamespace="http://example.com/fixtures">
+  <bpmn:process id="Process_neg_expanded" isExecutable="false">
+    <bpmn:subProcess id="SubProcess_neg_expanded">
+      <bpmn:startEvent id="SubStart_neg_expanded" />
+      <bpmn:endEvent id="SubEnd_neg_expanded" />
+    </bpmn:subProcess>
+  </bpmn:process>
+</bpmn:definitions>

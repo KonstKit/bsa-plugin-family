@@ -1,0 +1,19 @@
+{
+  "name": "camunda-bpmn-preview-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline preview smoke tooling for camunda-bpmn-from-context",
+  "scripts": {
+    "simple:helper": "node ./simple_layout_helper.js",
+    "preview:audit": "node ./preview_builder.js audit-runtime",
+    "preview:smoke": "node -e \"const {spawnSync}=require('child_process'); const {resolve}=require('path'); if (!process.env.PREVIEW_DIR) { console.error('PREVIEW_DIR is required for preview:smoke'); process.exit(1); } const env={...process.env, PREVIEW_PLAYWRIGHT_PROJECTS:'chromium', NODE_PATH: resolve(__dirname,'node_modules')}; const result=spawnSync(process.execPath,['./node_modules/@playwright/test/cli.js','test','--config','../tests/preview/playwright.config.ts','../tests/preview'],{stdio:'inherit',env}); process.exit(result.status ?? 1);\"",
+    "preview:smoke:matrix": "node -e \"const {spawnSync}=require('child_process'); const {resolve}=require('path'); if (!process.env.PREVIEW_DIR) { console.error('PREVIEW_DIR is required for preview:smoke:matrix'); process.exit(1); } const env={...process.env, PREVIEW_PLAYWRIGHT_PROJECTS:'chromium,firefox,webkit', NODE_PATH: resolve(__dirname,'node_modules')}; const result=spawnSync(process.execPath,['./node_modules/@playwright/test/cli.js','test','--config','../tests/preview/playwright.config.ts','../tests/preview'],{stdio:'inherit',env}); process.exit(result.status ?? 1);\""
+  },
+  "dependencies": {
+    "bpmn-auto-layout": "1.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "bpmn-js": "18.14.0"
+  }
+}

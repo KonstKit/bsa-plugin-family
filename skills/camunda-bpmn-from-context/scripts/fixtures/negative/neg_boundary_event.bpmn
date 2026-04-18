@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_neg_boundary" targetNamespace="http://example.com/fixtures">
+  <bpmn:process id="Process_neg_boundary" isExecutable="false">
+    <bpmn:startEvent id="Start_neg_boundary" />
+    <bpmn:task id="Task_neg_boundary" />
+    <bpmn:boundaryEvent id="Boundary_neg_boundary" attachedToRef="Task_neg_boundary" />
+    <bpmn:endEvent id="End_neg_boundary" />
+  </bpmn:process>
+</bpmn:definitions>

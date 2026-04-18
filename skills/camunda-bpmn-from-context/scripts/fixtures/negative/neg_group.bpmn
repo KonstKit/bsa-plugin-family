@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_neg_group" targetNamespace="http://example.com/fixtures">
+  <bpmn:process id="Process_neg_group" isExecutable="false">
+    <bpmn:startEvent id="Start_neg_group" />
+    <bpmn:task id="Task_neg_group" />
+  </bpmn:process>
+  <bpmn:group id="Group_neg" categoryValueRef="CategoryValue_1" />
+  <bpmn:category id="Category_1"><bpmn:categoryValue id="CategoryValue_1" /></bpmn:category>
+</bpmn:definitions>

@@ -1,0 +1,469 @@
+{
+  "schema_version": "1",
+  "fixtures": [
+    {
+      "fixture_id": "01_original",
+      "scenario_id": "ACC-01-ORIGINAL",
+      "category": "original",
+      "path": "original/01_original.bpmn",
+      "strip_to": "stripped/01_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "usable_di",
+      "preserve_existing_di": true,
+      "expected_eligibility_class": "native_preserve",
+      "expected_layout_status": "PASS",
+      "expected_semantic_status": "PASS",
+      "expected_final_backend": "native",
+      "expected_routing_class": "native_preserve",
+      "expected_layout_final_mode": "native_preserve_existing",
+      "expected_layout_profile_family": "native",
+      "max_warning_issue_count": 0,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": false,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "02_original",
+      "scenario_id": "ACC-02-ORIGINAL",
+      "category": "original",
+      "path": "original/02_original.bpmn",
+      "strip_to": "stripped/02_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "usable_di",
+      "preserve_existing_di": true,
+      "expected_eligibility_class": "native_preserve",
+      "expected_layout_status": "PASS",
+      "expected_semantic_status": "PASS",
+      "expected_final_backend": "native",
+      "expected_routing_class": "native_preserve",
+      "expected_layout_final_mode": "native_preserve_existing",
+      "expected_layout_profile_family": "native",
+      "max_warning_issue_count": 0,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": false,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "03_original",
+      "scenario_id": "ACC-03-ORIGINAL",
+      "category": "original",
+      "path": "original/03_original.bpmn",
+      "strip_to": "stripped/03_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "usable_di",
+      "preserve_existing_di": true,
+      "expected_eligibility_class": "native_preserve",
+      "expected_final_backend": "native",
+      "expected_routing_class": "native_preserve",
+      "expected_layout_final_mode": "native_preserve_existing",
+      "expected_layout_profile_family": "native",
+      "max_warning_issue_count": 0,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": false,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "04a_original",
+      "scenario_id": "ACC-04A-ORIGINAL",
+      "category": "original",
+      "path": "original/04a_original.bpmn",
+      "strip_to": "stripped/04a_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "partial_di",
+      "preserve_existing_di": false,
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "expected_routing_class": "simple_direct",
+      "expected_layout_profile_family": "simple_postprocess",
+      "max_warning_issue_count": 8,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": true,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "04b_original",
+      "scenario_id": "ACC-04B-ORIGINAL",
+      "category": "original",
+      "path": "original/04b_original.bpmn",
+      "strip_to": "stripped/04b_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "partial_di",
+      "preserve_existing_di": false,
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "expected_routing_class": "simple_direct",
+      "expected_layout_profile_family": "simple_postprocess",
+      "max_warning_issue_count": 8,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": true,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "04c_original",
+      "scenario_id": "ACC-04C-ORIGINAL",
+      "category": "original",
+      "path": "original/04c_original.bpmn",
+      "strip_to": "stripped/04c_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "partial_di",
+      "preserve_existing_di": false,
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "expected_routing_class": "simple_direct",
+      "expected_layout_profile_family": "simple_postprocess",
+      "max_warning_issue_count": 8,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": true,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "04d_original",
+      "scenario_id": "ACC-04D-ORIGINAL",
+      "category": "original",
+      "path": "original/04d_original.bpmn",
+      "strip_to": "stripped/04d_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "partial_di",
+      "preserve_existing_di": false,
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "expected_routing_class": "simple_direct",
+      "expected_layout_profile_family": "simple_postprocess",
+      "max_warning_issue_count": 8,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": true,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "01_stripped",
+      "scenario_id": "ACC-01-STRIPPED",
+      "category": "stripped",
+      "path": "stripped/01_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "no_di",
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "expected_layout_profile_family": "simple_postprocess",
+      "max_warning_issue_count": 4,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": true,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "02_stripped",
+      "scenario_id": "ACC-02-STRIPPED",
+      "category": "stripped",
+      "path": "stripped/02_stripped.bpmn",
+      "requested_mode": "native",
+      "di_quality": "no_di",
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "native",
+      "expected_outcome": "simple_eligible_native_preferred",
+      "expected_layout_profile_family": "native",
+      "max_warning_issue_count": 4,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": false,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "03_stripped",
+      "scenario_id": "ACC-03-STRIPPED",
+      "category": "stripped",
+      "path": "stripped/03_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "partial_di",
+      "facts": {
+        "constructs": [
+          "complexGateway"
+        ]
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_final_backend": "native",
+      "expected_layout_profile_family": "native",
+      "max_warning_issue_count": 8,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": false,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "04a_stripped",
+      "scenario_id": "ACC-04A-STRIPPED",
+      "category": "stripped",
+      "path": "stripped/04a_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "no_di",
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "expected_layout_profile_family": "simple_postprocess",
+      "max_warning_issue_count": 8,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": true,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "04b_stripped",
+      "scenario_id": "ACC-04B-STRIPPED",
+      "category": "stripped",
+      "path": "stripped/04b_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "no_di",
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "expected_layout_profile_family": "simple_postprocess",
+      "max_warning_issue_count": 8,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": true,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "04c_stripped",
+      "scenario_id": "ACC-04C-STRIPPED",
+      "category": "stripped",
+      "path": "stripped/04c_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "no_di",
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "expected_layout_profile_family": "simple_postprocess",
+      "max_warning_issue_count": 8,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": true,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "04d_stripped",
+      "scenario_id": "ACC-04D-STRIPPED",
+      "category": "stripped",
+      "path": "stripped/04d_stripped.bpmn",
+      "requested_mode": "auto",
+      "di_quality": "no_di",
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "expected_layout_profile_family": "simple_postprocess",
+      "max_warning_issue_count": 8,
+      "max_error_issue_count": 0,
+      "advisory_only_allowed": true,
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "neg_collaboration_message_flow",
+      "scenario_id": "ACC-NEG-MESSAGE",
+      "category": "negative",
+      "path": "negative/neg_collaboration_message_flow.bpmn",
+      "requested_mode": "auto",
+      "facts": {
+        "has_multiple_participants": true,
+        "has_message_flow": true
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_semantic_status": "FAIL",
+      "expected_final_backend": "native",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "neg_text_annotation",
+      "scenario_id": "ACC-NEG-TEXT-ANNOTATION",
+      "category": "negative",
+      "path": "negative/neg_text_annotation.bpmn",
+      "requested_mode": "auto",
+      "facts": {
+        "has_text_annotation": true
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_final_backend": "native",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "neg_association",
+      "scenario_id": "ACC-NEG-ASSOCIATION",
+      "category": "negative",
+      "path": "negative/neg_association.bpmn",
+      "requested_mode": "auto",
+      "facts": {
+        "has_association": true
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_final_backend": "native",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "neg_boundary_event",
+      "scenario_id": "ACC-NEG-BOUNDARY",
+      "category": "negative",
+      "path": "negative/neg_boundary_event.bpmn",
+      "requested_mode": "auto",
+      "facts": {
+        "has_boundary_event": true
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_final_backend": "native",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "neg_expanded_subprocess",
+      "scenario_id": "ACC-NEG-EXPANDED-SUBPROCESS",
+      "category": "negative",
+      "path": "negative/neg_expanded_subprocess.bpmn",
+      "requested_mode": "auto",
+      "facts": {
+        "has_expanded_subprocess": true
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_layout_status": "FAIL",
+      "expected_semantic_status": "FAIL",
+      "expected_final_backend": "native",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "neg_event_subprocess",
+      "scenario_id": "ACC-NEG-EVENT-SUBPROCESS",
+      "category": "negative",
+      "path": "negative/neg_event_subprocess.bpmn",
+      "requested_mode": "auto",
+      "facts": {
+        "has_event_subprocess": true
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_layout_status": "FAIL",
+      "expected_semantic_status": "FAIL",
+      "expected_final_backend": "native",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "neg_complex_gateway",
+      "scenario_id": "ACC-NEG-COMPLEX-GATEWAY",
+      "category": "negative",
+      "path": "negative/neg_complex_gateway.bpmn",
+      "requested_mode": "auto",
+      "facts": {
+        "constructs": [
+          "complexGateway"
+        ]
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_final_backend": "native",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "neg_group",
+      "scenario_id": "ACC-NEG-GROUP",
+      "category": "negative",
+      "path": "negative/neg_group.bpmn",
+      "requested_mode": "auto",
+      "facts": {
+        "has_group": true
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_final_backend": "native",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "neg_multi_participant_collaboration",
+      "scenario_id": "ACC-NEG-MULTI-PARTICIPANT",
+      "category": "negative",
+      "path": "negative/neg_multi_participant_collaboration.bpmn",
+      "requested_mode": "auto",
+      "facts": {
+        "participant_count": 2
+      },
+      "expected_eligibility_class": "simple_ineligible",
+      "expected_final_backend": "native",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "c7_simple_extension_stripped",
+      "scenario_id": "ACC-C7-EXTENSION",
+      "category": "runtime_extension",
+      "path": "runtime/c7_simple_extension_stripped.bpmn",
+      "requested_mode": "auto",
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    },
+    {
+      "fixture_id": "c8_simple_extension_stripped",
+      "scenario_id": "ACC-C8-EXTENSION",
+      "category": "runtime_extension",
+      "path": "runtime/c8_simple_extension_stripped.bpmn",
+      "requested_mode": "auto",
+      "expected_eligibility_class": "simple_eligible",
+      "expected_final_backend": "simple",
+      "required_profiles": [
+        "pr",
+        "release_candidate"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+Copyright (c) 2026 BSA Plugin Family contributors.
+
+All rights reserved. License terms are TBD pending public release decision (Phase 8 marketplace planning). Until formal license is chosen, this codebase is private and not distributed. Source skills imported from `~/.codex/skills/` retain their original licensing from upstream sources (OpenAI Codex skills, third-party contributions) — see individual skill directories for any SKILL-specific license notes.
+
+For the period of private development (Phase 0-2), contributors agree that all contributions may be re-licensed under an OSI-approved license of the maintainer's choice prior to public v1.0.0 release.

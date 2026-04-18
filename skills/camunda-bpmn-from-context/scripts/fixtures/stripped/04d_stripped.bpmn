@@ -1,0 +1,20 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ns0:definitions xmlns:ns0="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_04d" targetNamespace="http://example.com/fixtures">
+  <ns0:collaboration id="Collab_04d">
+    <ns0:participant id="Participant_04d" processRef="Process_04d" />
+  </ns0:collaboration>
+  <ns0:process id="Process_04d" isExecutable="false">
+    <ns0:laneSet id="LaneSet_04d">
+      <ns0:lane id="Lane_04d" name="Main Lane">
+        <ns0:flowNodeRef>Start_04d</ns0:flowNodeRef>
+        <ns0:flowNodeRef>Task_04d</ns0:flowNodeRef>
+        <ns0:flowNodeRef>End_04d</ns0:flowNodeRef>
+      </ns0:lane>
+    </ns0:laneSet>
+    <ns0:startEvent id="Start_04d" />
+    <ns0:task id="Task_04d" />
+    <ns0:endEvent id="End_04d" />
+    <ns0:sequenceFlow id="Flow_04d_1" sourceRef="Start_04d" targetRef="Task_04d" />
+    <ns0:sequenceFlow id="Flow_04d_2" sourceRef="Task_04d" targetRef="End_04d" />
+  </ns0:process>
+</ns0:definitions>

@@ -1,0 +1,41 @@
+# Runtime state — never committed
+analysis/
+**/analysis/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+.tox/
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+._*
+__MACOSX
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+/tmp/

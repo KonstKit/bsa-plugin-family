@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+  <bpmn:process id="SmokeProcess7Happy" name="Camunda 7 Happy Path" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1" />
+    <bpmn:serviceTask
+      id="ExternalServiceTask_1"
+      name="External worker smoke task"
+      camunda:type="external"
+      camunda:topic="smoke-topic" />
+    <bpmn:endEvent id="EndEvent_1" />
+    <bpmn:sequenceFlow id="Flow_Start_To_Task" sourceRef="StartEvent_1" targetRef="ExternalServiceTask_1" />
+    <bpmn:sequenceFlow id="Flow_Task_To_End" sourceRef="ExternalServiceTask_1" targetRef="EndEvent_1" />
+  </bpmn:process>
+</bpmn:definitions>

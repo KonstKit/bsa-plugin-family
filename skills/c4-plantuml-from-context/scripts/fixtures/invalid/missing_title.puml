@@ -1,0 +1,8 @@
+@startuml
+!include <C4/C4_Context>
+LAYOUT_WITH_LEGEND()
+
+Person(customer, "Customer", "Pays for orders")
+System(payments, "Payments Platform", "Processes customer payments")
+Rel(customer, payments, "Submits payment request")
+@enduml

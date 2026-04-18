@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:camunda-bpmn-from-context:typed-issue-targets:1",
+  "title": "Typed Issue Targets",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source",
+    "highlight_policy",
+    "counts",
+    "items"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_schema_version",
+        "linked_report_schema_version",
+        "final_backend",
+        "layout_status"
+      ],
+      "properties": {
+        "manifest_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "linked_report_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "final_backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "layout_status": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "highlight_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "canvas_target_types",
+        "global_target_behavior"
+      ],
+      "properties": {
+        "phase": {
+          "type": "string",
+          "const": "deferred_phase_5"
+        },
+        "canvas_target_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "shape",
+              "edge",
+              "label",
+              "pair"
+            ]
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "global_target_behavior": {
+          "type": "string",
+          "const": "text_only"
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "by_target_type",
+        "by_severity"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_target_type": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "shape",
+            "edge",
+            "label",
+            "pair",
+            "global"
+          ],
+          "properties": {
+            "shape": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "edge": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "label": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pair": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "global": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "by_severity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "error",
+            "warning",
+            "info"
+          ],
+          "properties": {
+            "error": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "warning": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "info": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/typed_issue_target"
+      }
+    }
+  },
+  "$defs": {
+    "bbox": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "typed_issue_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_type",
+        "element_id",
+        "secondary_element_id",
+        "label_role",
+        "bbox",
+        "severity",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "target_type": {
+          "type": "string",
+          "enum": [
+            "shape",
+            "edge",
+            "label",
+            "pair",
+            "global"
+          ]
+        },
+        "element_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "secondary_element_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label_role": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bbox": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/bbox"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issue_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_report": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_rule": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

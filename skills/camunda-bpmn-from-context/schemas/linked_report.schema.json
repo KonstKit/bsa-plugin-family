@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:camunda-bpmn-from-context:linked-report:2",
+  "title": "Linked Report Reference",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "report_kind",
+    "presence",
+    "status",
+    "schema_version"
+  ],
+  "properties": {
+    "report_kind": {
+      "type": "string",
+      "enum": [
+        "backend_selection",
+        "semantic_report",
+        "layout_report",
+        "preview_report",
+        "human_summary",
+        "typed_issue_targets"
+      ]
+    },
+    "presence": {
+      "type": "string",
+      "enum": [
+        "present",
+        "skipped",
+        "not_applicable"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "SKIPPED"
+      ]
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "report_kind",
+        "presence",
+        "status",
+        "path",
+        "hash",
+        "schema_version"
+      ],
+      "properties": {
+        "presence": {
+          "const": "present"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ]
+        }
+      }
+    },
+    {
+      "required": [
+        "report_kind",
+        "presence",
+        "status",
+        "schema_version"
+      ],
+      "properties": {
+        "presence": {
+          "enum": [
+            "skipped",
+            "not_applicable"
+          ]
+        },
+        "status": {
+          "const": "SKIPPED"
+        }
+      },
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "path"
+            ]
+          },
+          {
+            "required": [
+              "hash"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

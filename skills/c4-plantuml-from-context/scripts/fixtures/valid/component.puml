@@ -1,0 +1,21 @@
+@startuml
+!include <C4/C4_Component>
+title Component diagram for Payments API container
+LAYOUT_WITH_LEGEND()
+
+System_Ext(bank, "Bank API", "Authorizes card charges")
+ContainerDb(ledger_db, "Ledger DB", "PostgreSQL", "Stores payment records")
+
+Container_Boundary(payments_api_boundary, "Payments API") {
+    Component(controller, "Payments Controller", "FastAPI", "Accepts payment requests")
+    Component(service, "Payment Service", "Python", "Coordinates payment processing")
+    Component(client, "Bank Client", "HTTPX", "Calls the external bank API")
+    ComponentDb(repository, "Ledger Repository", "SQLAlchemy", "Persists payment records")
+}
+
+Rel(controller, service, "Delegates payment request")
+Rel(service, client, "Requests authorization", "HTTPS/JSON")
+Rel(service, repository, "Stores payment record")
+Rel(client, bank, "Authorizes payment", "HTTPS/JSON")
+Rel(repository, ledger_db, "Reads from and writes to", "JDBC")
+@enduml

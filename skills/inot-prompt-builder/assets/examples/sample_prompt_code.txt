@@ -1,0 +1,61 @@
+<Role>
+  PromptCode Executor: runs the reasoning logic exactly as written.
+  Builder: proposes structured solutions.
+  Skeptic: challenges, probes for flaws, edge cases, missing evidence.
+</Role>
+
+<PromptCode>
+  PromptCode combines Python-like control flow with natural-language steps.
+  Learn and execute the reasoning logic line by line; do not skip or reorder steps.
+  Keep all debate internal; never reveal raw transcripts.
+</PromptCode>
+
+<Rules>
+  - Respect constraints: stay under 220 words; focus on data races
+  - Style: concise
+  - Maintain registers: evidence, assumptions, contradictions, uncertainty.
+  - Early stop when semantic agreement is reached.
+  - Cap rounds at max_rounds.
+  - For code: prefer reasoning; suggest tests/verification after synthesis.
+  - For vision: separate observed facts from inferred claims; avoid speculation.
+</Rules>
+
+
+
+<ReasoningLogic>
+max_rounds = 6
+agreement = False
+for round in range(1, max_rounds + 1):
+    argument_A = Builder.reason(task)
+    argument_B = Skeptic.reason(task)
+    critique_A = Builder.critique(argument_B)
+    critique_B = Skeptic.critique(argument_A)
+    rebuttal_A = Builder.rebut(critique_B)
+    rebuttal_B = Skeptic.rebut(critique_A)
+    result_A = Builder.adjust(rebuttal_B)
+    result_B = Skeptic.adjust(rebuttal_A)
+    agreement = semantically_equivalent(result_A, result_B)
+    if agreement:
+        break
+final = synthesize(result_A, result_B)
+</ReasoningLogic>
+
+<Task>
+Design a concurrency-safe in-memory cache with per-key TTL and dogpile protection in Go
+</Task>
+
+<DomainHints>
+- Reason about design/algorithms before code.
+- Keep code minimal unless explicitly requested.
+- Suggest tests/lint/type checks after synthesis.
+</DomainHints>
+
+
+<OutputContract>
+mode = answer_plus_audit
+- answer: final response that follows user format/constraints.
+- audit_summary: key checks, contradictions resolved/remaining.
+- uncertainty: what is assumption-based or missing; evidence or data that would reduce doubt.
+- next_actions: optional for code/ops (tests to run, data to gather).
+Do not include the internal debate transcript.
+</OutputContract>

@@ -1,0 +1,19 @@
+@startuml
+!include <C4/C4_Dynamic>
+title Dynamic diagram for Checkout payment scenario
+LAYOUT_WITH_LEGEND()
+
+Person(customer, "Customer", "Pays for orders")
+System_Ext(bank, "Bank API", "Authorizes card charges")
+
+System_Boundary(payments_boundary, "Payments Platform") {
+    Container(web_app, "Checkout Web App", "React", "Collects payment details")
+    Container(api, "Payments API", "Python/FastAPI", "Processes payment requests")
+    ContainerQueue(events, "Payment Events", "Kafka", "Publishes payment events")
+}
+
+Rel(customer, web_app, "Starts checkout", $index=1)
+Rel(web_app, api, "Posts payment request", "HTTPS/JSON", $index=2)
+Rel(api, bank, "Authorizes payment", "HTTPS/JSON", $index=3)
+Rel(api, events, "Publishes payment event", "Kafka", $index=4)
+@enduml

@@ -1,0 +1,21 @@
+@startuml
+!include <C4/C4_Container>
+title Container diagram for Payments Platform
+LAYOUT_WITH_LEGEND()
+
+Person(customer, "Customer", "Pays for orders")
+System_Ext(bank, "Bank API", "Authorizes card charges")
+
+System_Boundary(payments_boundary, "Payments Platform") {
+    Container(web_app, "Checkout Web App", "React", "Collects payment details")
+    Container(api, "Payments API", "Python/FastAPI", "Processes payment requests")
+    ContainerDb(ledger_db, "Ledger DB", "PostgreSQL", "Stores payment records")
+    ContainerQueue(events, "Payment Events", "Kafka", "Publishes payment events")
+}
+
+Rel(customer, web_app, "Uses checkout UI", "HTTPS")
+Rel(web_app, api, "Submits payment request", "HTTPS/JSON")
+Rel(api, ledger_db, "Reads from and writes to", "JDBC")
+Rel(api, bank, "Authorizes payment", "HTTPS/JSON")
+Rel(api, events, "Publishes payment event", "Kafka")
+@enduml

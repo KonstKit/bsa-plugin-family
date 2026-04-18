@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_neg_message" targetNamespace="http://example.com/fixtures">
+  <bpmn:collaboration id="Collab_neg_message">
+    <bpmn:participant id="P1" processRef="Process_neg_message_a" />
+    <bpmn:participant id="P2" processRef="Process_neg_message_b" />
+    <bpmn:messageFlow id="MessageFlow_1" sourceRef="Start_neg_message" targetRef="Task_neg_message_b" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_neg_message_a" isExecutable="false">
+    <bpmn:startEvent id="Start_neg_message" />
+  </bpmn:process>
+  <bpmn:process id="Process_neg_message_b" isExecutable="false">
+    <bpmn:task id="Task_neg_message_b" />
+  </bpmn:process>
+</bpmn:definitions>

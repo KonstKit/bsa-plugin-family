@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:camunda-bpmn-from-context:projection-sidecar:1",
+  "title": "Simple Mode Projection Sidecar",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "source_bpmn",
+    "projection_mode",
+    "excluded_constructs",
+    "id_map",
+    "runtime_target"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "source_bpmn": {
+      "type": "string",
+      "minLength": 1
+    },
+    "projection_mode": {
+      "type": "string",
+      "enum": [
+        "passthrough_projection"
+      ]
+    },
+    "excluded_constructs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "id_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "semantic_id_count",
+        "semantic_ids",
+        "mapping_complete"
+      ],
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "identity"
+          ]
+        },
+        "semantic_id_count": {
+          "type": "integer"
+        },
+        "semantic_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "mapping_complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "runtime_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "helper_contract",
+        "namespace_uris_detected",
+        "requires_namespace_preservation",
+        "requires_extension_preservation"
+      ],
+      "properties": {
+        "helper_contract": {
+          "type": "string",
+          "enum": [
+            "bpmn_in_bpmn_out"
+          ]
+        },
+        "namespace_uris_detected": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "requires_namespace_preservation": {
+          "type": "boolean"
+        },
+        "requires_extension_preservation": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

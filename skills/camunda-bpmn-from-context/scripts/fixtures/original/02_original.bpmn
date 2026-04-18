@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_02"
+                  targetNamespace="http://example.com/fixtures">
+  <bpmn:process id="Process_02" isExecutable="false">
+    <bpmn:startEvent id="Start_02" />
+    <bpmn:userTask id="Task_02" name="Review" />
+    <bpmn:endEvent id="End_02" />
+    <bpmn:sequenceFlow id="Flow_02_1" sourceRef="Start_02" targetRef="Task_02" />
+    <bpmn:sequenceFlow id="Flow_02_2" sourceRef="Task_02" targetRef="End_02" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_02">
+    <bpmndi:BPMNPlane id="BPMNPlane_02" bpmnElement="Process_02">
+      <bpmndi:BPMNShape id="Start_02_di" bpmnElement="Start_02"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_02_di" bpmnElement="Task_02"><dc:Bounds x="200" y="80" width="110" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_02_di" bpmnElement="End_02"><dc:Bounds x="370" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_02_1_di" bpmnElement="Flow_02_1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_02_2_di" bpmnElement="Flow_02_2"><di:waypoint x="310" y="118" /><di:waypoint x="370" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

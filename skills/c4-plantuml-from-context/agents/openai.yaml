@@ -1,0 +1,7 @@
+interface:
+  display_name: "C4 PlantUML Author / Reviewer"
+  short_description: "Draft, review, or fix C4 PlantUML from architecture context"
+  default_prompt: "Use $c4-plantuml-from-context to generate, review, or fix a C4-PlantUML diagram from the attached architecture notes, codebase context, and existing .puml files."
+
+policy:
+  allow_implicit_invocation: false

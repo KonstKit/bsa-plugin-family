@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_neg_text" targetNamespace="http://example.com/fixtures">
+  <bpmn:process id="Process_neg_text" isExecutable="false">
+    <bpmn:startEvent id="Start_neg_text" />
+    <bpmn:task id="Task_neg_text" />
+    <bpmn:textAnnotation id="TextAnnotation_1"><bpmn:text>annotation</bpmn:text></bpmn:textAnnotation>
+    <bpmn:association id="Association_neg_text" sourceRef="Task_neg_text" targetRef="TextAnnotation_1" />
+  </bpmn:process>
+</bpmn:definitions>

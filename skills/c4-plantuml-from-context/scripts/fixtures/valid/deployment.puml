@@ -1,0 +1,19 @@
+@startuml
+!include <C4/C4_Deployment>
+title Deployment diagram for Payments Platform - Production
+LAYOUT_WITH_LEGEND()
+
+Deployment_Node_L(cloud, "AWS eu-central-1", "Cloud", "Primary production region") {
+    Deployment_Node_R(k8s, "EKS Cluster", "Kubernetes", "Runs stateless services") {
+        Container(api, "Payments API", "Python/FastAPI", "Processes payment requests")
+    }
+    Deployment_Node(data, "Amazon RDS", "Managed PostgreSQL", "Stores payment records") {
+        ContainerDb(ledger_db, "Ledger DB", "PostgreSQL", "Stores payment records")
+    }
+}
+
+System_Ext(bank, "Bank API", "Authorizes card charges")
+
+Rel(api, ledger_db, "Reads from and writes to", "TLS/JDBC")
+Rel(api, bank, "Authorizes payment", "HTTPS/JSON")
+@enduml

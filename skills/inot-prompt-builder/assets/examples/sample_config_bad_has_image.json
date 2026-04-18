@@ -1,0 +1,7 @@
+{
+  "task": "Bad has_image",
+  "task_type": "generic",
+  "max_rounds": 4,
+  "output_mode": "answer_plus_audit",
+  "has_image": 2
+}

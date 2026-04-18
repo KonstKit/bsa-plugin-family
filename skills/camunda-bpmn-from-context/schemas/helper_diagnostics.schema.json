@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:camunda-bpmn-from-context:helper-diagnostics:1",
+  "title": "Simple Mode Helper Diagnostics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "status",
+    "errors",
+    "warnings",
+    "helper",
+    "output",
+    "runtime_target"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "failure_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "stdout": {
+      "type": "string"
+    },
+    "stderr": {
+      "type": "string"
+    },
+    "helper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "launched"
+      ],
+      "properties": {
+        "launched": {
+          "type": "boolean"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "returncode": {
+          "type": "integer"
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bpmn_written",
+        "sequence_flow_count",
+        "bpmn_shape_count",
+        "bpmn_edge_count",
+        "edge_without_two_waypoints_count",
+        "edge_di_complete",
+        "di_quality"
+      ],
+      "properties": {
+        "bpmn_written": {
+          "type": "boolean"
+        },
+        "sequence_flow_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bpmn_shape_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bpmn_edge_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edge_without_two_waypoints_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "edge_di_complete": {
+          "type": "boolean"
+        },
+        "di_quality": {
+          "type": "string",
+          "enum": [
+            "no_di",
+            "partial_di",
+            "usable_di"
+          ]
+        }
+      }
+    },
+    "runtime_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace_uris_detected",
+        "requires_namespace_preservation",
+        "requires_extension_preservation"
+      ],
+      "properties": {
+        "namespace_uris_detected": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "requires_namespace_preservation": {
+          "type": "boolean"
+        },
+        "requires_extension_preservation": {
+          "type": "boolean"
+        }
+      }
+    },
+    "invariant_violations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "raw_helper_diagnostics": {
+      "type": [
+        "object",
+        "array",
+        "string",
+        "number",
+        "boolean",
+        "null"
+      ]
+    }
+  }
+}

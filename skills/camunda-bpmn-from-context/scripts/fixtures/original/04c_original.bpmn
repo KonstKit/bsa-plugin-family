@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_04c"
+                  targetNamespace="http://example.com/fixtures">
+  <bpmn:process id="Process_04c" isExecutable="false">
+    <bpmn:startEvent id="Start_04c" />
+    <bpmn:callActivity id="Call_04c" calledElement="OtherProcess" />
+    <bpmn:endEvent id="End_04c" />
+    <bpmn:sequenceFlow id="Flow_04c_1" sourceRef="Start_04c" targetRef="Call_04c" />
+    <bpmn:sequenceFlow id="Flow_04c_2" sourceRef="Call_04c" targetRef="End_04c" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_04c">
+    <bpmndi:BPMNPlane id="BPMNPlane_04c" bpmnElement="Process_04c">
+      <bpmndi:BPMNShape id="Start_04c_di" bpmnElement="Start_04c"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Call_04c_di" bpmnElement="Call_04c"><dc:Bounds x="200" y="80" width="110" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_04c_di" bpmnElement="End_04c"><dc:Bounds x="370" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

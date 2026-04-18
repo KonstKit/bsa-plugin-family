@@ -1,0 +1,14 @@
+@startuml
+!include <C4/C4_Context>
+title System Landscape diagram for Commerce Estate
+
+Enterprise_Boundary(commerce, "Commerce Estate") {
+    System(storefront, "Storefront", "Sells products online")
+    System(payments, "Payments Platform", "Processes customer payments")
+    System(fulfillment, "Fulfillment System", "Coordinates shipment and delivery")
+}
+
+Rel(storefront, payments, "Submits payment requests")
+Rel(storefront, fulfillment, "Sends order for fulfillment")
+SHOW_FLOATING_LEGEND()
+@enduml

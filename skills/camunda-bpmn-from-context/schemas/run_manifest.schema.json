@@ -1,0 +1,514 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:camunda-bpmn-from-context:run-manifest:2",
+  "title": "Run Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_schema_version",
+    "linked_report_schema_version",
+    "build_version",
+    "skill_version",
+    "runtime_target",
+    "requested_mode",
+    "logic_only",
+    "preserve_existing_di",
+    "full_relayout",
+    "eligibility_class",
+    "eligibility_reasons",
+    "scenario_id",
+    "fixture_id",
+    "traceability_count",
+    "assumptions_count",
+    "initial_backend",
+    "final_backend",
+    "fallback_happened",
+    "semantic_status",
+    "layout_status",
+    "layout_summary",
+    "preview_status",
+    "layout_hint_source",
+    "hint_applied",
+    "artifacts"
+  ],
+  "properties": {
+    "manifest_schema_version": {
+      "type": "string",
+      "enum": [
+        "2"
+      ]
+    },
+    "linked_report_schema_version": {
+      "type": "string",
+      "enum": [
+        "2"
+      ]
+    },
+    "build_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "skill_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runtime_target": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requested_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "logic_only": {
+      "type": "boolean"
+    },
+    "preserve_existing_di": {
+      "type": "boolean"
+    },
+    "full_relayout": {
+      "type": "boolean"
+    },
+    "layout_bypass": {
+      "type": "boolean"
+    },
+    "eligibility_class": {
+      "type": "string",
+      "minLength": 1
+    },
+    "eligibility_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "scenario_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "fixture_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "traceability_count": {
+      "type": "integer"
+    },
+    "assumptions_count": {
+      "type": "integer"
+    },
+    "initial_backend": {
+      "type": "string",
+      "enum": [
+        "native",
+        "simple",
+        "none"
+      ]
+    },
+    "final_backend": {
+      "type": "string",
+      "enum": [
+        "native",
+        "simple",
+        "none"
+      ]
+    },
+    "fallback_happened": {
+      "type": "boolean"
+    },
+    "fallback_reason_code": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "semantic_status": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "layout_status": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "SKIPPED"
+      ]
+    },
+    "layout_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "final_status",
+        "final_mode",
+        "layout_profile_family",
+        "layout_policy_status",
+        "typed_issue_count",
+        "warning_issue_count",
+        "error_issue_count",
+        "shape_budget_violations",
+        "label_budget_violations",
+        "participant_lane_budget_violations",
+        "advisory_only"
+      ],
+      "properties": {
+        "final_status": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "FAIL",
+            "SKIPPED"
+          ]
+        },
+        "final_mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "layout_profile_family": {
+          "type": "string",
+          "enum": [
+            "native",
+            "simple_postprocess",
+            "none"
+          ]
+        },
+        "layout_policy_status": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "FAIL",
+            "SKIPPED"
+          ]
+        },
+        "typed_issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning_issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error_issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diagram_width_px": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diagram_height_px": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "aspect_ratio_x100": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_depth_columns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_edge_span_columns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "consecutive_gateway_chain_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "readability_violations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "layout_requires_decomposition": {
+          "type": "boolean"
+        },
+        "shape_budget_violations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "label_budget_violations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "participant_lane_budget_violations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "advisory_only": {
+          "type": "boolean"
+        }
+      }
+    },
+    "preview_status": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "SKIPPED"
+      ]
+    },
+    "preview_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preview_import_ok",
+        "typed_issue_target_count"
+      ],
+      "properties": {
+        "preview_import_ok": {
+          "type": "boolean"
+        },
+        "typed_issue_target_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "layout_hint_source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hint_applied": {
+      "type": "boolean"
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend_selection",
+        "semantic_report",
+        "layout_report",
+        "preview_report",
+        "human_summary",
+        "typed_issue_targets"
+      ],
+      "properties": {
+        "backend_selection": {
+          "$ref": "#/$defs/backend_selection_artifact"
+        },
+        "semantic_report": {
+          "$ref": "#/$defs/semantic_report_artifact"
+        },
+        "layout_report": {
+          "$ref": "#/$defs/layout_report_artifact"
+        },
+        "preview_report": {
+          "$ref": "#/$defs/preview_report_artifact"
+        },
+        "human_summary": {
+          "$ref": "#/$defs/human_summary_artifact"
+        },
+        "typed_issue_targets": {
+          "$ref": "#/$defs/typed_issue_targets_artifact"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "present_linked_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "report_kind",
+        "presence",
+        "status",
+        "path",
+        "hash",
+        "schema_version"
+      ],
+      "properties": {
+        "report_kind": {
+          "$ref": "#/$defs/report_kind"
+        },
+        "presence": {
+          "const": "present"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256_hash"
+        },
+        "schema_version": {
+          "type": "string",
+          "enum": [
+            "2"
+          ]
+        }
+      }
+    },
+    "absent_linked_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "report_kind",
+        "presence",
+        "status",
+        "schema_version"
+      ],
+      "properties": {
+        "report_kind": {
+          "$ref": "#/$defs/report_kind"
+        },
+        "presence": {
+          "enum": [
+            "skipped",
+            "not_applicable"
+          ]
+        },
+        "status": {
+          "const": "SKIPPED"
+        },
+        "schema_version": {
+          "type": "string",
+          "enum": [
+            "2"
+          ]
+        }
+      }
+    },
+    "report_kind": {
+      "type": "string",
+      "enum": [
+        "backend_selection",
+        "semantic_report",
+        "layout_report",
+        "preview_report",
+        "human_summary",
+        "typed_issue_targets"
+      ]
+    },
+    "backend_selection_artifact": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/present_linked_report"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "report_kind": {
+              "const": "backend_selection"
+            }
+          }
+        }
+      ]
+    },
+    "semantic_report_artifact": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/present_linked_report"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "report_kind": {
+              "const": "semantic_report"
+            }
+          }
+        }
+      ]
+    },
+    "layout_report_artifact": {
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/present_linked_report"
+            },
+            {
+              "$ref": "#/$defs/absent_linked_report"
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "report_kind": {
+              "const": "layout_report"
+            }
+          }
+        }
+      ]
+    },
+    "preview_report_artifact": {
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/present_linked_report"
+            },
+            {
+              "$ref": "#/$defs/absent_linked_report"
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "report_kind": {
+              "const": "preview_report"
+            }
+          }
+        }
+      ]
+    },
+    "human_summary_artifact": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/present_linked_report"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "report_kind": {
+              "const": "human_summary"
+            }
+          }
+        }
+      ]
+    },
+    "typed_issue_targets_artifact": {
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/present_linked_report"
+            },
+            {
+              "$ref": "#/$defs/absent_linked_report"
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "report_kind": {
+              "const": "typed_issue_targets"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

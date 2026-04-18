@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:camunda-bpmn-from-context:layout-report-summary:1",
+  "title": "Layout Report Summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "final_status",
+    "final_mode",
+    "layout_profile_family",
+    "simple_postprocess_mode",
+    "budget_violations_hard",
+    "shape_budget_violations",
+    "label_budget_violations",
+    "participant_lane_budget_violations",
+    "typed_issue_count",
+    "warning_issue_count",
+    "error_issue_count",
+    "advisory_only",
+    "hint_applied",
+    "layout_hint_source"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "final_status": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "final_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "layout_profile_family": {
+      "type": "string",
+      "enum": [
+        "native",
+        "simple_postprocess"
+      ]
+    },
+    "simple_postprocess_mode": {
+      "type": "boolean"
+    },
+    "budget_violations_hard": {
+      "type": "boolean"
+    },
+    "shape_budget_violations": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "label_budget_violations": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "participant_lane_budget_violations": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "typed_issue_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "warning_issue_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "error_issue_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "diagram_width_px": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "diagram_height_px": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "aspect_ratio_x100": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_depth_columns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_edge_span_columns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "consecutive_gateway_chain_length": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "readability_violations": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "layout_requires_decomposition": {
+      "type": "boolean"
+    },
+    "advisory_only": {
+      "type": "boolean"
+    },
+    "hint_applied": {
+      "type": "boolean"
+    },
+    "layout_hint_source": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

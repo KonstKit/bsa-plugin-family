@@ -1,0 +1,16 @@
+ScenarioCode,Description,SkillUnderTest,ExpectedBehavior
+SCN-ORCH-001-A,Initialize analysis and discovery runtime layouts,bsa-orchestrator,Runtime zones and guards are created before stage execution
+SCN-ORCH-001-B,Reject non-orchestrator canonical writes,bsa-orchestrator,Canonical write attempts by workers are blocked and logged
+SCN-ORCH-001-C,Promote artifacts through lock-based merge,bsa-orchestrator,Promotion occurs only with lock and marker prerequisites
+SCN-ORCH-001-D,Enforce evidence-binding on promotion,bsa-orchestrator,Promotion fails when ClaimID or A51Ref traceability is missing
+SCN-ORCH-001-E,Enforce D0 to BSA bridge markers,bsa-orchestrator,Stage 1 entry is blocked without discovery.go and bsa.stage1.entry.enabled
+SCN-STAGE13-001,Validate Stage 1 to Stage 3 evidence and semantic contracts,bsa-evidence-intake|bsa-claim-binder|bsa-semantic-extractor,Claim-layer and semantic outputs meet contract gates
+SCN-STAGE46-001,Validate Stage 4 to Stage 6 modeling and anchor contracts,bsa-domain-modeler|bsa-backbone-builder|bsa-contract-builder,Path-aligned artifacts and A61-ready anchors are auditable
+SCN-STAGE78-001,Validate Stage 7 to Stage 8 readiness and handoff,bsa-validation-readiness|bsa-handoff-packager,Readiness and handoff outputs pass mandatory gate set
+SCN-DISC12-001,Validate D1 governance framing outputs,d0-problem-framer,Problem framing remains discovery-only and governance-bound
+SCN-DISC13-001,Validate D2 research and discovery claim layer,d0-context-researcher,Research outputs and discovery A58/A59/A60 are contract-complete
+SCN-DISC14-001,Validate D3 and D4 prioritization and feasibility,d0-hypothesis-prioritizer|d0-feasibility-assessor,Prioritization and feasibility outputs satisfy pass criteria
+SCN-DISC15-001,Validate D5 synthesis and decision artifacts,d0-synthesis-gatekeeper,Discovery synthesis and decision package are complete and governed
+SCN-DISC-001,Validate aggregate discovery branch behavior,bsa-orchestrator|d0-*,Discovery branch remains subordinate and bridge-safe
+CHK-GOV-001,Validate single-writer governance and lifecycle rules,bsa-orchestrator,No parallel governance ledgers and consistent lifecycle markers
+ART-VAL-001,Validate sidecar derived-only integration,bsa-orchestrator,Sidecars remain non-canonical and anchor-mapped

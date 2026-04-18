@@ -1,0 +1,6 @@
+{
+  "task": "Bad output mode",
+  "task_type": "qa",
+  "max_rounds": 4,
+  "output_mode": "audit"
+}

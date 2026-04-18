@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ns0:definitions xmlns:ns0="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_01" targetNamespace="http://example.com/fixtures">
+  <ns0:process id="Process_01" isExecutable="false">
+    <ns0:startEvent id="Start_01" />
+    <ns0:task id="Task_01" />
+    <ns0:endEvent id="End_01" />
+    <ns0:sequenceFlow id="Flow_01_1" sourceRef="Start_01" targetRef="Task_01" />
+    <ns0:sequenceFlow id="Flow_01_2" sourceRef="Task_01" targetRef="End_01" />
+  </ns0:process>
+</ns0:definitions>

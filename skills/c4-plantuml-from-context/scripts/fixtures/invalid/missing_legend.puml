@@ -1,0 +1,10 @@
+@startuml
+!include <C4/C4_Container>
+title Container diagram for Payments Platform
+
+Person(customer, "Customer", "Pays for orders")
+System_Boundary(payments_boundary, "Payments Platform") {
+    Container(api, "Payments API", "Python/FastAPI", "Processes payment requests")
+}
+Rel(customer, api, "Submits payment request", "HTTPS/JSON")
+@enduml

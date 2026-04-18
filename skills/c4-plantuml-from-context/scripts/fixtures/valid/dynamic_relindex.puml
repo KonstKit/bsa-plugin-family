@@ -1,0 +1,10 @@
+@startuml
+!include <C4/C4_Dynamic>
+title Dynamic diagram for Checkout payment scenario - RelIndex compatibility
+LAYOUT_WITH_LEGEND()
+
+Person(customer, "Customer", "Pays for orders")
+System(api, "Payments API", "Processes payment requests")
+
+RelIndex(1, customer, api, "Submits payment request")
+@enduml

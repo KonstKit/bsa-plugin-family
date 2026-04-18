@@ -1,0 +1,60 @@
+version: "1"
+
+selector:
+  valid_modes:
+    - auto
+    - native
+    - simple
+
+  precedence:
+    - id: 1
+      when: logic_only=true
+      eligibility_class: logic_only
+      forced_native: false
+      forced_skip_layout: true
+      reason_code: logic_only_requested
+    - id: 2
+      when: full_relayout=true and preserve_existing_di=true
+      note: full_relayout_overrides_preserve_existing_di is emitted before regular selection rules
+      reason_code: full_relayout_overrides_preserve_existing_di
+    - id: 3
+      when: preserve_existing_di=true and full_relayout=false
+      eligibility_class: native_preserve
+      forced_native: true
+      forced_skip_layout: false
+      reason_code: preserve_existing_di_forces_native
+    - id: 4
+      when: any hard exclusion is true
+      eligibility_class: simple_ineligible
+      forced_native: true
+      forced_skip_layout: false
+      reason_code: first matched hard exclusion in hard_exclusion_order
+    - id: 5
+      when: no hard exclusions
+      eligibility_class: simple_eligible
+      forced_native: requested_mode==native
+      forced_skip_layout: false
+      reason_code: requested_mode_{mode}
+
+  hard_exclusion_order:
+    - fact_key: multi_participant_collaboration
+      reason_code: multi_participant_collaboration
+    - fact_key: message_flow
+      reason_code: message_flow_present
+    - fact_key: text_annotation
+      reason_code: text_annotation_present
+    - fact_key: association
+      reason_code: association_present
+    - fact_key: complex_gateway
+      reason_code: complex_gateway_present
+    - fact_key: group
+      reason_code: group_present
+    - fact_key: boundary_event
+      reason_code: boundary_event_present
+    - fact_key: event_subprocess
+      reason_code: event_subprocess_present
+    - fact_key: expanded_subprocess
+      reason_code: expanded_subprocess_present
+
+runtime_overrides:
+  helper_unavailable_forces_native_reason: simple_helper_unavailable_forced_native

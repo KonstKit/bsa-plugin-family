@@ -1,0 +1,7 @@
+interface:
+  display_name: "Camunda BPMN Author"
+  short_description: "Draft BPMN from docs and process context"
+  default_prompt: "Use $camunda-bpmn-from-context to generate BPMN 2.0 XML with basic Camunda 7 or Camunda 8 extension support from the attached documents, transcript, and process notes."
+
+policy:
+  allow_implicit_invocation: false

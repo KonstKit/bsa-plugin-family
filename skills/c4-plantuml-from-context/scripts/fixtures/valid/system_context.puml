@@ -1,0 +1,12 @@
+@startuml
+!include <C4/C4_Context>
+title System Context diagram for Payments Platform
+LAYOUT_WITH_LEGEND()
+
+Person(customer, "Customer", "Pays for orders")
+System(payments, "Payments Platform", "Processes customer payments")
+System_Ext(bank, "Bank API", "Authorizes card charges")
+
+Rel(customer, payments, "Submits payment request")
+Rel(payments, bank, "Authorizes payment")
+@enduml

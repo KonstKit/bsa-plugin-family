@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ns0:definitions xmlns:ns0="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_04a" targetNamespace="http://example.com/fixtures">
+  <ns0:process id="Process_04a" isExecutable="false">
+    <ns0:startEvent id="Start_04a" />
+    <ns0:exclusiveGateway id="Gateway_04a" />
+    <ns0:task id="Task_04a_1" />
+    <ns0:task id="Task_04a_2" />
+    <ns0:endEvent id="End_04a" />
+    <ns0:sequenceFlow id="Flow_04a_1" sourceRef="Start_04a" targetRef="Gateway_04a" />
+    <ns0:sequenceFlow id="Flow_04a_2" sourceRef="Gateway_04a" targetRef="Task_04a_1" />
+    <ns0:sequenceFlow id="Flow_04a_3" sourceRef="Gateway_04a" targetRef="Task_04a_2" />
+    <ns0:sequenceFlow id="Flow_04a_4" sourceRef="Task_04a_1" targetRef="End_04a" />
+    <ns0:sequenceFlow id="Flow_04a_5" sourceRef="Task_04a_2" targetRef="End_04a" />
+  </ns0:process>
+</ns0:definitions>

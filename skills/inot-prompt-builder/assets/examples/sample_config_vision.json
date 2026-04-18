@@ -1,0 +1,9 @@
+{
+  "task": "Identify safety hazards in the provided warehouse photo",
+  "task_type": "vision",
+  "max_rounds": 5,
+  "output_mode": "answer_plus_audit",
+  "constraints": ["avoid speculation"],
+  "style": "concise",
+  "has_image": true
+}

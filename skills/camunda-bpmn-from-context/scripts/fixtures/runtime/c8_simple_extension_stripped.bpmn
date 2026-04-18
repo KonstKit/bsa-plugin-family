@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  id="Definitions_c8_ext"
+                  targetNamespace="http://example.com/fixtures">
+  <bpmn:process id="Process_c8_ext" isExecutable="true">
+    <bpmn:startEvent id="Start_c8_ext" />
+    <bpmn:serviceTask id="Task_c8_ext">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="payment" retries="3" />
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End_c8_ext" />
+    <bpmn:sequenceFlow id="Flow_c8_ext_1" sourceRef="Start_c8_ext" targetRef="Task_c8_ext" />
+    <bpmn:sequenceFlow id="Flow_c8_ext_2" sourceRef="Task_c8_ext" targetRef="End_c8_ext" />
+  </bpmn:process>
+</bpmn:definitions>

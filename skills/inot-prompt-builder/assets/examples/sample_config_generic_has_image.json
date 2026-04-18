@@ -1,0 +1,8 @@
+{
+  "task": "Describe the anomalies in the attached chart",
+  "task_type": "generic",
+  "max_rounds": 4,
+  "output_mode": "answer_plus_audit",
+  "constraints": ["separate observations vs inference"],
+  "has_image": true
+}

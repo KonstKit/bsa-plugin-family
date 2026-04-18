@@ -1,0 +1,8 @@
+{
+  "task": "Summarize the key takeaways from the team retro notes",
+  "task_type": "generic",
+  "max_rounds": 4,
+  "output_mode": "answer_only",
+  "constraints": ["<=120 words"],
+  "style": "concise"
+}

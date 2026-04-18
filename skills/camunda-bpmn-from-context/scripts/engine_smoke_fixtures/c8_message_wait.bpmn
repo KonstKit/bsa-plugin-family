@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <bpmn:message id="Message_Ready" name="MessageReady">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="orderId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:process id="SmokeProcess8MessageWait" name="Camunda 8 Message Wait Path" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1" />
+    <bpmn:intermediateCatchEvent id="Catch_Message_1">
+      <bpmn:messageEventDefinition messageRef="Message_Ready" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="EndEvent_1" />
+    <bpmn:sequenceFlow id="Flow_Start_To_Catch" sourceRef="StartEvent_1" targetRef="Catch_Message_1" />
+    <bpmn:sequenceFlow id="Flow_Catch_To_End" sourceRef="Catch_Message_1" targetRef="EndEvent_1" />
+  </bpmn:process>
+</bpmn:definitions>

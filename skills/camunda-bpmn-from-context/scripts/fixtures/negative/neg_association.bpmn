@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_neg_assoc" targetNamespace="http://example.com/fixtures">
+  <bpmn:process id="Process_neg_assoc" isExecutable="false">
+    <bpmn:startEvent id="Start_neg_assoc" />
+    <bpmn:task id="Task_neg_assoc" />
+    <bpmn:endEvent id="End_neg_assoc" />
+    <bpmn:association id="Association_neg_assoc" sourceRef="Task_neg_assoc" targetRef="End_neg_assoc" />
+  </bpmn:process>
+</bpmn:definitions>

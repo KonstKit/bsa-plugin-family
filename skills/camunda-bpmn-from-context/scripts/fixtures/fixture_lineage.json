@@ -1,0 +1,125 @@
+{
+  "entries": [
+    {
+      "fixture_id": "01_original",
+      "generator_version": "1",
+      "invariants": {
+        "collaboration_semantics_preserved": true,
+        "remove_bpmndi_only": true,
+        "runtime_contract_preserved": true
+      },
+      "invariants_ok": true,
+      "removed_bpmndi_elements": 7,
+      "source_fixture_id": "01_original",
+      "source_path": "original/01_original.bpmn",
+      "source_sha256": "fc0dd031e9373eb10001039b5e32b254efe86a01211d484cc5b10ffd60dd343c",
+      "stripped_fixture_id": "01_stripped",
+      "stripped_path": "stripped/01_stripped.bpmn",
+      "stripped_sha256": "5b1063da46ea92268ee4b1157468e112a7055f938d52274d9ff12d23dfe9d161"
+    },
+    {
+      "fixture_id": "02_original",
+      "generator_version": "1",
+      "invariants": {
+        "collaboration_semantics_preserved": true,
+        "remove_bpmndi_only": true,
+        "runtime_contract_preserved": true
+      },
+      "invariants_ok": true,
+      "removed_bpmndi_elements": 7,
+      "source_fixture_id": "02_original",
+      "source_path": "original/02_original.bpmn",
+      "source_sha256": "c346a8df68ad1412b1adc853230e817f261c626c22020810e7079120f3fc00ec",
+      "stripped_fixture_id": "02_stripped",
+      "stripped_path": "stripped/02_stripped.bpmn",
+      "stripped_sha256": "34d5801c440976c717f347a5e3a7ab81212335859f8b0d4768c949a878004043"
+    },
+    {
+      "fixture_id": "03_original",
+      "generator_version": "1",
+      "invariants": {
+        "collaboration_semantics_preserved": true,
+        "remove_bpmndi_only": true,
+        "runtime_contract_preserved": true
+      },
+      "invariants_ok": true,
+      "removed_bpmndi_elements": 7,
+      "source_fixture_id": "03_original",
+      "source_path": "original/03_original.bpmn",
+      "source_sha256": "f1874e2ebe457163e802b06863de531a84a2af0d9f51ee6483b55730083980e3",
+      "stripped_fixture_id": "03_stripped",
+      "stripped_path": "stripped/03_stripped.bpmn",
+      "stripped_sha256": "9b30c32d37805286675009cce0c20256f1fb4d3f83975de8770a86fcc1e98d3e"
+    },
+    {
+      "fixture_id": "04a_original",
+      "generator_version": "1",
+      "invariants": {
+        "collaboration_semantics_preserved": true,
+        "remove_bpmndi_only": true,
+        "runtime_contract_preserved": true
+      },
+      "invariants_ok": true,
+      "removed_bpmndi_elements": 7,
+      "source_fixture_id": "04a_original",
+      "source_path": "original/04a_original.bpmn",
+      "source_sha256": "121dab2850d2129968540163b38890af2be0efb1604cbb0d3d2a1750ab6b7c86",
+      "stripped_fixture_id": "04a_stripped",
+      "stripped_path": "stripped/04a_stripped.bpmn",
+      "stripped_sha256": "0e353d0f1f1fd23a388ae3b51e4554a4f5f32710fd26331d91e6c81af16347c8"
+    },
+    {
+      "fixture_id": "04b_original",
+      "generator_version": "1",
+      "invariants": {
+        "collaboration_semantics_preserved": true,
+        "remove_bpmndi_only": true,
+        "runtime_contract_preserved": true
+      },
+      "invariants_ok": true,
+      "removed_bpmndi_elements": 8,
+      "source_fixture_id": "04b_original",
+      "source_path": "original/04b_original.bpmn",
+      "source_sha256": "1039ebc1ce4665b22977e3358cbfb1fa589beed2f7e5de28189f724ae00715f5",
+      "stripped_fixture_id": "04b_stripped",
+      "stripped_path": "stripped/04b_stripped.bpmn",
+      "stripped_sha256": "e31892054f009e61a79bb406119936f87239cb403becc6378796c2990e9085a4"
+    },
+    {
+      "fixture_id": "04c_original",
+      "generator_version": "1",
+      "invariants": {
+        "collaboration_semantics_preserved": true,
+        "remove_bpmndi_only": true,
+        "runtime_contract_preserved": true
+      },
+      "invariants_ok": true,
+      "removed_bpmndi_elements": 5,
+      "source_fixture_id": "04c_original",
+      "source_path": "original/04c_original.bpmn",
+      "source_sha256": "916f287ff7e073b7ded31f3a219d118b5a670a4e908e035e20e1f73dd71077c0",
+      "stripped_fixture_id": "04c_stripped",
+      "stripped_path": "stripped/04c_stripped.bpmn",
+      "stripped_sha256": "f0ebfc5ec9d5d747619ad774ac7e2e2dd39873a8bab10d29e1c24182eb2eac0b"
+    },
+    {
+      "fixture_id": "04d_original",
+      "generator_version": "1",
+      "invariants": {
+        "collaboration_semantics_preserved": true,
+        "remove_bpmndi_only": true,
+        "runtime_contract_preserved": true
+      },
+      "invariants_ok": true,
+      "removed_bpmndi_elements": 7,
+      "source_fixture_id": "04d_original",
+      "source_path": "original/04d_original.bpmn",
+      "source_sha256": "ceb9f6067dff9e73ae9ea633746f11b3a4c2b9d2a6bc2ce4c406a8b38d8cd93c",
+      "stripped_fixture_id": "04d_stripped",
+      "stripped_path": "stripped/04d_stripped.bpmn",
+      "stripped_sha256": "67fc02907ca9b846eebaeccc5b7ac385f3ec15b4ec4e0cb00fd69294a9c0bdb4"
+    }
+  ],
+  "generator": "scripts/make_stripped_fixture.py",
+  "schema_version": "1"
+}

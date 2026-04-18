@@ -1,0 +1,9 @@
+@startuml
+!include <C4/C4_Container>
+title Container diagram for Payments Platform
+LAYOUT_WITH_LEGEND()
+
+Container_Boundary(payments_api_boundary, "Payments API") {
+    Component(service, "Payment Service", "Python", "Coordinates payment processing")
+}
+@enduml

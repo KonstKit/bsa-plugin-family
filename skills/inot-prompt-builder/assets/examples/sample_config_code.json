@@ -1,0 +1,9 @@
+{
+  "task": "Design a concurrency-safe in-memory cache with per-key TTL and dogpile protection in Go",
+  "task_type": "code",
+  "max_rounds": 6,
+  "output_mode": "answer_plus_audit",
+  "constraints": ["stay under 220 words", "focus on data races"],
+  "style": "concise",
+  "has_image": false
+}

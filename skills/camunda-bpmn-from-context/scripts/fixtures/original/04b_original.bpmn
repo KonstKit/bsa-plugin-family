@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_04b"
+                  targetNamespace="http://example.com/fixtures">
+  <bpmn:process id="Process_04b" isExecutable="false">
+    <bpmn:startEvent id="Start_04b" />
+    <bpmn:parallelGateway id="Gateway_04b_split" />
+    <bpmn:task id="Task_04b_1" />
+    <bpmn:task id="Task_04b_2" />
+    <bpmn:parallelGateway id="Gateway_04b_join" />
+    <bpmn:endEvent id="End_04b" />
+    <bpmn:sequenceFlow id="Flow_04b_1" sourceRef="Start_04b" targetRef="Gateway_04b_split" />
+    <bpmn:sequenceFlow id="Flow_04b_2" sourceRef="Gateway_04b_split" targetRef="Task_04b_1" />
+    <bpmn:sequenceFlow id="Flow_04b_3" sourceRef="Gateway_04b_split" targetRef="Task_04b_2" />
+    <bpmn:sequenceFlow id="Flow_04b_4" sourceRef="Task_04b_1" targetRef="Gateway_04b_join" />
+    <bpmn:sequenceFlow id="Flow_04b_5" sourceRef="Task_04b_2" targetRef="Gateway_04b_join" />
+    <bpmn:sequenceFlow id="Flow_04b_6" sourceRef="Gateway_04b_join" targetRef="End_04b" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_04b">
+    <bpmndi:BPMNPlane id="BPMNPlane_04b" bpmnElement="Process_04b">
+      <bpmndi:BPMNShape id="Start_04b_di" bpmnElement="Start_04b"><dc:Bounds x="80" y="180" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_04b_split_di" bpmnElement="Gateway_04b_split" isMarkerVisible="true"><dc:Bounds x="170" y="173" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_04b_1_di" bpmnElement="Task_04b_1"><dc:Bounds x="280" y="120" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_04b_2_di" bpmnElement="Task_04b_2"><dc:Bounds x="280" y="230" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_04b_join_di" bpmnElement="Gateway_04b_join" isMarkerVisible="true"><dc:Bounds x="420" y="173" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_04b_di" bpmnElement="End_04b"><dc:Bounds x="520" y="180" width="36" height="36" /></bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
