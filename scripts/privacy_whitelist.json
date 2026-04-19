@@ -1,0 +1,43 @@
+{
+  "description": "US-S0-04 whitelist for privacy_scan.py false-positives. Keep minimal and justify every entry.",
+  "schema_version": 1,
+  "string_matches": [
+    {
+      "match": "maintainer@bsa-plugin-family.local",
+      "reason": "Development placeholder git author — local TLD, not a real mailbox",
+      "added_at": "2026-04-19"
+    },
+    {
+      "match": "noreply@anthropic.com",
+      "reason": "Co-author trailer for AI-assisted commits — Anthropic non-delivery address",
+      "added_at": "2026-04-19"
+    }
+  ],
+  "path_globs": [
+    {
+      "glob": "docs/privacy_audit.md",
+      "reason": "Scanner output file — would re-trigger on its own committed findings",
+      "added_at": "2026-04-19"
+    },
+    {
+      "glob": "scripts/privacy_whitelist.json",
+      "reason": "Whitelist source itself — metadata lines contain match strings by design",
+      "added_at": "2026-04-19"
+    },
+    {
+      "glob": "scripts/privacy_scan.py",
+      "reason": "Scanner source — detector definitions embed example strings (classify_email, luhn test numbers, token regex) as code and docs",
+      "added_at": "2026-04-19"
+    },
+    {
+      "glob": "tests/test_privacy_scan.py",
+      "reason": "Unit-test fixtures — intentionally trigger every detector to verify correctness",
+      "added_at": "2026-04-19"
+    },
+    {
+      "glob": "skills/inot-prompt-builder/assets/examples/sample_config_injection.json",
+      "reason": "Prompt-injection test fixture — intentionally contains attack strings for INoT evals",
+      "added_at": "2026-04-19"
+    }
+  ]
+}
