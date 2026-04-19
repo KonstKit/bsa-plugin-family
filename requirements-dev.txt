@@ -1,0 +1,5 @@
+# Development dependencies for BSA Plugin Family.
+# Keep this list minimal and pinned to stable majors.
+# Validators and scanners are stdlib-only by design (US-S0-02 / US-S0-04).
+
+pytest>=8.0,<9

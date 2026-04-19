@@ -204,7 +204,7 @@ def test_nonexistent_file_errors_with_code_2(tmp_path: Path) -> None:
 
 
 def test_crlf_frontmatter_accepted(tmp_path: Path) -> None:
-    """Round-5: CRLF line endings must not reject valid frontmatter."""
+    """Round-2: CRLF line endings must not reject valid frontmatter."""
     name = "crlf-skill"
     skill_dir = tmp_path / name
     skill_dir.mkdir()
@@ -216,7 +216,7 @@ def test_crlf_frontmatter_accepted(tmp_path: Path) -> None:
 
 
 def test_single_quoted_frontmatter_value_unwrapped(tmp_path: Path) -> None:
-    """Round-5: single-quoted scalar must be unwrapped so name check passes."""
+    """Round-2: single-quoted scalar must be unwrapped so name check passes."""
     skill = make_skill(
         tmp_path,
         "sq-skill",
@@ -227,7 +227,7 @@ def test_single_quoted_frontmatter_value_unwrapped(tmp_path: Path) -> None:
 
 
 def test_link_with_single_quoted_title_handled(tmp_path: Path) -> None:
-    """Round-5: markdown link with single-quoted title must still detect broken ref."""
+    """Round-2: markdown link with single-quoted title must still detect broken ref."""
     skill = make_skill(
         tmp_path,
         "sq-title-skill",
@@ -239,7 +239,7 @@ def test_link_with_single_quoted_title_handled(tmp_path: Path) -> None:
 
 
 def test_link_with_double_quoted_title_handled(tmp_path: Path) -> None:
-    """Round-5: markdown link with double-quoted title must still detect broken ref."""
+    """Round-2: markdown link with double-quoted title must still detect broken ref."""
     skill = make_skill(
         tmp_path,
         "dq-title-skill",
@@ -251,7 +251,7 @@ def test_link_with_double_quoted_title_handled(tmp_path: Path) -> None:
 
 
 def test_link_with_parenthesized_title_handled(tmp_path: Path) -> None:
-    """Round-5: markdown link with (title) must still detect broken ref."""
+    """Round-2: markdown link with (title) must still detect broken ref."""
     skill = make_skill(
         tmp_path,
         "paren-title-skill",
@@ -263,7 +263,7 @@ def test_link_with_parenthesized_title_handled(tmp_path: Path) -> None:
 
 
 def test_link_with_balanced_parens_in_path_resolved(tmp_path: Path) -> None:
-    """Round-5: path with balanced parens should resolve to the actual file."""
+    """Round-2: path with balanced parens should resolve to the actual file."""
     skill = make_skill(
         tmp_path,
         "paren-path-skill",
@@ -275,7 +275,7 @@ def test_link_with_balanced_parens_in_path_resolved(tmp_path: Path) -> None:
 
 
 def test_link_with_balanced_parens_in_path_detects_broken(tmp_path: Path) -> None:
-    """Round-5: path with balanced parens pointing at missing file must fail."""
+    """Round-2: path with balanced parens pointing at missing file must fail."""
     skill = make_skill(
         tmp_path,
         "paren-path-missing-skill",
@@ -287,7 +287,7 @@ def test_link_with_balanced_parens_in_path_detects_broken(tmp_path: Path) -> Non
 
 
 def test_symlink_loop_in_reference_reports_finding(tmp_path: Path) -> None:
-    """Round-5: resolve() on a symlink loop must surface as finding, not traceback."""
+    """Round-2: resolve() on a symlink loop must surface as finding, not traceback."""
     skill = make_skill(
         tmp_path,
         "loop-skill",
