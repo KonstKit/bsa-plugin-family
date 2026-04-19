@@ -4,10 +4,16 @@ Authoritative checklist for verifying that downstream skills' descriptions, scop
 
 ## Why this audit matters
 
-The Sprint 2 rename from `bsa-no-new-facts-auditor` to `bsa-no-new-claims-auditor` was **semantic, not cosmetic**. Pre-Sprint-2 language occasionally used "fact" as a synonym for "claim" in the pipeline vocabulary, which implicitly treated downstream content as established truth. The new vocabulary forces authors to treat every positive assertion as a claim that requires evidence or an explicit `A51Ref`.
+The Sprint 2 rename from `bsa-no-new-facts-auditor` to `bsa-no-new-claims-auditor` was **semantic, not cosmetic**. Pre-Sprint-2 language occasionally used "fact" as a synonym for "claim" in the pipeline vocabulary, which implicitly treated downstream content as established truth. The new vocabulary forces authors to treat every positive assertion as a claim that is **never assumed true by default** and must travel one of three routes:
+
+1. `ClaimType=direct` or `ClaimType=inference` — requires `SourceID+ExcerptID` evidence-binding per INV-01.
+2. `ClaimType=analyst_judgment` — requires `JustificationRationale` that references ≥ 1 upstream `ClaimID` (see INV-07 and `bsa-claim-binder`/`bsa-no-new-claims-auditor` contracts). Not leakage under INV-03; not evidence-bound in the INV-01 sense.
+3. Explicit `A51Ref` routing for unresolved items, contradictions, or decision-needed hypotheses.
+
+Any wording that flattens these three routes into a blanket "every claim needs SourceID+ExcerptID or A51Ref" is itself a semantic-audit failure — it would misclassify valid `analyst_judgment` rows as leakage.
 
 Reference invariants:
-- `governance/immutable_invariants.md` **INV-01** (evidence-binding): every positive factual claim needs `SourceID+ExcerptID` OR `A51Ref`.
+- `governance/immutable_invariants.md` **INV-01** (evidence-binding, scoped): every positive `direct`/`inference` claim needs `SourceID+ExcerptID` OR `A51Ref`. `analyst_judgment` claims are exempt from evidence-binding but bound by their own JustificationRationale rule.
 - `governance/immutable_invariants.md` **INV-03** (no new claims in Stage 8 / handoff): `ClaimType=analyst_judgment` rows with valid `JustificationRationale` are NOT leakage; everything else new is.
 - `governance/immutable_invariants.md` **INV-07** (ClaimType schema closed): exactly `direct | inference | analyst_judgment`.
 
@@ -15,7 +21,7 @@ Reference invariants:
 
 | Term | Semantics | When to use |
 |---|---|---|
-| **claim** | Potentially-false assertion that requires either `SourceID+ExcerptID` evidence-binding or explicit `A51Ref` routing. Always the right word for pipeline content. | Description fields, invariants, scope bullets, workflow steps, on-audit-failure remediation. |
+| **claim** | Potentially-false assertion. Never "assumed true". Must be routed through exactly one of: (a) `ClaimType=direct`/`inference` with `SourceID+ExcerptID` evidence-binding (INV-01), (b) `ClaimType=analyst_judgment` with `JustificationRationale` referencing ≥ 1 upstream ClaimID (INV-07), or (c) explicit `A51Ref` for unresolved/contradictory items. Always the right word for pipeline content. | Description fields, invariants, scope bullets, workflow steps, on-audit-failure remediation. |
 | **factual content** | Acceptable ONLY as a disambiguator that contrasts direct/inference ClaimTypes with `analyst_judgment`. Avoid when plain "claim" reads naturally. | Narrow contexts: INV-07 wording splits, no-new-claims-contract paraphrase rules. |
 | **fact** (bare, no context) | Banned in canonical pipeline text. Exceptions: (a) the explicit legacy-compat note in `bsa-no-new-claims-auditor` + its contract; (b) migration artifacts (`migrations/v0.9_to_v1.0/`). | Never in skill SKILL.md or non-migration reference. |
 | **assumed true / established truth** | Banned as implicit framing. Claims are never assumed true; they are evidence-bound or A51-routed. | Never. |
