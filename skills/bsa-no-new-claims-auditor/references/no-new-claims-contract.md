@@ -1,6 +1,6 @@
 # No New Claims Contract
 
-**Terminology note (Sprint 2 US-S2-02):** the auditor and its contract were renamed from `no-new-facts` to `no-new-claims`. The shift is semantic, not cosmetic — see `skills/bsa-no-new-claims-auditor/SKILL.md`. Canonical pipeline vocabulary is "claim" (potentially-false assertion requiring evidence), not "fact" (implied established truth). A downstream-skill semantic-audit checklist (`docs/sem_audit_rename.md`) lands with part 3/3 of US-S2-02.
+**Terminology note (Sprint 2 US-S2-02):** the auditor and its contract were renamed from `no-new-facts` to `no-new-claims`. The shift is semantic, not cosmetic — see `skills/bsa-no-new-claims-auditor/SKILL.md`. Canonical pipeline vocabulary is "claim" (potentially-false assertion requiring evidence), not "fact" (implied established truth). The downstream-skill semantic-audit checklist is `docs/sem_audit_rename.md` (landed in US-S2-02 part 3/3).
 
 ## Required Sections
 - artifacts audited
@@ -27,4 +27,4 @@ A wording change is allowed only when it preserves upstream factual content with
 ## Marker Link
 - Main-cycle gate uses `stage8.no_new_claims.pass.json`.
 - Report filenames are `no_new_claims_report.md` / `handoff_no_new_claims_report.md` / `discovery_no_new_claims_report.md`. Legacy `no_new_facts_*` filenames are accepted for read-only consumption of pre-v1.0 workspaces; new writes always use the `no_new_claims` naming.
-- Workspace migration from legacy filenames is performed by `scripts/migrate_v0.9_to_v1.0.py` (landed by part 2/3 of US-S2-02, forthcoming).
+- Workspace migration from legacy filenames is performed by `scripts/migrate_v0.9_to_v1.0.py` (landed in US-S2-02 part 2/3).

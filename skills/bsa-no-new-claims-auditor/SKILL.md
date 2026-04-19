@@ -7,7 +7,7 @@ description: Audit Stage 8, handoff, and discovery D5 synthesis outputs for net-
 
 Use this skill before Stage 8 readiness promotion, before handoff promotion, and for discovery D5 reuse.
 
-**Terminology note (Sprint 2 US-S2-02):** this skill was renamed from `bsa-no-new-facts-auditor`. The shift from "facts" to "claims" is semantic, not cosmetic: the pipeline tracks **claims** (potentially-false assertions that require evidence) rather than **facts** (established truths). A claim is validated by `SourceID+ExcerptID` or explicitly routed through `A51Ref`; a claim is never assumed true by default. Authoritative terminology source: `governance/immutable_invariants.md` INV-01 / INV-07. A semantic-audit checklist for downstream skills is landed by part 3/3 of US-S2-02 (`docs/sem_audit_rename.md`, forthcoming).
+**Terminology note (Sprint 2 US-S2-02):** this skill was renamed from `bsa-no-new-facts-auditor`. The shift from "facts" to "claims" is semantic, not cosmetic: the pipeline tracks **claims** (potentially-false assertions that require evidence) rather than **facts** (established truths). A claim is validated by `SourceID+ExcerptID` or explicitly routed through `A51Ref`; a claim is never assumed true by default. Authoritative terminology source: `governance/immutable_invariants.md` INV-01 / INV-07. The downstream-skill semantic-audit checklist is `docs/sem_audit_rename.md` (landed in US-S2-02 part 3/3).
 
 ## Scope
 - Compare Stage 8 outputs against canonical stage artifacts and core controls.
@@ -51,7 +51,7 @@ Use this skill before Stage 8 readiness promotion, before handoff promotion, and
 
 ## Backward compatibility
 - Legacy report filenames accepted for read-only consumption when migrating older workspaces: `no_new_facts_report.md`, `handoff_no_new_facts_report.md`, and `discovery_no_new_facts_report.md`. New writes always use the `no_new_claims` naming.
-- Workspace migration from legacy filenames is performed by `scripts/migrate_v0.9_to_v1.0.py` (landed by part 2/3 of US-S2-02, forthcoming); it renames in-place on committed canonical paths and emits an idempotent migration log.
+- Workspace migration from legacy filenames is performed by `scripts/migrate_v0.9_to_v1.0.py` (landed in US-S2-02 part 2/3); it renames in-place on committed canonical paths and emits an idempotent migration log.
 
 ## Reference
 - [references/no-new-claims-contract.md](references/no-new-claims-contract.md)
