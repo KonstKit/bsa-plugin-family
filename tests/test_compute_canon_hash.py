@@ -136,5 +136,79 @@ def test_script_exits_2_on_missing_policy_file(tmp_path: Path) -> None:
     assert "governance/immutable_invariants.md" in result.stderr
 
 
+def test_every_skill_md_is_in_policy_globs() -> None:
+    """POLICY_GLOBS MUST cover every skill directory's SKILL.md; a new
+    skill added under skills/ without extending POLICY_GLOBS creates a
+    drift blind-spot per US-S3-04 review round 1."""
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    try:
+        import compute_canon_hash as mod  # type: ignore
+    finally:
+        sys.path.pop(0)
+
+    skill_dirs = sorted(p for p in (REPO_ROOT / "skills").iterdir() if p.is_dir())
+    expected_skill_md = {
+        f"skills/{d.name}/SKILL.md"
+        for d in skill_dirs
+        if (d / "SKILL.md").is_file()
+    }
+    listed_skill_md = {g for g in mod.POLICY_GLOBS if g.endswith("/SKILL.md")}
+    missing = expected_skill_md - listed_skill_md
+    assert not missing, (
+        f"POLICY_GLOBS missing SKILL.md files: {sorted(missing)}. "
+        "Every committed skill's SKILL.md must be listed — otherwise the "
+        "hash does not represent full policy state."
+    )
+
+
+def test_diff_breakdown_mode_emits_categories() -> None:
+    """AC-7: --diff-breakdown mode emits 5 category rows after the
+    aggregate hash."""
+    result = run_script("--diff-breakdown")
+    assert result.returncode == 0
+    lines = [ln for ln in result.stdout.strip().split("\n") if ln.strip()]
+    # First line = aggregate hash. Second line = header. Remaining = category rows.
+    assert len(lines[0]) == 64
+    assert "category" in lines[1].lower()
+    body = lines[2:]
+    # Five stable category buckets expected:
+    expected_cats = {
+        "governance",
+        "skills_skill_md",
+        "orchestrator_references",
+        "per_skill_references",
+        "docs",
+    }
+    found_cats = set()
+    for ln in body:
+        parts = ln.split()
+        # Format: "<64-hex>  <category>  (n=<int>)"
+        assert len(parts[0]) == 64 or parts[0] == "-" * 64
+        found_cats.add(parts[1])
+    assert found_cats == expected_cats, (
+        f"expected categories {expected_cats}, got {found_cats}"
+    )
+
+
+def test_category_hashes_sum_to_differ_from_aggregate() -> None:
+    """Per-category hashes are distinct from each other and from the
+    aggregate — sanity check that they're not all the same string."""
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    try:
+        import compute_canon_hash as mod  # type: ignore
+    finally:
+        sys.path.pop(0)
+    breakdown = mod.compute_category_breakdown(REPO_ROOT)
+    all_hashes = {info["hash"] for info in breakdown.values()}
+    aggregate = mod.compute_hash(REPO_ROOT)
+    # All category hashes distinct:
+    assert len(all_hashes) == len(breakdown), (
+        f"category hashes collided: {all_hashes}"
+    )
+    # And none of them equals the aggregate hash (which hashes all files
+    # together, not just one category):
+    assert aggregate not in all_hashes, "category hash accidentally equals aggregate"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -5,6 +5,12 @@
   "timestamp": "2026-02-22T15:00:00Z",
   "canon_policy_version": "0.95",
   "kpi_005_new_claim_leakage_count": 0,
-  "handoff_packets_checked": ["H1", "H2", "H3", "H4"],
-  "notes": "No-new-claims gate: zero leakage across H1-H4. analyst_judgment claim C-008 is present in H4 under the legitimate analyst_judgment ClaimType with justification_rationale referencing upstream C-005, consistent with INV-07."
+  "handoff_packets_checked": [
+    "H1",
+    "H2",
+    "H3",
+    "H4"
+  ],
+  "notes": "No-new-claims gate: zero leakage across H1-H4. analyst_judgment claim C-008 is present in H4 under the legitimate analyst_judgment ClaimType with justification_rationale referencing upstream C-005, consistent with INV-07.",
+  "canon_policy_version_hash": "ac039430"
 }
