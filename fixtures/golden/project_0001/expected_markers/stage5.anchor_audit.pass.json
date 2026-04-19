@@ -1,0 +1,16 @@
+{
+  "marker_id": "stage5.anchor_audit.pass",
+  "stage": "stage5",
+  "verdict": "PASS",
+  "timestamp": "2026-02-21T14:00:00Z",
+  "canon_policy_version": "0.95",
+  "anchors_audited": 6,
+  "anchors_with_claim_id": 6,
+  "anchors_with_a51ref": 0,
+  "orphan_anchors_count": 0,
+  "duplicate_anchors_count": 0,
+  "class_mismatch_count": 0,
+  "drift_findings_count": 0,
+  "notes": "Stage 5 backbone anchor audit PASS. Backbone-layer anchors all bind to direct or inference ClaimIDs; no drift findings against the previous promotion (Sprint 3 US-S3-04 gate).",
+  "canon_policy_version_hash": "ac039430"
+}

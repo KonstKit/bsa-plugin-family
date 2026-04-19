@@ -1,0 +1,17 @@
+{
+  "marker_id": "stage6.anchor_audit.pass",
+  "stage": "stage6",
+  "verdict": "PASS",
+  "timestamp": "2026-02-22T09:00:00Z",
+  "canon_policy_version": "0.95",
+  "anchors_audited": 11,
+  "anchors_with_claim_id": 11,
+  "anchors_with_a51ref": 0,
+  "orphan_anchors_count": 0,
+  "duplicate_anchors_count": 0,
+  "class_mismatch_count": 0,
+  "drift_findings_count": 0,
+  "a61_promoted": true,
+  "notes": "Stage 6 contract-layer anchor audit PASS. A61 promoted; every anchor traces to a direct/inference claim (no analyst_judgment anchors). Drift detection (US-S3-04) clean against the Stage 5 baseline.",
+  "canon_policy_version_hash": "ac039430"
+}

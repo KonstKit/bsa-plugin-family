@@ -55,6 +55,18 @@ jobs:
         run: |
           python scripts/fixture_runner.py --mode=both
 
+      - name: Marker chain validator (US-S3-05)
+        run: |
+          python scripts/validate_marker_chain.py fixtures/golden/project_0001/expected_markers/
+
+      - name: Canon policy hash (US-S3-04) — smoke
+        run: |
+          # Prints the current canonical policy state hash + category
+          # breakdown. Non-blocking: we assert the script runs cleanly
+          # rather than gating on the hash value itself (reviewers
+          # consume the breakdown during retrospectives).
+          python scripts/compute_canon_hash.py --diff-breakdown
+
       - name: Inventory audit (US-S0-04)
         run: |
           python scripts/inventory_audit.py --output docs/inventory_audit.md
