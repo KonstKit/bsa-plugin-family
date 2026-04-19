@@ -1,0 +1,32 @@
+{
+  "pack_id": "project_0001-handoff-1",
+  "pack_version": "1.0.0",
+  "generated_at": "2026-04-19T17:10:00Z",
+  "canon_policy_version": "0.95.0",
+  "includes": {
+    "h1_path": "H1_exec_brief.md",
+    "h2_path": "H2_delivery_packet.md",
+    "h3_path": "H3_validation_packet.md",
+    "h4_path": "H4_open_items_packet.md"
+  },
+  "evidence_binding_map_path": "handoff_evidence_binding_map.csv",
+  "no_new_claims_verdict": {
+    "verdict": "PASS",
+    "leakage_count": 0,
+    "analyst_judgment_valid": 1,
+    "analyst_judgment_invalid": 0,
+    "report_path": "handoff_no_new_claims_report.md"
+  },
+  "checksum": {
+    "algorithm": "sha256",
+    "digest": "8a074ac028ef102bc1323d6d6e2c4a95f583b9874b31651b1b74eb6115ca1c80",
+    "covers": [
+      "H1_exec_brief.md",
+      "H2_delivery_packet.md",
+      "H3_validation_packet.md",
+      "H4_open_items_packet.md",
+      "handoff_evidence_binding_map.csv"
+    ]
+  },
+  "notes": "Fixture example generated from project_0001 canonical (C-001..C-008, A51-001, A51-002). Shape-valid per US-S2-01 AC-6; demonstrates analyst_judgment citation pattern in H1 and H4 per AC-7."
+}

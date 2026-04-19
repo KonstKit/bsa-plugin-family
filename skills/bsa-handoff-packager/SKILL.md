@@ -46,7 +46,13 @@ Use this skill after Stage 8 no-new-claims pass.
 4. Re-submit handoff package for no-new-claims verification.
 
 ## Validation Binding
-- `SCN-STAGE78-001-E`: H1-H4 generated without new-claim leakage.
+- `SCN-STAGE78-001-E`: H1-H4 generated without new-claim leakage (aggregate).
+- `SCN-STAGE78-001-E-H1` / `-E-H2` / `-E-H3` / `-E-H4`: per-pack shape and citation closure.
 
-## Reference
-- [references/handoff-contract.md](references/handoff-contract.md)
+## References
+- [references/handoff-contract.md](references/handoff-contract.md) — cross-pack rules + manifest pointer.
+- [references/h1_spec.md](references/h1_spec.md) — H1 executive brief content contract.
+- [references/h2_spec.md](references/h2_spec.md) — H2 delivery packet content contract.
+- [references/h3_spec.md](references/h3_spec.md) — H3 validation packet content contract.
+- [references/h4_spec.md](references/h4_spec.md) — H4 open items packet content contract.
+- [references/handoff_manifest.schema.json](references/handoff_manifest.schema.json) — JSON schema for `handoff_manifest.json`.

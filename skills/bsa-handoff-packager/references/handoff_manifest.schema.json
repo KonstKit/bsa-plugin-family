@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kkitanin/bsa-plugin-family/schemas/handoff_manifest.schema.json",
+  "title": "BSA Handoff Manifest",
+  "description": "Schema for handoff_manifest.json produced by bsa-handoff-packager. The manifest is the integrity record for the H1-H4 handoff pack; it is consumed by bsa-no-new-claims-auditor, bsa-citation-auditor, and downstream verification tooling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pack_id",
+    "pack_version",
+    "generated_at",
+    "canon_policy_version",
+    "includes",
+    "evidence_binding_map_path",
+    "no_new_claims_verdict",
+    "checksum"
+  ],
+  "properties": {
+    "pack_id": {
+      "type": "string",
+      "description": "Stable identifier for this handoff pack instance. Typically '<RunID>-handoff-<sequence>'.",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$"
+    },
+    "pack_version": {
+      "type": "string",
+      "description": "SemVer version of the pack contents. Increments on any re-emission.",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "generated_at": {
+      "type": "string",
+      "description": "ISO-8601 UTC timestamp of manifest emission.",
+      "format": "date-time"
+    },
+    "canon_policy_version": {
+      "type": "string",
+      "description": "CanonPolicyVersion active at the time the pack was built. Format: '<semver>+hash:<sha256-prefix>' per contract-versioning.md (Sprint 3 US-S3-04). Pre-Sprint-3 runs accept bare '<semver>'.",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:\\+hash:[a-f0-9]{6,64})?$"
+    },
+    "includes": {
+      "type": "object",
+      "description": "Paths to the four H-pack files inside the handoff proposal folder.",
+      "additionalProperties": false,
+      "required": ["h1_path", "h2_path", "h3_path", "h4_path"],
+      "properties": {
+        "h1_path": {
+          "type": "string",
+          "description": "Relative path to H1 exec brief markdown.",
+          "pattern": "H1_exec_brief\\.md$"
+        },
+        "h2_path": {
+          "type": "string",
+          "description": "Relative path to H2 delivery packet markdown.",
+          "pattern": "H2_delivery_packet\\.md$"
+        },
+        "h3_path": {
+          "type": "string",
+          "description": "Relative path to H3 validation packet markdown.",
+          "pattern": "H3_validation_packet\\.md$"
+        },
+        "h4_path": {
+          "type": "string",
+          "description": "Relative path to H4 open items packet markdown.",
+          "pattern": "H4_open_items_packet\\.md$"
+        }
+      }
+    },
+    "evidence_binding_map_path": {
+      "type": "string",
+      "description": "Relative path to handoff_evidence_binding_map.csv — the cross-reference of every [C-xxx], [AJ:C-xxx], [A51-xxx] citation used across H1-H4 to its originating canonical row.",
+      "pattern": "handoff_evidence_binding_map\\.csv$"
+    },
+    "no_new_claims_verdict": {
+      "type": "object",
+      "description": "Result of the bsa-no-new-claims-auditor pass over this handoff pack.",
+      "additionalProperties": false,
+      "required": ["verdict", "leakage_count", "analyst_judgment_valid", "analyst_judgment_invalid", "report_path"],
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["PASS", "FAIL"],
+          "description": "PASS iff leakage_count = 0 AND analyst_judgment_invalid = 0."
+        },
+        "leakage_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of non-analyst_judgment statements in H1-H4 that do not trace to a canonical A59 row or A51Ref."
+        },
+        "analyst_judgment_valid": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of ClaimType=analyst_judgment rows referenced in H1/H4 whose JustificationRationale correctly references ≥ 1 upstream ClaimID different from its own (INV-07)."
+        },
+        "analyst_judgment_invalid": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of ClaimType=analyst_judgment rows referenced in H1/H4 with missing or self-only JustificationRationale — these count as leakage (INV-07)."
+        },
+        "report_path": {
+          "type": "string",
+          "description": "Relative path to handoff_no_new_claims_report.md produced for this pack."
+        }
+      }
+    },
+    "checksum": {
+      "type": "object",
+      "description": "Integrity checksum over the H1-H4 bodies and the evidence binding map.",
+      "additionalProperties": false,
+      "required": ["algorithm", "digest", "covers"],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": ["sha256"],
+          "description": "Hash algorithm. SHA-256 is the only supported value in v1.0."
+        },
+        "digest": {
+          "type": "string",
+          "description": "Hex-encoded digest over the concatenation of covered files, in the order listed in 'covers', with '\\n' separators.",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "covers": {
+          "type": "array",
+          "description": "Ordered list of relative file paths hashed into the digest. MUST be exactly [h1_path, h2_path, h3_path, h4_path, evidence_binding_map_path].",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "discovery_lineage": {
+      "type": "object",
+      "description": "Optional block describing discovery-to-main lineage when the run used discovery_then_bsa mode. Omitted in direct mode.",
+      "additionalProperties": false,
+      "properties": {
+        "discovery_run_id": {"type": "string"},
+        "discovery_canon_policy_version": {"type": "string"},
+        "merge_log_path": {"type": "string"}
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional free-text notes for humans — never parsed by downstream tooling."
+    }
+  }
+}
