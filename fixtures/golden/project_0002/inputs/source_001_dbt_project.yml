@@ -1,0 +1,37 @@
+# Sanitized dbt project excerpt (synthetic).
+# Represents a production-owned configuration file — ReliabilityTier T2.
+# Real fields replaced with generic names; no real company identifiers.
+
+name: analytics_platform
+version: "1.0.0"
+profile: default
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+
+models:
+  analytics_platform:
+    staging:
+      +materialized: view
+      +schema: stg
+      # Staging models are owned by the data-engineering team; they wrap
+      # raw events into typed views and add no business logic.
+      stg_events:
+        +tags: ["hourly", "data_eng_owned"]
+      stg_users:
+        +tags: ["daily", "data_eng_owned"]
+    marts:
+      +materialized: table
+      +schema: mart
+      # Marts are owned by analytics-engineering; dimensional models
+      # combine multiple staging views and apply business rules.
+      fct_user_activity:
+        +tags: ["daily", "ae_owned"]
+      dim_user:
+        +tags: ["daily", "ae_owned"]
+
+seeds:
+  analytics_platform:
+    reference_data:
+      +schema: ref
+      +quote_columns: false

@@ -470,5 +470,163 @@ def test_baseline_has_three_claim_types() -> None:
     assert types == {"direct", "inference", "analyst_judgment"}
 
 
+# ---- Prep-shell fixture tests (US-S2-03) ---------------------------------
+
+
+_SENTINEL = object()
+
+
+def _make_prep_shell(
+    fx_root: Path,
+    name: str = "project_prep_001",
+    scenario_tags=_SENTINEL,
+    include_readme: bool = True,
+    include_inputs: bool = True,
+    metadata_overrides: dict | None = None,
+    extra_input_count: int = 1,
+) -> Path:
+    """Construct a synthetic prep-shell fixture under fx_root.
+
+    Returns the fixture directory path. Pass ``scenario_tags=[]`` (or any
+    explicit value) to override the default non-empty list; leave unset to
+    inherit the default three-tag mix.
+    """
+    fixture = fx_root / name
+    fixture.mkdir(parents=True, exist_ok=True)
+    if include_readme:
+        (fixture / "README.md").write_text(
+            f"# Fixture {name} — Prep Shell\n\nSynthetic prep shell used in unit tests.\n",
+            encoding="utf-8",
+        )
+    if include_inputs:
+        inputs_dir = fixture / "inputs"
+        inputs_dir.mkdir(exist_ok=True)
+        for i in range(extra_input_count):
+            (inputs_dir / f"source_{i:03d}.md").write_text(
+                f"Synthetic input {i}. Not a real source.\n",
+                encoding="utf-8",
+            )
+    tags = (
+        ["discovery-mode", "structural-path", "mixed-tier"]
+        if scenario_tags is _SENTINEL
+        else scenario_tags
+    )
+    metadata = {
+        "fixture_id": name,
+        "schema_version": 1,
+        "captured_at": "2026-04-19T00:00:00Z",
+        "authoring_mode": "synthetic_representative_prep",
+        "canon_policy_version": "0.95",
+        "plugin_version": "0.95.0",
+        "model_used": "n/a (prep shell)",
+        "model_version_hash": "n/a (prep shell)",
+        "scenario_tags": tags,
+    }
+    if metadata_overrides:
+        metadata.update(metadata_overrides)
+    (fixture / "fixture_metadata.json").write_text(
+        json.dumps(metadata, indent=2), encoding="utf-8",
+    )
+    return fixture
+
+
+def test_prep_shell_fixture_passes_validate(tmp_path: Path) -> None:
+    """A well-shaped prep shell (metadata + README + inputs) passes validate."""
+    fx_root = tmp_path / "golden"
+    fx_root.mkdir()
+    _make_prep_shell(fx_root)
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 0, result.stderr
+    assert "PASS project_prep_001" in result.stdout
+
+
+def test_prep_shell_missing_readme_fails(tmp_path: Path) -> None:
+    """Prep shell without README surfaces a missing-file finding."""
+    fx_root = tmp_path / "golden"
+    fx_root.mkdir()
+    _make_prep_shell(fx_root, include_readme=False)
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "missing-file" in result.stderr
+    assert "README.md" in result.stderr
+
+
+def test_prep_shell_missing_inputs_dir_fails(tmp_path: Path) -> None:
+    """Prep shell without inputs/ directory surfaces a missing-file finding."""
+    fx_root = tmp_path / "golden"
+    fx_root.mkdir()
+    _make_prep_shell(fx_root, include_inputs=False)
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "missing-file" in result.stderr
+    assert "inputs" in result.stderr
+
+
+def test_prep_shell_empty_inputs_dir_fails(tmp_path: Path) -> None:
+    """Prep shell with empty inputs/ surfaces a missing-file finding."""
+    fx_root = tmp_path / "golden"
+    fx_root.mkdir()
+    fixture = _make_prep_shell(fx_root, extra_input_count=0)
+    assert fixture.name == "project_prep_001"
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "missing-file" in result.stderr
+    assert "inputs" in result.stderr
+
+
+def test_prep_shell_empty_scenario_tags_fails(tmp_path: Path) -> None:
+    """Prep shell with empty scenario_tags surfaces metadata-scenario-tags."""
+    fx_root = tmp_path / "golden"
+    fx_root.mkdir()
+    _make_prep_shell(fx_root, scenario_tags=[])
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "metadata-scenario-tags" in result.stderr
+
+
+def test_prep_shell_wrong_fixture_id_fails(tmp_path: Path) -> None:
+    """Prep shell with fixture_id != directory name surfaces id mismatch."""
+    fx_root = tmp_path / "golden"
+    fx_root.mkdir()
+    _make_prep_shell(fx_root, metadata_overrides={"fixture_id": "other_name"})
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "metadata-id-mismatch" in result.stderr
+
+
+def test_prep_shell_missing_metadata_key_fails(tmp_path: Path) -> None:
+    """Prep shell with missing required metadata key surfaces metadata-field."""
+    fx_root = tmp_path / "golden"
+    fx_root.mkdir()
+    fixture = _make_prep_shell(fx_root)
+    # Drop required 'model_version_hash' to confirm required-key enforcement.
+    meta_path = fixture / "fixture_metadata.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta.pop("model_version_hash")
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "metadata-field" in result.stderr
+    assert "model_version_hash" in result.stderr
+
+
+def test_prep_shell_not_affected_by_missing_csvs(tmp_path: Path) -> None:
+    """Prep shells do NOT surface missing-file findings for A50..A60 CSVs."""
+    fx_root = tmp_path / "golden"
+    fx_root.mkdir()
+    _make_prep_shell(fx_root)
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 0
+    for csv_name in ("A50", "A51", "A58", "A59", "A60", "audit_expectations"):
+        assert csv_name not in result.stderr
+
+
+def test_prep_shell_real_fixture_project_0002_passes() -> None:
+    """The committed project_0002 prep shell under fixtures/golden/ passes."""
+    result = run_runner("--fixture", "project_0002", "--mode=validate")
+    assert result.returncode == 0, result.stderr
+    assert "PASS project_0002" in result.stdout
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

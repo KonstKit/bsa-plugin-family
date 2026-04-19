@@ -133,6 +133,69 @@ def _locate_fixture_files(fixture_dir: Path) -> dict[str, Path]:
     }
 
 
+PREP_SHELL_AUTHORING_MODE = "synthetic_representative_prep"
+PREP_SHELL_METADATA_REQUIRED = (
+    "fixture_id", "canon_policy_version", "authoring_mode",
+    "scenario_tags", "plugin_version", "captured_at",
+    "model_used", "model_version_hash",
+)
+
+
+def _validate_prep_shell(
+    fixture_dir: Path,
+    metadata: dict,
+    report: "FixtureReport",
+) -> "FixtureReport":
+    """Validate a prep-shell fixture (US-S2-03).
+
+    Prep shells intentionally ship without expected_outputs/: they provide
+    only fixture_metadata.json (declaring authoring_mode = synthetic_
+    representative_prep), README.md, and one or more sanitized inputs/
+    files. Sprint 4.5 US-S45-01 then populates expected_outputs/.
+    """
+    for required in PREP_SHELL_METADATA_REQUIRED:
+        if required not in metadata:
+            report.findings.append(Finding(
+                report.fixture_id, "metadata-field",
+                f"prep shell fixture_metadata.json: missing '{required}'",
+            ))
+    if metadata.get("fixture_id") and metadata["fixture_id"] != fixture_dir.name:
+        report.findings.append(Finding(
+            report.fixture_id, "metadata-id-mismatch",
+            f"fixture_metadata.fixture_id '{metadata.get('fixture_id')}' "
+            f"!= directory '{fixture_dir.name}'",
+        ))
+    tags = metadata.get("scenario_tags")
+    if not isinstance(tags, list) or not tags:
+        report.findings.append(Finding(
+            report.fixture_id, "metadata-scenario-tags",
+            "prep shell scenario_tags must be a non-empty list",
+        ))
+
+    readme = fixture_dir / "README.md"
+    if not readme.is_file():
+        report.findings.append(Finding(
+            report.fixture_id, "missing-file",
+            "prep shell requires README.md",
+        ))
+
+    inputs = fixture_dir / "inputs"
+    if not inputs.is_dir():
+        report.findings.append(Finding(
+            report.fixture_id, "missing-file",
+            "prep shell requires inputs/ directory",
+        ))
+    else:
+        input_files = [p for p in inputs.iterdir() if p.is_file()]
+        if not input_files:
+            report.findings.append(Finding(
+                report.fixture_id, "missing-file",
+                "prep shell requires at least one file under inputs/",
+            ))
+
+    return report
+
+
 def validate_fixture(fixture_dir: Path) -> FixtureReport:
     report = FixtureReport(fixture_id=fixture_dir.name)
 
@@ -141,6 +204,24 @@ def validate_fixture(fixture_dir: Path) -> FixtureReport:
         return report
 
     files = _locate_fixture_files(fixture_dir)
+
+    # Peek at fixture_metadata.json to detect prep-shell fixtures (US-S2-03).
+    # Prep shells validate only the skeleton (metadata + README + inputs),
+    # not the full claim layer, since they intentionally ship without
+    # expected_outputs/ yet. Keep this check BEFORE the required-files sweep
+    # so prep shells do not trigger missing-file findings on CSVs they
+    # legitimately lack.
+    if files["fixture_metadata"].is_file():
+        try:
+            metadata_peek = _read_json(files["fixture_metadata"])
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            metadata_peek = None
+        if (
+            isinstance(metadata_peek, dict)
+            and metadata_peek.get("authoring_mode") == PREP_SHELL_AUTHORING_MODE
+        ):
+            return _validate_prep_shell(fixture_dir, metadata_peek, report)
+
     for key in ("a50", "a51", "a58", "a59", "a60", "audit_expectations", "fixture_metadata"):
         if not files[key].is_file():
             report.findings.append(Finding(

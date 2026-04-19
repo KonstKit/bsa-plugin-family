@@ -1,0 +1,17 @@
+{
+  "fixture_id": "project_0002",
+  "schema_version": 1,
+  "captured_at": "2026-04-19T00:00:00Z",
+  "authoring_mode": "synthetic_representative_prep",
+  "_authoring_mode_comment": "Prep shell for Sprint 2 US-S2-03. Only scenario + README + inputs + metadata are present; expected_outputs/ + markers + audit_expectations land in Sprint 4.5 US-S45-01. fixture_runner.py recognises the prep suffix and short-circuits full validation, keeping CI green while the fixture matures.",
+  "canon_policy_version": "0.95",
+  "plugin_version": "0.95.0",
+  "model_used": "n/a (prep shell)",
+  "model_version_hash": "n/a (prep shell)",
+  "_model_fields_comment": "model fields stay placeholder until Sprint 4.5 either authors canonical outputs synthetically (authoring_mode=synthetic_representative) or captures a live-pipeline run (authoring_mode=captured_live).",
+  "scenario_tags": [
+    "discovery-mode",
+    "structural-path",
+    "mixed-tier"
+  ]
+}
