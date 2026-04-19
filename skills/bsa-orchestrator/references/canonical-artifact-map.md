@@ -30,7 +30,7 @@
 - `stage7/`
   - citation / consistency / skeptical / validation reports
 - `stage8/`
-  - readiness outputs + `no_new_facts_report.md`
+  - readiness outputs + `no_new_claims_report.md`
 - `handoff/`
   - `H1_exec_brief.md`
   - `H2_delivery_packet.md`

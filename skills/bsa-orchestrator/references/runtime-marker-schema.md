@@ -33,7 +33,7 @@
 - `discovery.d5.no_solution_leakage.pass.json`
 - optional (strict profile):
   - `discovery.d5.skeptical_review.pass.json`
-  - `discovery.d5.no_new_facts.pass.json`
+  - `discovery.d5.no_new_claims.pass.json` (legacy: `discovery.d5.no_new_facts.pass.json` accepted read-only in pre-v1.0 workspaces)
 - `discovery.exit.pass.json`
 - `discovery.go.json`
 - `discovery.pivot.json`

@@ -48,7 +48,7 @@ Use this skill as the control plane for discovery and main-cycle execution.
   - `bsa-citation-auditor`
   - `bsa-consistency-auditor`
   - `bsa-skeptical-reviewer`
-  - `bsa-no-new-facts-auditor`
+  - `bsa-no-new-claims-auditor`
   - `bsa-validation-readiness`
   - `bsa-handoff-packager`
 - `bsa-context-framer` runs between Stage 1 composite (`bsa-evidence-intake` -> `bsa-claim-binder`) and `bsa-semantic-extractor`. It owns Stage 2 framing; the orchestrator gates Stage 3 start on `stage2.context_state.pass`.
@@ -61,7 +61,7 @@ Use this skill as the control plane for discovery and main-cycle execution.
   - `d0-synthesis-gatekeeper`
   - `bsa-citation-auditor`
   - `bsa-skeptical-reviewer`
-  - `bsa-no-new-facts-auditor`
+  - `bsa-no-new-claims-auditor`
 - Add `bsa-evidence-intake` when mixed-source inventory, contradiction scan, or Stage 1 bridge materialization is required.
 - Add sidecars only when trigger contracts exist and their outputs remain derived-only.
 - Repo-visible routing contract: `config/request_skill_routes.json`, validated by `scripts/validate_request_skill_routing.py`.

@@ -1,6 +1,6 @@
 ---
 name: bsa-handoff-packager
-description: Assemble consumer-specific H1-H4 handoff proposals from validated canonical outputs with quote-fidelity and no-new-claims enforcement (legacy report naming may still use no-new-facts).
+description: Assemble consumer-specific H1-H4 handoff proposals from validated canonical outputs with quote-fidelity and no-new-claims enforcement (INV-03). ClaimType=analyst_judgment rows in H1/H4 are allowed when JustificationRationale references upstream ClaimIDs (INV-07).
 ---
 
 # BSA Handoff Packager
@@ -34,16 +34,16 @@ Use this skill after Stage 8 no-new-claims pass.
 2. Build H1-H4 packages by consumer profile.
 3. Attach claim references or `A51Ref` to every high-impact statement.
 4. Emit package outputs under `analysis/proposals/stage7_8/handoff/`.
-5. Submit outputs to `bsa-no-new-facts-auditor` before promotion.
+5. Submit outputs to `bsa-no-new-claims-auditor` before promotion.
 
 ## Invariant
 - Once a canonical equivalent exists, raw proposal folders are not valid fact sources for package generation.
 
 ## On Audit Failure
-1. Read handoff no-new-facts findings.
+1. Read handoff no-new-claims findings.
 2. Revise proposal-layer H1-H4 and manifest only.
 3. Route unresolved wording disputes via `A51Ref`.
-4. Re-submit handoff package for no-new-facts verification.
+4. Re-submit handoff package for no-new-claims verification.
 
 ## Validation Binding
 - `SCN-STAGE78-001-E`: H1-H4 generated without new-claim leakage.

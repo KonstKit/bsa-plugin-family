@@ -22,7 +22,7 @@ Workers write only to owned proposal/view folders. Canonical writes are orchestr
 | `bsa-citation-auditor` | `analysis/proposals/stage7_8/stage7/`, `analysis/discovery/proposals/d5/` | canonical/handoff |
 | `bsa-consistency-auditor` | `analysis/proposals/stage7_8/stage7/`, `analysis/discovery/proposals/d5/` | canonical/handoff |
 | `bsa-skeptical-reviewer` | `analysis/proposals/stage7_8/stage7/`, `analysis/discovery/proposals/d5/` | canonical/handoff |
-| `bsa-no-new-facts-auditor` | `analysis/proposals/stage7_8/stage8/`, `analysis/proposals/stage7_8/handoff/`, `analysis/discovery/proposals/d5/` | canonical/handoff |
+| `bsa-no-new-claims-auditor` | `analysis/proposals/stage7_8/stage8/`, `analysis/proposals/stage7_8/handoff/`, `analysis/discovery/proposals/d5/` | canonical/handoff |
 | `bsa-validation-readiness` | `analysis/proposals/stage7_8/stage7/`, `analysis/proposals/stage7_8/stage8/` | canonical/handoff |
 | `bsa-handoff-packager` | `analysis/proposals/stage7_8/handoff/` | canonical/handoff |
 | sidecars | `analysis/views/*` | canonical/handoff direct promotion |

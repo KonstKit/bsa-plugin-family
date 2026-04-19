@@ -20,7 +20,7 @@
         "bsa-citation-auditor",
         "bsa-consistency-auditor",
         "bsa-skeptical-reviewer",
-        "bsa-no-new-facts-auditor",
+        "bsa-no-new-claims-auditor",
         "bsa-validation-readiness",
         "bsa-handoff-packager"
       ],
@@ -40,7 +40,7 @@
         "d0-synthesis-gatekeeper",
         "bsa-citation-auditor",
         "bsa-skeptical-reviewer",
-        "bsa-no-new-facts-auditor"
+        "bsa-no-new-claims-auditor"
       ],
       "conditional_workers": [
         {

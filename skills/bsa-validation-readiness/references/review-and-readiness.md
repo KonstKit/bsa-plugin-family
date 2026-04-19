@@ -14,7 +14,7 @@
 ## Stage 8 Required Outputs
 - `readiness_assessment.md`
 - `readiness_profile_scorecard.md`
-- `no_new_facts_report.md`
+- `no_new_claims_report.md`
 - `residual_risk_list.md`
 - `next_iteration_backlog.md`
 
@@ -22,4 +22,4 @@
 - citation audit critical unsupported claims = 0
 - consistency verdict = PASS
 - skeptical review verdict = pass
-- no-new-facts verdict = pass
+- no-new-claims verdict = pass

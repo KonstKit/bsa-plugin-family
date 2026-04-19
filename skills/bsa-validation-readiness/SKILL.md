@@ -1,6 +1,6 @@
 ---
 name: bsa-validation-readiness
-description: Execute Stage 7 and Stage 8 validation/readiness workflow after mandatory citation, consistency, skeptical, and no-new-claims/no-new-facts audits.
+description: Execute Stage 7 and Stage 8 validation/readiness workflow after mandatory citation, consistency, skeptical, and no-new-claims audits (INV-03 leakage gate; analyst_judgment rows treated per INV-07).
 ---
 
 # BSA Validation Readiness
@@ -9,14 +9,14 @@ Run this skill for Stage 7/8 control flow.
 
 ## Scope
 - Assemble Stage 7 review pack.
-- Integrate citation + consistency + skeptical + no-new-claims/no-new-facts audits.
+- Integrate citation + consistency + skeptical + no-new-claims audits.
 - Produce validation outcome independent from readiness label/profile.
 - Enforce `KPI-003`, `KPI-004`, and `KPI-005` readiness gates.
 - When discovery branch is enabled, allow D5 outputs (`Discovery Report`, `Discovery Brief`) to reuse the same audit logic as non-canonical pre-entry checks.
 
 ## Inputs
 - `analysis/proposals/stage7_8/stage7/` audit reports and review artifacts.
-- `analysis/proposals/stage7_8/stage8/` readiness and no-new-facts artifacts.
+- `analysis/proposals/stage7_8/stage8/` readiness and no-new-claims artifacts.
 - Shared controls `analysis/canonical/core_controls/A51_issue_route_register.csv` and claim-layer controls.
 
 ## Outputs

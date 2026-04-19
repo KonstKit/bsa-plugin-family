@@ -1,6 +1,6 @@
 ---
 name: d0-synthesis-gatekeeper
-description: Execute D5 synthesis, D-Exit decision, and Stage1 handoff with profile-governed citation, skeptical, no-new-facts, and no-solution-leakage controls.
+description: Execute D5 synthesis, D-Exit decision, and Stage1 handoff with profile-governed citation, skeptical, no-new-claims, and no-solution-leakage controls. ClaimType=analyst_judgment is allowed in Discovery Report / Brief when JustificationRationale references upstream ClaimIDs (INV-07).
 ---
 
 # D0 Synthesis Gatekeeper
@@ -38,11 +38,11 @@ Before `discovery.go`:
 
 ## Optional Extended Preconditions
 - `discovery.d5.skeptical_review.pass.json` when skeptical profile is enabled.
-- `discovery.d5.no_new_facts.pass.json` when no-new-facts profile is enabled.
+- `discovery.d5.no_new_claims.pass.json` when no-new-claims profile is enabled (legacy filename `discovery.d5.no_new_facts.pass.json` accepted read-only in pre-v1.0 workspaces; migrate via `scripts/migrate_v0.9_to_v1.0.py`).
 - Profile gate sets are defined by orchestrator run-profile contract (`bsa-orchestrator/references/run-profile-gates.md`).
 
 ## Audit Reuse Rule
-- Reuse existing citation/skeptical/no-new-facts principles for discovery outputs.
+- Reuse existing citation/skeptical/no-new-claims principles for discovery outputs.
 - Discovery audit outputs remain non-canonical and cannot bypass governance.
 
 ## On Audit Failure

@@ -17,7 +17,7 @@ Discovery:
 - d5 -> `discovery.d5.citation_audit.pass.json` and `discovery.d5.no_solution_leakage.pass.json`
 - Optional strict discovery profile adds:
   - `discovery.d5.skeptical_review.pass.json`
-  - `discovery.d5.no_new_facts.pass.json`
+  - `discovery.d5.no_new_claims.pass.json` (legacy: `discovery.d5.no_new_facts.pass.json` — accepted for read-only in pre-v1.0 workspaces; migration via `scripts/migrate_v0.9_to_v1.0.py`)
 
 Main cycle:
 - stage1 -> `stage1.excerpts.merged.json`

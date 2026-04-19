@@ -27,7 +27,7 @@ Run profile defines which marker set is mandatory for promotion decisions in a g
 ## Extended Discovery Profile (strict)
 - Baseline plus:
   - `discovery.d5.skeptical_review.pass.json`
-  - `discovery.d5.no_new_facts.pass.json`
+  - `discovery.d5.no_new_claims.pass.json` (legacy marker filename `discovery.d5.no_new_facts.pass.json` accepted for read-only consumption in pre-v1.0 workspaces; migrate via `scripts/migrate_v0.9_to_v1.0.py`)
 
 ## Profile Routing Rules
 - Orchestrator chooses active profile.

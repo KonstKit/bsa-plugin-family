@@ -85,7 +85,7 @@ def test_ac1_direct_pack_worker_set_matches_spec() -> None:
         "bsa-context-framer",
         "bsa-semantic-extractor", "bsa-domain-modeler", "bsa-backbone-builder",
         "bsa-anchor-auditor", "bsa-contract-builder", "bsa-citation-auditor",
-        "bsa-consistency-auditor", "bsa-skeptical-reviewer", "bsa-no-new-facts-auditor",
+        "bsa-consistency-auditor", "bsa-skeptical-reviewer", "bsa-no-new-claims-auditor",
         "bsa-validation-readiness", "bsa-handoff-packager",
     }
     assert set(direct["worker_set"]) == expected
@@ -98,7 +98,7 @@ def test_ac1_discovery_pack_worker_set_matches_spec() -> None:
         "bsa-orchestrator", "d0-problem-framer", "d0-context-researcher",
         "d0-hypothesis-prioritizer", "d0-feasibility-assessor",
         "d0-synthesis-gatekeeper", "bsa-citation-auditor",
-        "bsa-skeptical-reviewer", "bsa-no-new-facts-auditor",
+        "bsa-skeptical-reviewer", "bsa-no-new-claims-auditor",
     }
     assert set(disc["worker_set"]) == expected
 

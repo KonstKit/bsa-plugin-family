@@ -26,5 +26,5 @@
 
 ## Final Checks
 - quote-fidelity and no-new-claims checks pass for Stage 8 and handoff.
-- discovery outputs are audited with reused citation/skeptical/no-new-facts principles before `discovery.go`.
+- discovery outputs are audited with reused citation/skeptical/no-new-claims principles before `discovery.go`.
 - `ART-VAL-001-09` is satisfied when discovery-triggered BPMN/C4 remain derived-only.
