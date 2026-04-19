@@ -44,7 +44,7 @@ Run this skill before readiness promotion.
 - Readiness cannot pass when critical unsupported claims > 0.
 
 ## EpistemicInsufficiency findings (Sprint 3 US-S3-03)
-In addition to classical "critical unsupported claims" detection (KPI-003 = 0), this auditor emits `EpistemicInsufficiency` findings on claims with `Criticality=1` whose supporting tier mix fails the epistemic-sufficiency rule from `../../bsa-evidence-intake/references/reliability_tier_spec.md`.
+In addition to classical "critical unsupported claims" detection (KPI-003 = 0), this auditor emits `EpistemicInsufficiency` findings on claims with `Criticality=1` whose supporting tier mix fails the epistemic-sufficiency rule from `../bsa-evidence-intake/references/reliability_tier_spec.md`.
 
 Finding sub-types:
 - `EpistemicInsufficiency / low_tier_only` — critical claim supported exclusively by T4-T5 sources; no T1-T3 anchor and no `A51Ref` waiver.

@@ -45,7 +45,7 @@ Run this skill inside composite Stage 1, after intake and before semantic extrac
 
 ### ClaimStrength propagation (Sprint 3 US-S3-03)
 - Every `direct` and `inference` A59 row MUST carry a numeric `ClaimStrength` in `[0.0, 1.0]`.
-- `ClaimStrength = max_supporting_tier_weight × (1 - decay_factor)` per `../../bsa-evidence-intake/references/reliability_tier_spec.md`. `max_supporting_tier_weight` is the highest tier weight across all A50 rows whose `SourceID` appears in the ExcerptID's supporting set; decay_factor defaults to 0 in Sprint 3.
+- `ClaimStrength = max_supporting_tier_weight × (1 - decay_factor)` per `../bsa-evidence-intake/references/reliability_tier_spec.md`. `max_supporting_tier_weight` is the highest tier weight across all A50 rows whose `SourceID` appears in the ExcerptID's supporting set; decay_factor defaults to 0 in Sprint 3.
 - `analyst_judgment` rows leave `ClaimStrength` BLANK — they use JustificationRationale + upstream ClaimID linkage instead of tier weights.
 - Tier weights: T1=1.00, T2=0.85, T3=0.65, T4=0.45, T5=0.20. `bsa-claim-binder` never invents tier weights — it reads them from the spec and looks up the source tier from A50. Source rows missing `ReliabilityTier` fail binding with a hard finding.
 - For claims with multiple supporting excerpts across sources of different tiers, ClaimStrength takes the MAX of the supporting tier weights (not the mean) — the strongest supporting evidence sets the floor.
