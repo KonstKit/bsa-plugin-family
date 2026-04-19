@@ -427,6 +427,30 @@ def test_stage2_summary_bad_context_mode_fails(tmp_path: Path) -> None:
     assert "stage2-summary-context-mode" in result.stderr
 
 
+def test_stage2_block_skipped_when_directory_absent(tmp_path: Path) -> None:
+    """Presence-gate regression: a fixture without canonical/stage2/ must still pass.
+
+    Protects the Stage 2 validator from becoming accidentally mandatory for
+    pre-Sprint-1 style fixtures or downstream-only fixtures. If a future
+    refactor makes the block unconditional, this test breaks immediately.
+    """
+    fx_root, clone = clone_fixture(tmp_path)
+    stage2_dir = clone / "expected_outputs" / "canonical" / "stage2"
+    shutil.rmtree(stage2_dir)
+    # Also remove the Stage 2 marker and the audit_expectations entry so
+    # the clone is internally consistent with a no-stage2 fixture.
+    stage2_marker = clone / "expected_markers" / "stage2.context_state.pass.json"
+    if stage2_marker.is_file():
+        stage2_marker.unlink()
+    expectations_path = clone / "audit_expectations.json"
+    expectations = json.loads(expectations_path.read_text(encoding="utf-8"))
+    expectations.get("expected_verdicts", {}).pop("stage2.context_state.pass", None)
+    expectations_path.write_text(json.dumps(expectations), encoding="utf-8")
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 0, result.stderr
+    assert "stage2-" not in result.stderr
+
+
 def test_stage2_missing_artifact_fails(tmp_path: Path) -> None:
     fx_root, clone = clone_fixture(tmp_path)
     ctx = clone / "expected_outputs" / "canonical" / "stage2" / "context_state_frame.md"

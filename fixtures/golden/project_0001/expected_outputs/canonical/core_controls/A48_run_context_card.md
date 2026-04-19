@@ -11,4 +11,4 @@
 | EntryCondition | Two sanitized narrative sources available (ops note + PM interview). |
 | CurrentStage | stage1 |
 | SelectedPath | process |
-| CanonPolicyVersion | 0.9 |
+| CanonPolicyVersion | 0.95 |

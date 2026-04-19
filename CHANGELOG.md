@@ -20,7 +20,8 @@ Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, 
 - `fixtures/golden/project_0001/expected_markers/stage2.context_state.pass.json`: new marker capturing Stage 2 promotion verdict, SCN coverage, and stakeholder/constraint counts.
 - `fixtures/golden/project_0001/audit_expectations.json`: expected_verdicts extended with `stage2.context_state.pass: PASS`.
 - `scripts/fixture_runner.py`: Stage 2 shape validator added — checks required headers in context_state_frame + system_context_seed, required columns in stakeholder_authority_map + constraints_dependencies_route, required fields in stage2_summary.json, plus stage_id='stage2' and context_mode in {direct, discovery_then_bsa}.
-- `tests/test_fixture_runner.py`: 7 new regression tests covering Stage 2 baseline pass + adversarial mutations (missing header, missing column, missing summary field, wrong stage_id, bad context_mode, deleted artifact).
+- `tests/test_fixture_runner.py`: 8 new regression tests covering Stage 2 baseline pass + adversarial mutations (missing header, missing column, missing summary field, wrong stage_id, bad context_mode, deleted artifact) + presence-gate test ensuring fixtures without `canonical/stage2/` still validate cleanly (prevents accidental mandatory-gating).
+- `docs/retros/sprint_1.md` — Sprint 1 retrospective documenting 4 approved commits, 6 review rounds total, delivery of bsa-context-framer skill closing the Stage 2 ownership gap, fixture extension, and the lesson-carryover from Sprint 0.5's defensive-validator pattern.
 
 ### Pre-Sprint-1 entries (preserved for reference)
 - Repository bootstrap: baseline structure, .gitignore, README, CHANGELOG, LICENSE, CONTRIBUTING (US-S0-01)
