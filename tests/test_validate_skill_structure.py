@@ -98,9 +98,15 @@ def test_ac3_broken_reference_fails(tmp_path: Path) -> None:
 
 
 def test_ac4_all_source_skills_pass() -> None:
-    """AC-4: all 22 source skills in the repo baseline pass."""
+    """AC-4: every source skill in the repo baseline passes structural lint.
+
+    Count starts at 22 post-Sprint-0 bootstrap and grows as new skills
+    are added each Sprint (+1 per skill). Assertion uses a minimum
+    bound instead of an exact count so passing the count forward on
+    every skill addition isn't required.
+    """
     skill_files = sorted((REPO_ROOT / "skills").glob("*/SKILL.md"))
-    assert len(skill_files) == 22, f"expected 22 skills, got {len(skill_files)}"
+    assert len(skill_files) >= 22, f"expected at least 22 skills, got {len(skill_files)}"
     result = run_validator(*skill_files, quiet=True)
     assert result.returncode == 0, (
         f"baseline health check failed:\nstdout:\n{result.stdout}\n"

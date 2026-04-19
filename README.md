@@ -24,7 +24,7 @@ Governance invariants: evidence-binding, single-writer canonical, no-new-claims,
 ## Repository layout
 
 ```
-skills/                 22 worker/auditor/sidecar skills (bsa-*, d0-*, sidecars)
+skills/                 23 worker/auditor/sidecar skills (bsa-*, d0-*, sidecars)
 scripts/                Bootstrap + (Sprint 0.5+) validators, fixture runners, migration tools
 tests/                  Unit tests for scripts
 fixtures/golden/        (Sprint 0.5+) Regression fixtures (end-to-end pipeline runs)
@@ -36,7 +36,7 @@ docs/                   (Sprint 0+) Inventory audits, privacy reports, architect
 .claude-plugin/         (Sprint 4+) Plugin manifest
 ```
 
-Note: v1.0.0 will include 23 skills once `bsa-context-framer` is added in Sprint 1 (Stage 2 worker). Current Phase 0 baseline has 22.
+Note: 23 skills as of Sprint 1 — `bsa-context-framer` (Stage 2 worker) was added after the Phase 0 baseline of 22 skills.
 
 ## Development
 

@@ -7,6 +7,9 @@ Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, 
 ## [Unreleased]
 
 ### Added
+- `skills/bsa-context-framer/` — new worker skill closing the Stage 2 runtime-native gap (Sprint 1 US-S1-01). Produces `context_state_frame.md`, `stakeholder_authority_map.md`, `system_context_seed.md`, `constraints_dependencies_route.md`, `stage2_summary.json` under `analysis/proposals/stage2/`. Three references: `context-state-contract.md` (artifact shape), `stakeholder-authority-rules.md` (authority taxonomy + contestation flow), `system-context-seed-template.md` (system-context structure + sidecar hook). Validation bindings `SCN-STAGE2-001-A..C`. Invariants: INV-01 evidence-binding per row; INV-07 analyst_judgment rows require JustificationRationale with upstream ClaimID references; Stage 2 may not introduce net-new actors/entities/events/statuses/rules.
+
+### Pre-Sprint-1 entries (preserved for reference)
 - Repository bootstrap: baseline structure, .gitignore, README, CHANGELOG, LICENSE, CONTRIBUTING (US-S0-01)
 - Skills imported from `~/.codex/skills/` at canon v0.9 baseline (22 skills: bsa-*, d0-*, c4-plantuml-from-context, camunda-bpmn-from-context, inot-prompt-builder) (US-S0-01)
 - `governance/immutable_invariants.md` — seven invariants anchoring governance: evidence-binding, single-writer canonical, no-new-claims, two-key promotion, A51 not a fact source, composition-via-orchestrator, ClaimType schema closed (US-S0-05)
