@@ -21,13 +21,13 @@ Plus: `docs/retros/sprint_2.md` (this file) + `v0.95.1` git tag (pending).
 
 **US-S2-02 (8 ACs per plan rev2):**
 - AC-1: PASS — `grep -r "no.new.facts" skills/` returns only migration artifacts, alias notes, and the explicit legacy-compat terminology note in `bsa-no-new-claims-auditor`.
-- AC-2: PASS — skill directory renamed, frontmatter updated, internal refs updated, cross-repo refs updated (orchestrator run-profile-gates.md, kpi-definitions.md, stage7_8-delivery-contracts.md, d0-synthesis-gatekeeper SKILL.md).
+- AC-2: PASS — skill directory renamed via `git mv` (preserving history), frontmatter updated, internal refs updated, cross-repo refs updated across 21 files including orchestrator references (run-profile-gates.md, kpi-definitions.md, runtime-marker-schema.md, agent-write-scope.md, canonical-artifact-map.md, merge-and-reentry-policy.md, pilot-runbook.md), `bsa-handoff-packager/SKILL.md`, `bsa-validation-readiness` (SKILL.md + review-and-readiness.md), `d0-synthesis-gatekeeper` (SKILL.md + synthesis-and-d-exit.md), and `config/request_skill_routes.json`.
 - AC-3: PASS — legacy marker filename `stage8.no_new_claims.pass.json` was already correct (the marker name never contained "facts"; only the report filename + skill name did).
 - AC-4: PASS — output reports renamed to `no_new_claims_report.md`, `handoff_no_new_claims_report.md`, `discovery_no_new_claims_report.md`; legacy variants explicitly documented as read-only-accepted for pre-v1.0 workspaces.
 - AC-5: PASS — `migrations/v0.9_to_v1.0/README.md` + `no_new_facts_rename.md` document the rename surface + deprecation window.
 - AC-6: PASS — `scripts/migrate_v0.9_to_v1.0.py` (~350 lines) + 14 unit tests in `tests/test_migrate_v0_9_to_v1_0.py` cover workspace migration with three-tier exit codes (0 success / 1 semantic finding / 2 invocation error), idempotent re-runs, and non-destructive behavior on partial-state workspaces.
 - AC-7: PASS — `docs/sem_audit_rename.md` checklist landed in part 3/3 with 21 documented findings (14 rewrites + 7 accepts). Codex review round 2 forced the intro and terminology key to explicitly scope INV-01 to direct/inference claims and call out the INV-07 `analyst_judgment` path — the checklist is now itself consistent with the invariant it governs.
-- AC-8: PASS — partial-state migration fixture covered via `test_migrate_partial_state_leaves_proposals_alone` and sibling idempotency tests.
+- AC-8: PASS — partial-state migration covered via `test_partial_workspace_tolerated` (tests/test_migrate_v0_9_to_v1_0.py:90) plus sibling tests `test_idempotent_second_run`, `test_target_conflict_halts_migration`, and `test_nested_workspace_layout` which together exercise the idempotent / non-destructive / conflict-halting properties on partial-state workspaces.
 
 **US-S2-01 (8 ACs per plan rev2):**
 - AC-1: PASS — `skills/bsa-handoff-packager/references/h1_spec.md` defines executive audience, ≤ 2-page cap, five required sections (`## Executive Summary`, `## Key Findings (≤5)`, `## Recommended Next Steps`, `## Risks & Blockers`, `## Confidence Assessment`), and the SCQA/Pyramid "answer first" opening rule.
