@@ -3,3 +3,10 @@
 # Validators and scanners are stdlib-only by design (US-S0-02 / US-S0-04).
 
 pytest>=8.0,<9
+
+# jsonschema is a *test-only* dependency. Runtime sidecars and validators
+# remain stdlib-only; jsonschema is imported via pytest.importorskip by
+# schema-conformance tests (US-S2-01 handoff manifest, US-S3-01 sidecar
+# anchor manifests) and is pinned here so CI actually runs those tests
+# rather than skipping them silently.
+jsonschema>=4.20,<5

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kkitanin/bsa-plugin-family/schemas/bpmn_anchor_manifest.schema.json",
+  "title": "Camunda BPMN sidecar anchor manifest",
+  "description": "Schema for analysis/views/bpmn/anchor_manifest.json produced in orchestrated mode. Required by ART-VAL-001-07 per skills/bsa-orchestrator/references/sidecar-integration.md. Consumed by the orchestrator's sidecar validator and by future downstream regression tooling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_version",
+    "generated_at",
+    "sidecar",
+    "canon_policy_version",
+    "view_files"
+  ],
+  "properties": {
+    "manifest_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sidecar": {
+      "type": "string",
+      "const": "camunda-bpmn-from-context"
+    },
+    "sidecar_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "canon_policy_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:\\+hash:[a-f0-9]{6,64})?$|^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
+    },
+    "view_files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "bpmn_profile", "anchor_map"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "\\.bpmn$"
+          },
+          "bpmn_profile": {
+            "type": "string",
+            "enum": ["documentation", "camunda-7", "camunda-8"]
+          },
+          "anchor_map": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["element_id", "element_kind", "a61_anchor_id"],
+              "properties": {
+                "element_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "element_kind": {
+                  "type": "string",
+                  "enum": [
+                    "StartEvent",
+                    "Task",
+                    "UserTask",
+                    "ServiceTask",
+                    "ReceiveTask",
+                    "SendTask",
+                    "ScriptTask",
+                    "BusinessRuleTask",
+                    "ManualTask",
+                    "CallActivity",
+                    "SubProcess",
+                    "ExclusiveGateway",
+                    "ParallelGateway",
+                    "InclusiveGateway",
+                    "EventBasedGateway",
+                    "BoundaryEvent",
+                    "IntermediateCatchEvent",
+                    "IntermediateThrowEvent",
+                    "EndEvent",
+                    "SequenceFlow",
+                    "MessageFlow",
+                    "Participant",
+                    "Lane",
+                    "DataObject"
+                  ]
+                },
+                "a61_anchor_id": {
+                  "type": "string",
+                  "pattern": "^ANC-[A-Z0-9_-]+$"
+                },
+                "notes": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

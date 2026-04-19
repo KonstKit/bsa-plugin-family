@@ -117,8 +117,23 @@ Model architecture as C4 first and PlantUML second. Extract the system in scope,
   - legend/title problems
   - avoidable layout churn
 
+## Integration Contract
+
+This skill is a **derived-only, non-canonical** BSA sidecar. When invoked as part of a BSA pipeline run, every generated diagram must trace back to canonical claim-layer anchors via `analysis/views/c4/anchor_manifest.json`. See `skills/bsa-orchestrator/references/sidecar-integration.md` for the orchestrator-owned rules; this skill adds the C4-specific details.
+
+- **Operating modes.** Two modes are supported:
+  - **Orchestrated** — invoked by `bsa-orchestrator` as a derived view aid. `anchor_manifest.json` MUST be produced alongside every emitted `.puml`; absence fails `ART-VAL-001-07`.
+  - **Standalone** — invoked directly by a user outside of a BSA pipeline (no `analysis/canonical/` in scope). The anchor manifest is skipped by default; the emitted `.puml` is informational only and carries no BSA governance weight.
+- **Required path (orchestrated mode).** `analysis/views/c4/anchor_manifest.json` — one manifest per C4 view directory. Adjacent `.puml` files reference manifest entries by `view_element_id`.
+- **Anchor mapping rule.** Every `view_element_id` in the PlantUML source (C4 `Person`, `System`, `Container`, `Component`, `Rel`, `Deployment_Node`, etc.) MUST map to a canonical `A61.AnchorID` in the manifest. Unmapped view elements are treated as fabrications.
+- **Non-canonical status.** The generated `.puml` is never promoted into `analysis/canonical/`. If the diagram surfaces a boundary or component that does not exist in the canonical claim-layer, that is a finding — route it through `A51` rather than editing the diagram to match.
+- **Detection heuristic.** If a `.puml` file is generated inside any path containing `analysis/` but no `anchor_manifest.json` is adjacent, the skill refuses to emit — it either asks for the missing manifest (orchestrated intent) or requires an explicit `--standalone` confirmation (standalone intent).
+
+See [references/integration-contract.md](references/integration-contract.md) for the manifest schema, mode-detection rules, and failure modes.
+
 ## References
 
+- Read [references/integration-contract.md](references/integration-contract.md) for orchestrated-vs-standalone mode rules, `anchor_manifest.json` schema, and BSA governance linkage.
 - Read [references/intake-and-questions.md](references/intake-and-questions.md) when the source material is incomplete, conflicting, or underspecified.
 - Read [references/c4-modeling-conventions.md](references/c4-modeling-conventions.md) for C4 view selection, abstraction control, naming, and review criteria.
 - Read [references/c4-plantuml-syntax.md](references/c4-plantuml-syntax.md) for the correct C4-PlantUML include matrix, macro syntax, layout rules, and minimal templates.

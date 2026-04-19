@@ -89,8 +89,23 @@ Build BPMN diagrams from evidence, not guesswork. Extract actors, systems, tasks
   - label overlap
   - avoidable global layout shifts
 
+## Integration Contract
+
+This skill is a **derived-only, non-canonical** BSA sidecar. When invoked as part of a BSA pipeline run, every generated BPMN view must trace back to canonical claim-layer anchors via `analysis/views/bpmn/anchor_manifest.json`. See `skills/bsa-orchestrator/references/sidecar-integration.md` for the orchestrator-owned rules; this skill adds the BPMN-specific details.
+
+- **Operating modes.** Two modes are supported:
+  - **Orchestrated** — invoked by `bsa-orchestrator` as a derived view aid. `anchor_manifest.json` MUST be produced alongside every emitted `.bpmn`; absence fails `ART-VAL-001-07`.
+  - **Standalone** — invoked directly by a user outside of a BSA pipeline (no `analysis/canonical/` in scope). The anchor manifest is skipped by default; the emitted `.bpmn` is informational only and carries no BSA governance weight.
+- **Required path (orchestrated mode).** `analysis/views/bpmn/anchor_manifest.json` — one manifest per BPMN view directory.
+- **Anchor mapping rule.** Every BPMN flow element `id` (start event, task, gateway, end event, sequence flow, boundary event, participant, lane, message flow, subprocess, call activity) MUST map to a canonical `A61.AnchorID` in the manifest. Unmapped flow elements are treated as fabrications.
+- **Non-canonical status.** The generated `.bpmn` is never promoted into `analysis/canonical/`. If the diagram surfaces a process step, actor, or outcome that does not exist in the canonical claim-layer, that is a finding — route it through `A51` rather than inventing BPMN elements to match.
+- **Detection heuristic.** If a `.bpmn` file is generated inside any path containing `analysis/` but no `anchor_manifest.json` is adjacent, the skill refuses to emit — it either asks for the missing manifest (orchestrated intent) or requires an explicit `--standalone` confirmation (standalone intent).
+
+See [references/integration-contract.md](references/integration-contract.md) for the manifest schema, mode-detection rules, and failure modes.
+
 ## References
 
+- Read [references/integration-contract.md](references/integration-contract.md) for orchestrated-vs-standalone mode rules, `anchor_manifest.json` schema, and BSA governance linkage.
 - Read [references/intake-and-questions.md](references/intake-and-questions.md) when the source material is incomplete, conflicting, or underspecified.
 - Read [references/modeling-conventions.md](references/modeling-conventions.md) for BPMN element mapping, naming, and review criteria.
 - Read [references/support-matrix.md](references/support-matrix.md) to confirm the construct-specific status per axis: `yes`, `partial`, `no`, `preserve-only`, or `n/a`.
