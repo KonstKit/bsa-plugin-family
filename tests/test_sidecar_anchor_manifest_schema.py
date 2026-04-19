@@ -8,6 +8,11 @@ output under ``references/anchor_manifest.schema.json``. These tests verify:
 2. A canonical "happy path" example for each sidecar validates against it.
 3. Contract-violation examples (wrong sidecar name, missing anchor id,
    unknown element kind) are rejected.
+4. The schema enum is a superset of the kinds documented in each sidecar's
+   reference corpus (c4-plantuml-syntax.md / support-matrix.md). Parsing
+   runs against the committed documents at test time so a future doc
+   update that introduces a new kind without a matching schema update is
+   caught on the next CI run (US-S3-01 review round 2).
 
 The tests do NOT re-implement the sidecar validators; they just pin the
 schema surface so future refactors cannot silently drop required fields.
@@ -16,6 +21,7 @@ schema surface so future refactors cannot silently drop required fields.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -136,6 +142,14 @@ BPMN_PREVIOUSLY_MISSING_KINDS = (
     "group",
     "transaction",
     "adHocSubProcess",
+    # Top-level containers and declarations added in review round 2 after
+    # the doc-driven test revealed they were documented but absent from
+    # the enum.
+    "collaboration",
+    "process",
+    "choreography",
+    "message",
+    "signal",
 )
 
 
@@ -318,73 +332,169 @@ def test_bpmn_schema_accepts_previously_missing_kind(kind: str) -> None:
     jsonschema.Draft202012Validator(schema).validate(doc)
 
 
-def test_c4_enum_is_superset_of_documented_taxonomy() -> None:
-    """Structural guarantee: every C4 macro name called out in
-    references/c4-plantuml-syntax.md as a selectable view element kind
-    must appear in the schema enum. This prevents a future doc update
-    from silently creating a new unvalidated kind.
+C4_SYNTAX_DOC = (
+    REPO_ROOT
+    / "skills"
+    / "c4-plantuml-from-context"
+    / "references"
+    / "c4-plantuml-syntax.md"
+)
+BPMN_SUPPORT_DOC = (
+    REPO_ROOT
+    / "skills"
+    / "camunda-bpmn-from-context"
+    / "references"
+    / "support-matrix.md"
+)
 
-    We scan for the documented macro-family names and check each against
-    the schema enum. Directional relationship variants (Rel_U, BiRel_L,
-    etc.) are intentionally collapsed to their base kind in the enum and
-    are therefore excluded from this superset check.
-    """
-    schema = _load(C4_SCHEMA)
-    enum = set(
+
+def _schema_enum(schema_path: Path, kind_field: str) -> set[str]:
+    schema = _load(schema_path)
+    return set(
         schema["properties"]["view_files"]["items"]["properties"]["anchor_map"][
             "items"
-        ]["properties"]["view_element_kind"]["enum"]
+        ]["properties"][kind_field]["enum"]
     )
-    # Authoritative documented kinds the enum MUST cover.
-    documented = {
-        "Person", "Person_Ext",
-        "System", "System_Ext", "SystemDb", "SystemDb_Ext",
-        "SystemQueue", "SystemQueue_Ext",
-        "Container", "Container_Ext",
-        "ContainerDb", "ContainerDb_Ext",
-        "ContainerQueue", "ContainerQueue_Ext",
-        "Component", "Component_Ext",
-        "ComponentDb", "ComponentDb_Ext",
-        "ComponentQueue", "ComponentQueue_Ext",
-        "Boundary", "Enterprise_Boundary",
-        "System_Boundary", "Container_Boundary",
-        "Deployment_Node", "Deployment_Node_L", "Deployment_Node_R",
-        "Node", "Node_L", "Node_R",
-        "Rel", "BiRel", "RelIndex",
+
+
+def _parse_c4_doc_kinds() -> set[str]:
+    """Extract C4 element + relationship kinds from the committed syntax doc.
+
+    Scoped to "## Core Element Macros" (elements) + "## Relationship Macros"
+    (base Rel / BiRel / RelIndex only). Directional variants (Rel_U,
+    BiRel_Left, etc.) are intentionally collapsed to their base kind in
+    the schema and are not present in the doc as macros-with-arg-lists,
+    so they are excluded naturally. Layout / tagging helpers (Index(),
+    SHOW_LEGEND, LAYOUT_*) live in other sections and are out of scope.
+    """
+    text = C4_SYNTAX_DOC.read_text(encoding="utf-8")
+    core_start = text.index("## Core Element Macros")
+    rel_start = text.index("## Relationship Macros")
+    support_start = text.index("## Support Matrix")
+    element_scope = text[core_start:rel_start]
+    rel_scope = text[rel_start:support_start]
+    element_macros = set(
+        re.findall(r"^- `([A-Z][A-Za-z0-9_]*)\(", element_scope, flags=re.MULTILINE)
+    )
+    rel_macros = set(
+        re.findall(r"^- `(Rel|BiRel|RelIndex)\(", rel_scope, flags=re.MULTILINE)
+    )
+    return element_macros | rel_macros
+
+
+_BPMN_NON_ELEMENT_TOKENS = frozenset(
+    {
+        # Status-matrix vocabulary that happens to get backticked.
+        "yes",
+        "no",
+        "partial",
+        "n",
+        "a",
+        "preserve",
+        "full",
+        "exactly",
+        # Event-attribute refs (attached to events, not element kinds).
+        "messageRef",
+        "signalRef",
+        "errorRef",
+        "escalationRef",
+        "correlationKey",
+        # Runtime attributes of events / tasks (attribute, not element).
+        "timeDate",
+        "timeCycle",
+        "timeDuration",
+        "name",
+        "id",
+        "type",
+        "retries",
+        "priorityDefinition",
+        "subscription",
+        "assignmentDefinition",
+        "taskSchedule",
+        "taskListeners",
+        "taskHeaders",
+        "taskDefinition",
+        "eventType",
+        "boundary",
+        # Resource roles and reference attributes (attribute on an activity).
+        "humanPerformer",
+        "processRef",
+        # "undefinedTask" is the doc's informal alias for a bare <task>; the
+        # spec XML tag is still <task>, so we treat this as already covered
+        # by the 'task' kind rather than a separate element.
+        "undefinedTask",
+        # Non-BPMN vocabulary that happens to be backticked in prose.
+        "smoke",
+        "greenfield",
+        "adjudication",
     }
+)
+
+
+def _parse_bpmn_doc_kinds() -> set[str]:
+    """Extract BPMN element kinds from the committed support matrix.
+
+    Element kinds are matched by shape (camelCase, lowercase-first) and
+    filtered against a known set of non-element tokens: event definitions
+    (``*EventDefinition``), event-attribute refs (``*Ref``, ``correlationKey``),
+    runtime attributes (``timeDate``, ``retries``, ``priorityDefinition``, ...),
+    resource roles (``humanPerformer``), and status keywords. The filter
+    list lives in ``_BPMN_NON_ELEMENT_TOKENS`` above.
+    """
+    text = BPMN_SUPPORT_DOC.read_text(encoding="utf-8")
+    tokens = set(re.findall(r"`([a-zA-Z][a-zA-Z0-9_]*)`", text))
+
+    def is_element(t: str) -> bool:
+        if not re.match(r"^[a-z][a-zA-Z0-9]*$", t):
+            return False
+        if t.endswith("Definition"):
+            return False
+        if t in _BPMN_NON_ELEMENT_TOKENS:
+            return False
+        return True
+
+    return {t for t in tokens if is_element(t)}
+
+
+def test_c4_enum_is_superset_of_documented_taxonomy() -> None:
+    """Every C4 macro backticked with an arg-list in c4-plantuml-syntax.md
+    must appear in the schema enum. Parsing runs against the committed
+    doc at test time, so a future doc update that introduces a new macro
+    without extending the schema enum fails on the next CI run."""
+    enum = _schema_enum(C4_SCHEMA, "view_element_kind")
+    documented = _parse_c4_doc_kinds()
+    assert documented, "parser returned empty set — parse heuristic broke"
     missing = documented - enum
-    assert not missing, f"C4 schema enum missing documented kinds: {sorted(missing)}"
+    assert not missing, (
+        f"C4 schema enum missing documented macros: {sorted(missing)}. "
+        f"Either add them to references/anchor_manifest.schema.json or "
+        f"justify their exclusion in the schema description."
+    )
 
 
 def test_bpmn_enum_is_superset_of_documented_taxonomy() -> None:
-    """Structural guarantee: every BPMN element kind called out in
-    references/support-matrix.md as a supported construct must appear
-    in the schema enum (element-level kinds only — event definitions are
-    attributes of event elements, not standalone IDs, and are therefore
-    excluded).
-    """
-    schema = _load(BPMN_SCHEMA)
-    enum = set(
-        schema["properties"]["view_files"]["items"]["properties"]["anchor_map"][
-            "items"
-        ]["properties"]["element_kind"]["enum"]
-    )
-    documented = {
-        "startEvent", "endEvent",
-        "intermediateCatchEvent", "intermediateThrowEvent",
-        "boundaryEvent",
-        "task", "userTask", "serviceTask", "receiveTask", "sendTask",
-        "scriptTask", "businessRuleTask", "manualTask",
-        "callActivity", "subProcess", "transaction", "adHocSubProcess",
-        "exclusiveGateway", "parallelGateway", "inclusiveGateway",
-        "eventBasedGateway", "complexGateway",
-        "sequenceFlow", "messageFlow",
-        "participant", "lane", "laneSet",
-        "dataObject", "dataObjectReference", "dataStoreReference",
-        "textAnnotation", "association", "group",
-    }
+    """Every BPMN element kind backticked in support-matrix.md (after
+    filtering out event definitions, event-attribute refs, runtime
+    attributes, resource roles, and status keywords) must appear in the
+    schema enum. Parsing runs against the committed doc at test time, so
+    a future doc update that introduces a new kind without extending the
+    schema enum fails on the next CI run.
+
+    Note: the schema enum intentionally includes a few kinds the doc
+    references only via narrative phrases (e.g., 'XOR/AND/OR gateways'
+    covers exclusive/parallel/inclusive Gateway, 'core tasks' covers
+    manualTask). Those are 'extra in schema' relative to the parse and
+    are therefore permitted by the superset direction of this check."""
+    enum = _schema_enum(BPMN_SCHEMA, "element_kind")
+    documented = _parse_bpmn_doc_kinds()
+    assert documented, "parser returned empty set — parse heuristic broke"
     missing = documented - enum
-    assert not missing, f"BPMN schema enum missing documented kinds: {sorted(missing)}"
+    assert not missing, (
+        f"BPMN schema enum missing documented kinds: {sorted(missing)}. "
+        f"Either add them to references/anchor_manifest.schema.json, or "
+        f"add the token to _BPMN_NON_ELEMENT_TOKENS with justification "
+        f"(if it is actually an attribute rather than an element kind)."
+    )
 
 
 if __name__ == "__main__":

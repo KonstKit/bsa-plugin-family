@@ -110,6 +110,7 @@ Per-element required fields:
   - **subprocess-like activities:** `callActivity`, `subProcess`, `transaction`, `adHocSubProcess`.
   - **gateways:** `exclusiveGateway`, `parallelGateway`, `inclusiveGateway`, `eventBasedGateway`, `complexGateway`.
   - **flows and collaboration:** `sequenceFlow`, `messageFlow`, `participant`, `lane`, `laneSet`.
+  - **top-level containers and declarations:** `collaboration`, `process`, `choreography`, `message`, `signal`. Anchoring these is uncommon (flow nodes carry most anchors), but the schema accepts them for completeness.
   - **data and annotations:** `dataObject`, `dataObjectReference`, `dataStoreReference`, `textAnnotation`, `association`, `group`.
   - **not element kinds (these are attributes of event elements, not standalone IDs):** `messageEventDefinition`, `timerEventDefinition`, `signalEventDefinition`, `errorEventDefinition`, `escalationEventDefinition`, `conditionalEventDefinition`, `terminateEventDefinition`, `cancelEventDefinition`, `compensateEventDefinition`, `linkEventDefinition`, `multipleEventDefinition`. Anchor these by pointing `element_kind` at the owning event element (`startEvent`, `boundaryEvent`, etc.) and using `notes` to record the event-definition subtype if helpful.
 - `a61_anchor_id` — canonical anchor ID; MUST exist in `analysis/canonical/core_controls/A61*`.
