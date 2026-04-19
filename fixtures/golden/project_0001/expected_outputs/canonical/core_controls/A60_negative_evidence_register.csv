@@ -1,0 +1,2 @@
+NegEvID,SourceID,ExcerptRef,RelatedClaimID,NegativeFinding,A51Ref,Notes
+N-001,S-002,E-005,C-005,"Exact duplicate-rate figure (15%) is explicitly PM's estimate, not a measured system metric — absence of ticketing-system data to corroborate.",A51-001,Negative evidence = absence of system-sourced figure; routed to A51 for validation

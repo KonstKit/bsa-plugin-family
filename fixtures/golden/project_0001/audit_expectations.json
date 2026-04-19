@@ -1,0 +1,23 @@
+{
+  "fixture_id": "project_0001",
+  "scenario": "Support-ticket triage analysis, direct mode, process path",
+  "expected_verdicts": {
+    "stage1.excerpts.merged": "merged",
+    "stage3.citation_audit.pass": "PASS",
+    "stage8.no_new_claims.pass": "PASS"
+  },
+  "expected_kpi_bounds": {
+    "KPI-001_weighted_coverage": {"min": 0.55, "max": 0.80, "actual": 0.62},
+    "KPI-003_critical_unsupported_claims": {"exact": 0},
+    "KPI-005_new_claim_leakage": {"exact": 0}
+  },
+  "expected_invariants": [
+    "every A59 row has SourceID+ExcerptID OR A51Ref",
+    "every analyst_judgment row has non-empty justification_rationale that references >= 1 upstream ClaimID",
+    "every A51 row has IssueType + Severity + BlockingStatus",
+    "no A59 row has ClaimType outside {direct, inference, analyst_judgment}"
+  ],
+  "expected_a51_routes": ["A51-001", "A51-002"],
+  "expected_claim_types_present": ["direct", "inference", "analyst_judgment"],
+  "notes": "Regression baseline. Any diff between fixture state on disk and committed expected_outputs/ signals drift."
+}

@@ -51,6 +51,10 @@ jobs:
         run: |
           python scripts/validate_request_skill_routing.py
 
+      - name: Golden fixture runner (US-S05-01)
+        run: |
+          python scripts/fixture_runner.py --mode=both
+
       - name: Inventory audit (US-S0-04)
         run: |
           python scripts/inventory_audit.py --output docs/inventory_audit.md

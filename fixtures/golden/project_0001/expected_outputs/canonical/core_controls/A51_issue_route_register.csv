@@ -1,0 +1,3 @@
+A51Ref,IssueType,Severity,BlockingStatus,RaisedByStage,RelatedSourceID,RelatedClaimID,NextAction,ResolutionStatus
+A51-001,uncertainty,low,informational,stage1,S-002,C-005,Confirm the "fifteen percent" duplicate-rate estimate against a ticketing-system report,open
+A51-002,decision_needed,medium,soft,stage3,,C-008,Validate whether SLA windows need channel-specific variants,open

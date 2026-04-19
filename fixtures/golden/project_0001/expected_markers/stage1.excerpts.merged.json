@@ -1,0 +1,13 @@
+{
+  "marker_id": "stage1.excerpts.merged",
+  "stage": "stage1",
+  "verdict": "merged",
+  "timestamp": "2026-02-20T10:00:00Z",
+  "canon_policy_version": "0.9",
+  "source_count": 2,
+  "excerpt_count": 6,
+  "claim_count": 8,
+  "negative_evidence_count": 1,
+  "a51_count": 2,
+  "notes": "Stage 1 composite promoted: source_manifest populated from S-001 and S-002, A58/A59/A60 merged into canonical core_controls."
+}

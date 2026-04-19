@@ -1,0 +1,11 @@
+{
+  "marker_id": "stage3.citation_audit.pass",
+  "stage": "stage3",
+  "verdict": "PASS",
+  "timestamp": "2026-02-21T09:00:00Z",
+  "canon_policy_version": "0.9",
+  "kpi_001_weighted_coverage": 0.62,
+  "kpi_001_target": 0.75,
+  "kpi_003_critical_unsupported_claims": 0,
+  "notes": "Weighted coverage below the post-Sprint-3 target 0.75 because the fixture deliberately keeps ClaimStrength moderate (T3/T4 sources only) to demonstrate the tier-weighting pathway; KPI-003 (blocker gate) remains satisfied."
+}

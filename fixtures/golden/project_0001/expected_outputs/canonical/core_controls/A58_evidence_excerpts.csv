@@ -1,0 +1,7 @@
+ExcerptID,SourceID,Locator,ExcerptText,Notes
+E-001,S-001,"source_001_ticket_flow.md:L5-L8","Tickets arrive via three channels: support@example.test email inbox, self-service portal form, and escalation-tagged copy from billing team.",Verbatim quote of intake channels; evidence for C-001
+E-002,S-001,"source_001_ticket_flow.md:L10","Every ticket is assigned a severity within one hour; severities are Low, Medium, High, Critical; High and Critical page the on-call agent.",Triage assignment + pager rule; evidence for C-002 and C-003
+E-003,S-001,"source_001_ticket_flow.md:L12-L16","Triage closes with one of four outcomes: resolved in first contact, escalated to engineering, marked duplicate, or routed to billing.",Outcomes enumeration; evidence for C-004
+E-004,S-001,"source_001_ticket_flow.md:L18","SLA is 4 hours for High/Critical initial response, 1 business day for Low/Medium.",SLA windows; evidence for C-007
+E-005,S-002,"source_002_pm_interview.md:L5","The biggest recurring issue is duplicate tickets… maybe fifteen percent of all tickets are duplicates.",Pain point + rough estimate; evidence for C-005
+E-006,S-002,"source_002_pm_interview.md:L7","Escalations to engineering are the slowest path; agents sometimes escalate without reproduction steps; engineering sends it back, adds another half day.",Escalation-quality pain point; evidence for C-006

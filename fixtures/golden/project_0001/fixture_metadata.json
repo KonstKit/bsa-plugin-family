@@ -1,0 +1,13 @@
+{
+  "fixture_id": "project_0001",
+  "schema_version": 1,
+  "captured_at": "2026-04-19T00:00:00Z",
+  "authoring_mode": "synthetic_representative",
+  "_authoring_mode_comment": "Hand-authored Phase-0 fixture demonstrating contract shapes + evidence-binding invariants. NOT the output of a live model-driven pipeline run. Sprint 4.5 plans a parallel fixture set captured from real runs.",
+  "canon_policy_version": "0.9",
+  "plugin_version": "0.9.0-foundation",
+  "model_used": "n/a (synthetic fixture)",
+  "model_version_hash": "n/a (synthetic fixture)",
+  "_model_fields_comment": "model_used / model_version_hash will be populated by Sprint 4.5 live-run fixtures (per plan US-S05-01 AC-5) to enable model-drift regression warnings.",
+  "scenario_tags": ["direct-mode", "process-path", "analyst-judgment-present"]
+}
