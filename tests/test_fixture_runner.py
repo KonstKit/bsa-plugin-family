@@ -270,6 +270,19 @@ def test_metadata_missing_model_version_hash_fails(tmp_path: Path) -> None:
     assert "model_version_hash" in result.stderr
 
 
+def test_metadata_missing_captured_at_fails(tmp_path: Path) -> None:
+    """Retro-round codex: captured_at presence is required by AC-5."""
+    fx_root, clone = clone_fixture(tmp_path)
+    meta = clone / "fixture_metadata.json"
+    data = json.loads(meta.read_text(encoding="utf-8"))
+    data.pop("captured_at", None)
+    meta.write_text(json.dumps(data), encoding="utf-8")
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "metadata-field" in result.stderr
+    assert "captured_at" in result.stderr
+
+
 def test_locator_out_of_range_fails(tmp_path: Path) -> None:
     """Round-2 codex minor: locator pointing past file length must fail."""
     fx_root, clone = clone_fixture(tmp_path)

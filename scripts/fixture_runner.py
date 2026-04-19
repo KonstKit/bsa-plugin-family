@@ -323,7 +323,7 @@ def validate_fixture(fixture_dir: Path) -> FixtureReport:
         # Sprint 4.5 cannot silently drop it).
         for required in (
             "fixture_id", "canon_policy_version", "plugin_version",
-            "model_used", "model_version_hash",
+            "model_used", "model_version_hash", "captured_at",
         ):
             if required not in metadata:
                 report.findings.append(Finding(
