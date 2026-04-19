@@ -16,6 +16,11 @@ Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, 
 - `skills/bsa-claim-binder/SKILL.md`: invariants expanded to close the ClaimType enum (INV-07), clarify evidence-binding for direct/inference rows, and explicitly state that claim-binder itself does NOT author analyst_judgment rows during Stage 1 intake.
 - `config/request_skill_routes.json`: direct-pack worker_set extended with bsa-context-framer; runtime_notes on the direct route updated to describe the new Stage 2 ownership and the stage2.context_state.pass gate.
 - `tests/test_validate_request_skill_routing.py`: expected direct-pack worker_set assertion updated from 14 to 15 skills (rationale in docstring).
+- `fixtures/golden/project_0001/expected_outputs/canonical/stage2/`: new directory with 5 Stage 2 artifacts (context_state_frame, stakeholder_authority_map, system_context_seed, constraints_dependencies_route, stage2_summary.json) demonstrating the expected shape that `bsa-context-framer` produces; Stage 2 artifacts reference upstream ClaimIDs (C-001..C-007) and route authority contention through A51 (Sprint 1 US-S1-02).
+- `fixtures/golden/project_0001/expected_markers/stage2.context_state.pass.json`: new marker capturing Stage 2 promotion verdict, SCN coverage, and stakeholder/constraint counts.
+- `fixtures/golden/project_0001/audit_expectations.json`: expected_verdicts extended with `stage2.context_state.pass: PASS`.
+- `scripts/fixture_runner.py`: Stage 2 shape validator added — checks required headers in context_state_frame + system_context_seed, required columns in stakeholder_authority_map + constraints_dependencies_route, required fields in stage2_summary.json, plus stage_id='stage2' and context_mode in {direct, discovery_then_bsa}.
+- `tests/test_fixture_runner.py`: 7 new regression tests covering Stage 2 baseline pass + adversarial mutations (missing header, missing column, missing summary field, wrong stage_id, bad context_mode, deleted artifact).
 
 ### Pre-Sprint-1 entries (preserved for reference)
 - Repository bootstrap: baseline structure, .gitignore, README, CHANGELOG, LICENSE, CONTRIBUTING (US-S0-01)

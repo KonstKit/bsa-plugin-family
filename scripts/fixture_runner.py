@@ -54,6 +54,39 @@ CLAIMID_REF_RE = re.compile(r"\bC-\d+\b")
 # surfaces as a finding so future fixtures cannot quietly drift.
 LOCATOR_RE = re.compile(r"^(?P<file>[^:]+):L(?P<start>\d+)(?:-L(?P<end>\d+))?$")
 
+# Stage 2 shape contract (from bsa-context-framer/references/context-state-contract.md
+# + bsa-orchestrator/references/stage2-runtime-contract.md; both must stay in lockstep).
+STAGE2_CONTEXT_STATE_REQUIRED_HEADERS = (
+    "## Problem Or Objective",
+    "## Scope Boundary",
+    "## Context Mode",
+    "## Stakeholders",
+    "## Constraints",
+    "## Dependencies",
+    "## Open Uncertainties",
+)
+STAGE2_SYSTEM_CONTEXT_REQUIRED_HEADERS = (
+    "## System Boundary",
+    "## Neighboring Systems",
+    "## Interface Obligations",
+    "## Context Triggers",
+)
+STAGE2_STAKEHOLDER_COLUMNS = (
+    "stakeholder_id", "stakeholder_name", "authority_level",
+    "decision_scope", "linked_a51_refs",
+)
+STAGE2_CONSTRAINTS_COLUMNS = (
+    "constraint_id", "dependency_id", "source_ref",
+    "escalation_target", "linked_a51_refs",
+)
+STAGE2_SUMMARY_REQUIRED_FIELDS = (
+    "stage_id", "summary_version", "context_mode",
+    "stakeholder_count", "constraint_count", "dependency_count",
+    "seed_source", "stage1_digest", "stage2_seed_digest",
+    "methodology_digest", "contract_version", "stale_if",
+    "linked_a51_count", "required_headers_present",
+)
+
 
 @dataclass
 class Finding:
@@ -276,6 +309,103 @@ def validate_fixture(fixture_dir: Path) -> FixtureReport:
                 report.findings.append(Finding(
                     report.fixture_id, "a51-missing-field",
                     f"A51 {row_label}: missing '{required}'",
+                ))
+
+    # ---- Stage 2 shape (optional per fixture) ----------------------
+    stage2_dir = fixture_dir / "expected_outputs" / "canonical" / "stage2"
+    if stage2_dir.is_dir():
+        stage2_required_files = {
+            "context_state_frame.md": STAGE2_CONTEXT_STATE_REQUIRED_HEADERS,
+            "system_context_seed.md": STAGE2_SYSTEM_CONTEXT_REQUIRED_HEADERS,
+        }
+        for filename, required_headers in stage2_required_files.items():
+            fpath = stage2_dir / filename
+            if not fpath.is_file():
+                report.findings.append(Finding(
+                    report.fixture_id, "stage2-missing-file",
+                    f"Stage 2 expected output missing: {filename}",
+                ))
+                continue
+            try:
+                text = fpath.read_text(encoding="utf-8")
+            except OSError as exc:
+                report.findings.append(Finding(
+                    report.fixture_id, "stage2-read-error",
+                    f"Stage 2 {filename}: {exc}",
+                ))
+                continue
+            for header in required_headers:
+                if header not in text:
+                    report.findings.append(Finding(
+                        report.fixture_id, "stage2-missing-header",
+                        f"Stage 2 {filename}: required header missing: {header!r}",
+                    ))
+
+        for filename, required_cols in (
+            ("stakeholder_authority_map.md", STAGE2_STAKEHOLDER_COLUMNS),
+            ("constraints_dependencies_route.md", STAGE2_CONSTRAINTS_COLUMNS),
+        ):
+            fpath = stage2_dir / filename
+            if not fpath.is_file():
+                report.findings.append(Finding(
+                    report.fixture_id, "stage2-missing-file",
+                    f"Stage 2 expected output missing: {filename}",
+                ))
+                continue
+            try:
+                text = fpath.read_text(encoding="utf-8")
+            except OSError as exc:
+                report.findings.append(Finding(
+                    report.fixture_id, "stage2-read-error",
+                    f"Stage 2 {filename}: {exc}",
+                ))
+                continue
+            for col in required_cols:
+                if col not in text:
+                    report.findings.append(Finding(
+                        report.fixture_id, "stage2-missing-column",
+                        f"Stage 2 {filename}: required column missing: {col!r}",
+                    ))
+
+        summary_path = stage2_dir / "stage2_summary.json"
+        if not summary_path.is_file():
+            report.findings.append(Finding(
+                report.fixture_id, "stage2-missing-file",
+                "Stage 2 expected output missing: stage2_summary.json",
+            ))
+        else:
+            try:
+                summary_data = _read_json(summary_path)
+            except json.JSONDecodeError as exc:
+                report.findings.append(Finding(
+                    report.fixture_id, "stage2-summary-parse",
+                    f"stage2_summary.json: invalid JSON: {exc}",
+                ))
+                summary_data = None
+            if isinstance(summary_data, dict):
+                for field_name in STAGE2_SUMMARY_REQUIRED_FIELDS:
+                    if field_name not in summary_data:
+                        report.findings.append(Finding(
+                            report.fixture_id, "stage2-summary-field",
+                            f"stage2_summary.json: missing required field '{field_name}'",
+                        ))
+                if summary_data.get("stage_id") not in (None, "stage2"):
+                    report.findings.append(Finding(
+                        report.fixture_id, "stage2-summary-stage-id",
+                        f"stage2_summary.json: stage_id must be 'stage2', got "
+                        f"{summary_data.get('stage_id')!r}",
+                    ))
+                cm = summary_data.get("context_mode")
+                if cm is not None and cm not in ("direct", "discovery_then_bsa"):
+                    report.findings.append(Finding(
+                        report.fixture_id, "stage2-summary-context-mode",
+                        f"stage2_summary.json: context_mode must be 'direct' or "
+                        f"'discovery_then_bsa', got {cm!r}",
+                    ))
+            elif summary_data is not None:
+                report.findings.append(Finding(
+                    report.fixture_id, "stage2-summary-shape",
+                    "stage2_summary.json: top-level must be a JSON object",
                 ))
 
     # ---- Markers ----------------------------------------------------

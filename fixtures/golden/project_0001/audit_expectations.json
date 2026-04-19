@@ -3,6 +3,7 @@
   "scenario": "Support-ticket triage analysis, direct mode, process path",
   "expected_verdicts": {
     "stage1.excerpts.merged": "merged",
+    "stage2.context_state.pass": "PASS",
     "stage3.citation_audit.pass": "PASS",
     "stage8.no_new_claims.pass": "PASS"
   },

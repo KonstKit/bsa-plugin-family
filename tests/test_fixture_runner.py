@@ -350,6 +350,93 @@ def test_locator_missing_file_fails(tmp_path: Path) -> None:
     assert "locator-file-missing" in result.stderr
 
 
+def test_stage2_baseline_passes(tmp_path: Path) -> None:
+    """US-S1-02 AC-2: Stage 2 expected_outputs in baseline fixture pass validation."""
+    result = run_runner("--mode=validate")
+    assert result.returncode == 0, result.stderr
+    # Also confirm stage2 directory exists in the baseline
+    stage2 = BASELINE / "expected_outputs" / "canonical" / "stage2"
+    assert stage2.is_dir()
+    for name in (
+        "context_state_frame.md",
+        "stakeholder_authority_map.md",
+        "system_context_seed.md",
+        "constraints_dependencies_route.md",
+        "stage2_summary.json",
+    ):
+        assert (stage2 / name).is_file(), f"Stage 2 artifact missing from baseline: {name}"
+
+
+def test_stage2_missing_required_header_fails(tmp_path: Path) -> None:
+    """US-S1-02 AC-3: removing a required section from context_state_frame fails validate."""
+    fx_root, clone = clone_fixture(tmp_path)
+    ctx = clone / "expected_outputs" / "canonical" / "stage2" / "context_state_frame.md"
+    text = ctx.read_text(encoding="utf-8")
+    # Strip the Scope Boundary header line entirely
+    mutated = text.replace("## Scope Boundary\n", "")
+    ctx.write_text(mutated, encoding="utf-8")
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "stage2-missing-header" in result.stderr
+    assert "Scope Boundary" in result.stderr
+
+
+def test_stage2_missing_required_column_fails(tmp_path: Path) -> None:
+    fx_root, clone = clone_fixture(tmp_path)
+    sam = clone / "expected_outputs" / "canonical" / "stage2" / "stakeholder_authority_map.md"
+    text = sam.read_text(encoding="utf-8")
+    mutated = text.replace("authority_level", "level_of_power")
+    sam.write_text(mutated, encoding="utf-8")
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "stage2-missing-column" in result.stderr
+    assert "authority_level" in result.stderr
+
+
+def test_stage2_summary_missing_field_fails(tmp_path: Path) -> None:
+    fx_root, clone = clone_fixture(tmp_path)
+    summary = clone / "expected_outputs" / "canonical" / "stage2" / "stage2_summary.json"
+    data = json.loads(summary.read_text(encoding="utf-8"))
+    data.pop("stakeholder_count", None)
+    summary.write_text(json.dumps(data), encoding="utf-8")
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "stage2-summary-field" in result.stderr
+    assert "stakeholder_count" in result.stderr
+
+
+def test_stage2_summary_wrong_stage_id_fails(tmp_path: Path) -> None:
+    fx_root, clone = clone_fixture(tmp_path)
+    summary = clone / "expected_outputs" / "canonical" / "stage2" / "stage2_summary.json"
+    data = json.loads(summary.read_text(encoding="utf-8"))
+    data["stage_id"] = "stage3"
+    summary.write_text(json.dumps(data), encoding="utf-8")
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "stage2-summary-stage-id" in result.stderr
+
+
+def test_stage2_summary_bad_context_mode_fails(tmp_path: Path) -> None:
+    fx_root, clone = clone_fixture(tmp_path)
+    summary = clone / "expected_outputs" / "canonical" / "stage2" / "stage2_summary.json"
+    data = json.loads(summary.read_text(encoding="utf-8"))
+    data["context_mode"] = "hybrid"
+    summary.write_text(json.dumps(data), encoding="utf-8")
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "stage2-summary-context-mode" in result.stderr
+
+
+def test_stage2_missing_artifact_fails(tmp_path: Path) -> None:
+    fx_root, clone = clone_fixture(tmp_path)
+    ctx = clone / "expected_outputs" / "canonical" / "stage2" / "context_state_frame.md"
+    ctx.unlink()
+    result = run_runner(f"--fixtures-dir={fx_root}", "--mode=validate")
+    assert result.returncode == 1
+    assert "stage2-missing-file" in result.stderr
+    assert "context_state_frame.md" in result.stderr
+
+
 def test_baseline_has_three_claim_types() -> None:
     """The fixture intentionally exercises every allowed ClaimType (INV-07)."""
     a59 = BASELINE / "expected_outputs" / "canonical" / "core_controls" / "A59_claim_register.csv"

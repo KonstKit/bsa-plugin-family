@@ -1,0 +1,20 @@
+{
+  "stage_id": "stage2",
+  "summary_version": 1,
+  "context_mode": "direct",
+  "stakeholder_count": 4,
+  "constraint_count": 3,
+  "dependency_count": 3,
+  "seed_source": "stage1_canonical",
+  "stage1_digest": "sha256:fixt0001-stage1-a1b2c3",
+  "stage2_seed_digest": "",
+  "methodology_digest": "sha256:framer-ref-d4e5f6",
+  "contract_version": "0.95",
+  "stale_if": [
+    "A48.Mode changes between direct and discovery_then_bsa",
+    "Stage 1 canonical A58/A59/A60 changes (stage1_digest mismatch)",
+    "bsa-context-framer reference files change (methodology_digest mismatch)"
+  ],
+  "linked_a51_count": 2,
+  "required_headers_present": true
+}
