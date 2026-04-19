@@ -57,6 +57,17 @@ When reusing a source from discovery, `bsa-evidence-intake` MUST also check whet
 
 Excerpt body content is re-validated against the source file; if the stored `ExcerptText` no longer matches the locator window (e.g., source was edited between discovery and main Stage 1), the orchestrator raises an `A51` with `IssueType=contradiction`, `Severity=hard`, and blocks promotion until the excerpt set is reconciled.
 
+### A58 carry-forward and provenance
+
+Every discovery `A58` row reused by main Stage 1 via the dedup rules above MUST be **copied** into the main `A58_evidence_excerpts.csv` (not linked by reference — discovery canonical and main canonical are disjoint surfaces per INV-02). The copied row:
+
+1. Keeps the discovery `ExcerptID`, `SourceID`, `Locator`, and `ExcerptText` unchanged.
+2. Sets `Provenance=discovery-promoted` in a dedicated `Provenance` column on the main `A58` row (alongside the `DiscoveryLineage` column `bsa-claim-binder` adds on main `A59`). Main-originated excerpts carry `Provenance=main-stage1` (default for rows authored by `bsa-evidence-intake` outside of the merge path).
+3. Inherits main-Stage-1 row ordering for downstream readability; the `Provenance` column preserves lineage without reordering.
+4. Emits an `excerpt_reused` merge-log event (see event table below) with `resolution=informational`.
+
+The Provenance column is the AC-3(a) anchor for discovery-originated evidence: every A58 row in main canonical is either `main-stage1` (authored fresh by Stage 1 intake) or `discovery-promoted` (reused from discovery). No other values are permitted.
+
 ## Lineage propagation
 
 When `discovery.go` fires and main Stage 1 enters execution, `bsa-claim-binder` MUST:
@@ -88,7 +99,7 @@ On conflict:
 
 A source matched via identity tuple but with conflicting `ReliabilityTier` between discovery and main is a **soft conflict**:
 1. Orchestrator emits `merge_log.jsonl` entry with `event=source_tier_mismatch`.
-2. The HIGHER tier wins by default (T1 > T2 > T3 > T4 > T5 per `bsa-evidence-intake/references/reliability_tier_spec.md` once Sprint 3 US-S3-03 lands that file).
+2. The HIGHER tier wins by default using the ordering T1 > T2 > T3 > T4 > T5; the authoritative 5-tier definitions and per-tier weights land as part of Sprint 3 US-S3-03. Until then, the resolution is logged but advisory — analysts should manually review tier conflicts flagged in `merge_log.jsonl`.
 3. No A51 is raised automatically; the orchestrator logs the resolution and continues promotion.
 4. If the analyst wants a different resolution, they can override in the proposal-layer edit before next promotion.
 
@@ -141,6 +152,6 @@ The merge step fits into the existing Two-Key Promotion Sequence (`workflow-cont
 - Merge checklist: `merge-and-reentry-policy.md`.
 - Promotion sequence: `workflow-contract.md` §"Promotion Sequence (Two-Key)".
 - Shared control surfaces: `shared-control-surface-contracts.md`.
-- ReliabilityTier (upstream of source_tier_mismatch resolution): `bsa-evidence-intake/references/reliability_tier_spec.md` (landing in Sprint 3 US-S3-03).
+- ReliabilityTier (upstream of `source_tier_mismatch` resolution): the authoritative 5-tier + weights + conflict-resolution spec ships under `bsa-evidence-intake` as part of Sprint 3 US-S3-03. Until that lands, `source_tier_mismatch` events are still emitted and logged, but the "higher tier wins" rule falls back to an advisory resolution without a normative weight table — analysts should reconcile manually.
 - Validation scenarios: `validation-scenario-manifest.csv` — see `SCN-ORCH-001-C` (lock-based merge) and the Sprint-3 sub-scenarios added for discovery→main merge.
 - Invariants: `governance/immutable_invariants.md` — INV-02 (single-writer canonical), INV-05 (A51 is not a positive-claim source), INV-07 (ClaimType schema closed).

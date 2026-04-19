@@ -1,13 +1,15 @@
 # Merge and Re-entry Policy
 
-## Merge Checklist
+## Pre-merge Preconditions
+These are the conditions that must hold before `bsa-orchestrator` begins any promotion. They are preconditions, not a step-by-step sequence — the actual per-promotion ordering lives in `workflow-contract.md` under "Promotion Sequence (Two-Key)".
+
 1. Stage-owned proposal path is valid.
 2. Evidence-binding gate passes.
 3. Required audit marker set exists.
 4. Shared-governance policy is not violated (`A48/A50/A51` parallel ledger check).
 5. No hard-blocking `A51` item remains unresolved for the promoted scope.
-6. Merge lock is acquired.
-7. Discovery → main merge step — when the current run is in `discovery_then_bsa` mode and `discovery.go` has fired, run the discovery→main merge per [discovery_to_main_merge.md](discovery_to_main_merge.md) before promoting Stage 1. Any `claim_conflict` or `excerpt_text_conflict` event halts the promotion via a hard-blocking `A51` contradiction row; `source_tier_mismatch` events are logged but non-blocking.
+6. Merge lock can be acquired (no concurrent writer on the same canonical scope).
+7. Discovery → main merge preconditions — when the current run is in `discovery_then_bsa` mode and `discovery.go` has fired, the discovery→main merge step described in [discovery_to_main_merge.md](discovery_to_main_merge.md) has completed with no hard-blocking events. `claim_conflict` or `excerpt_text_conflict` events hold this precondition false until the raised `A51` contradiction row is resolved; `source_tier_mismatch` events are logged but non-blocking. The merge step itself (execution, event emission, appending to `merge_log.jsonl`) runs during the Promotion Sequence in `workflow-contract.md` — this checklist only records whether the completion state is reached.
 
 ## Required Audit Markers
 Discovery:
