@@ -1,6 +1,10 @@
 # BSA Plugin Family
 
+![CI](https://github.com/OWNER/bsa-plugin-family/actions/workflows/ci.yml/badge.svg)
+
 Evidence-first BA/SA analytical pipeline packaged as a Claude Code plugin family. Anti-hallucination gates, claim-binding traceability, two-key promotion, and artifact-first governance.
+
+> **Note:** the CI badge above points at `OWNER/bsa-plugin-family` as a placeholder. Replace `OWNER` with the actual GitHub owner once the repo is pushed to a remote.
 
 ## Status
 
