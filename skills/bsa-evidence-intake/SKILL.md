@@ -51,5 +51,6 @@ Run this skill for Stage 1 intake.
 - `SCN-STAGE13-001-A`: inventory + coverage + missing-source outputs.
 - `SCN-STAGE13-001-B`: contradiction scan + `A50/A51` seed + `A60` candidates.
 
-## Reference
-- [references/source-intake.md](references/source-intake.md)
+## References
+- [references/source-intake.md](references/source-intake.md) — A50 column contract + intake semantics.
+- [references/reliability_tier_spec.md](references/reliability_tier_spec.md) — authoritative 5-tier model, tier-assignment discipline, independence definition, conflict resolution, ClaimStrength formula, and epistemic-sufficiency rules for critical claims (US-S3-03).

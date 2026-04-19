@@ -43,4 +43,4 @@ Artifact: `bsa-no-new-claims-auditor` pass over the H1-H4 pack produced for `pro
 ## Cross-references
 - Contract: `skills/bsa-no-new-claims-auditor/references/no-new-claims-contract.md`
 - Pack specs: `skills/bsa-handoff-packager/references/h{1,2,3,4}_spec.md`
-- Manifest: `handoff_manifest.json` (digest `970989ca…`)
+- Manifest: `handoff_manifest.json` (digest `41e5bf00…`)

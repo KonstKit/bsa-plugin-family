@@ -18,11 +18,26 @@ Run profile executed the minimum mandatory gate set for direct mode: Stage 3 cit
 
 | KPI | Definition ref | Target | Actual | Delta | Verdict | Trace |
 |---|---|---|---|---|---|---|
-| KPI-001 | weighted claim coverage | ≥ 0.75 | 0.82 | +0.07 | PASS | `citation_audit_report.md#weighted-coverage` |
+| KPI-001 | weighted claim coverage | ≥ 0.75 | 0.85 | +0.10 | PASS | `citation_audit_report.md#weighted-coverage` |
 | KPI-002 | anchor drift count | 0 | 0 | 0 | PASS | `anchor_audit_report.md#drift-findings` |
 | KPI-003 | critical unsupported claims | 0 | 0 | 0 | PASS | `citation_audit_report.md#critical-unsupported` |
 | KPI-004 | A51 unresolved hard-blocking | 0 | 0 | 0 | PASS | `A51_issue_route_register.csv#hard` |
 | KPI-005 | handoff new-claim leakage | 0 | 0 | 0 | PASS | `handoff_no_new_claims_report.md#leakage` |
+
+### KPI-001 Per-Tier Breakdown (US-S3-03)
+
+| Tier | Weight | Direct claims bound | Contributed strength |
+|---|---|---|---|
+| T1 | 1.00 | 0 | 0.00 |
+| T2 | 0.85 | 5 | 4.25 |
+| T3 | 0.65 | 0 | 0.00 |
+| T4 | 0.45 | 0 | 0.00 |
+| T5 | 0.20 | 0 | 0.00 |
+| **Total** |  | **5** | **4.25** |
+
+Weighted coverage: **4.25 / 5 = 0.85** (target ≥ 0.75, PASS).
+
+Inference claims (KPI-002 denominator) also carry ClaimStrength per the tier spec: C-005 and C-006 both bind to S-002 (T4, weight 0.45). They are not part of KPI-001 numerator by definition (direct-claim only) but appear in KPI-002.
 
 ## Audit Reports Index
 
