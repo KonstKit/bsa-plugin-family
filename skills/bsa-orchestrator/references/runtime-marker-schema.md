@@ -44,3 +44,20 @@
 `stage1` may start from discovery only when both markers exist:
 - `discovery.go.json`
 - `bsa.stage1.entry.enabled.json`
+
+## Marker Payload Fields (Sprint 3 US-S3-04)
+
+Every marker JSON file MUST be an object with at minimum these fields:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `marker_id` | string | yes | Filename stem (e.g., `stage3.citation_audit.pass`). |
+| `stage` | string | yes | Stage identifier (`stage1`..`stage8`, `d1`..`d5`, `handoff`, `pipeline`). |
+| `verdict` | string | yes | `PASS`, `FAIL`, `READY`, or for decision markers `GO`/`PIVOT`/`MORE_RESEARCH`/`NO_GO`. |
+| `timestamp` | string (ISO-8601 UTC) | yes | Emission time. |
+| `canon_policy_version` | string | yes | Accepts both bare semver (`0.95`) and Sprint-3 semver+hash form (`1.0.0+hash:abc123`). |
+| `canon_policy_version_hash` | string | Sprint-3+ | 6-64 hex chars. Matches the SHA-256 digest from `scripts/compute_canon_hash.py`. Optional in pre-v1.0 workspaces; mandatory at v1.0.0-rc1 and later. |
+
+Additional fields are marker-specific (e.g., KPI numbers on audit-pass markers). Producers MAY include them; consumers MUST ignore unknown fields rather than reject.
+
+Pre-Sprint-3 markers that lack `canon_policy_version_hash` remain valid. Future marker-chain validators (US-S3-05) treat missing hash as "pre-hash workspace" and skip hash consistency checks; they do not raise a finding for the missing field.
