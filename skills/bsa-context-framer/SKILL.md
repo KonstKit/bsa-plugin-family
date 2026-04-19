@@ -37,7 +37,7 @@ Run this skill for Stage 2 context and system framing.
 
 ## Workflow
 1. Read promoted Stage 1 claim-layer and shared `A48/A50/A51`.
-2. If `A48.Mode == discovery_then_bsa`, read `stage2_seed_bundle.md` as seed material (wording aid only, never as fact source).
+2. If `A48.Mode == discovery_then_bsa`, read `stage2_seed_bundle.md` as seed material (wording aid only, never as claim source).
 3. Extract context frame content under required section headers per `context-state-contract.md`.
 4. Build stakeholder authority map rows linked to `A51Ref` where authority is contested.
 5. Seed system context (boundary + neighbors + interface obligations + triggers) from framed claims.

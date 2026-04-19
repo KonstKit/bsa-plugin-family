@@ -44,5 +44,5 @@
 - Discovery and main-cycle reference the same canonical `A48/A50/A51`; mirrored ledgers are forbidden.
 - Any unreadable, inaccessible, or missing source becomes an `A51` route before downstream synthesis.
 - Any promoted statement, row, or anchor must trace to `ClaimID` or explicit `A51Ref`.
-- `A51` is not a fact source; it is a container for unresolved items, contradictions, and guarded hypotheses.
+- `A51` is not a claim source; it is a container for unresolved items, contradictions, and guarded hypotheses.
 - `CanonPolicyVersion` changes require explicit compatibility handling defined in `contract-versioning.md`.

@@ -43,4 +43,4 @@ Write under `analysis/proposals/stage1/`:
 - `A59` direct-claim coverage must be measurable for `KPI-001`.
 - Inference claims must cite the basis claim(s); otherwise they are invalid.
 - Contradictions and missing proof must be represented in `A60`, not hidden in prose.
-- If a proposed claim introduces an entity, event, or boundary not present in the bound excerpt set, route it to `A51` and do not promote it as fact.
+- If a proposed claim introduces an entity, event, or boundary not present in the bound excerpt set, route it to `A51` and do not promote it without evidence-binding.

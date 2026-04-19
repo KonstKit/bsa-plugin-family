@@ -92,7 +92,7 @@ With discovery:
 8. Invalidate downstream markers on re-entry.
 
 ## Blocking Rule
-- Canonical promotion stops when new facts, hidden assumptions, or hard-blocking `A51` items remain unresolved.
+- Canonical promotion stops when new claims, hidden assumptions, or hard-blocking `A51` items remain unresolved.
 - Stage 3 cannot start until Stage 2 is promoted and `stage2.context_state.pass` is valid.
-- Stage 4-6 workers may remodel, normalize, and stabilize upstream canonical claims, but may not add net-new facts outside explicit `A51Ref`-guarded hypotheses.
+- Stage 4-6 workers may remodel, normalize, and stabilize upstream canonical claims, but may not add net-new claims outside explicit `A51Ref`-guarded hypotheses.
 - Sidecars cannot bypass the promotion sequence.

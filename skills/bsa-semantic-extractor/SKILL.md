@@ -38,7 +38,7 @@ Run this skill for Stage 3 semantic extraction.
 ## Invariants
 - No Stage 3 row is valid without `ClaimID` or explicit `A51Ref`.
 - `SourceID` and `ExcerptID` remain mandatory when `ClaimID` is present.
-- Stage 3 decomposes upstream claims; it does not create net-new facts, actors, states, or boundaries.
+- Stage 3 decomposes upstream claims; it does not create net-new claims, actors, states, or boundaries.
 - Normalization pack is non-default.
 - Canonical writes are forbidden for this worker.
 

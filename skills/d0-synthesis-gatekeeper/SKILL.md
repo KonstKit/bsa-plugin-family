@@ -11,7 +11,7 @@ Use this skill for D5 and discovery exit.
 - Produce `Discovery Report` and `Discovery Brief`.
 - Produce `stage1_seed_bundle.md` for D0 -> BSA bridge.
 - Run mandatory D5 audits and set D-Exit decision.
-- Ensure seed outputs contain only discovery-claim-linked facts or explicit `A51Ref`.
+- Ensure seed outputs contain only discovery-claim-linked assertions or explicit `A51Ref`.
 
 ## Inputs
 - `analysis/discovery/canonical/d4/feasibility_assessment.md`

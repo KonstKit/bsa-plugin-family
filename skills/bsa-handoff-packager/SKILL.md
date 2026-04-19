@@ -11,7 +11,7 @@ Use this skill after Stage 8 no-new-claims pass.
 - Build `H1-H4` package proposals from validated canonical artifacts only.
 - Enforce quote-fidelity to canonical claim-layer (`A58/A59`).
 - Prevent new-claim leakage in package outputs (`KPI-005`).
-- Keep discovery `Discovery Report/Brief` as non-canonical wording aids only; they can seed wording but cannot add facts beyond canonical claim-layer.
+- Keep discovery `Discovery Report/Brief` as non-canonical wording aids only; they can seed wording but cannot add claims beyond canonical claim-layer.
 
 ## Inputs
 - `analysis/canonical/stage8/readiness_assessment.md`
@@ -37,7 +37,7 @@ Use this skill after Stage 8 no-new-claims pass.
 5. Submit outputs to `bsa-no-new-claims-auditor` before promotion.
 
 ## Invariant
-- Once a canonical equivalent exists, raw proposal folders are not valid fact sources for package generation.
+- Once a canonical equivalent exists, raw proposal folders are not valid claim sources for package generation.
 
 ## On Audit Failure
 1. Read handoff no-new-claims findings.

@@ -38,7 +38,7 @@ Run this skill for Stage 1 intake.
 - Conflicts are never collapsed into assumptions.
 - Missing or unreadable evidence must stay explicit.
 - Unavailable source contents must never be inferred from surrounding chat.
-- This worker inventories and routes evidence; it does not author domain facts.
+- This worker inventories and routes evidence; it does not author domain claims.
 - Canonical writes are forbidden for this worker.
 
 ## On Audit Failure

@@ -10,4 +10,4 @@
 ## Rules
 - Every decision-bearing or high-impact statement must carry `ClaimID` or `A51Ref`.
 - `H4` is the only valid sink for unresolved items; unresolved items must not be silently blended into `H1-H3`.
-- Wording may compress canonical content, but cannot introduce new facts, actors, constraints, or commitments.
+- Wording may compress canonical content, but cannot introduce new claims, actors, constraints, or commitments.

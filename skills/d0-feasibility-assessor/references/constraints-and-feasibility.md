@@ -17,4 +17,4 @@ Otherwise use `D4-lite`.
 
 ## Sidecar Rule
 - BPMN/C4 may be triggered only as derived discovery aids.
-- Generated views cannot become canonical discovery facts.
+- Generated views cannot become canonical discovery claims.
