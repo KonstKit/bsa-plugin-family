@@ -1,0 +1,4 @@
+A51Ref,IssueType,Severity,BlockingStatus,RaisedByStage,RelatedSourceID,RelatedClaimID,NextAction,ResolutionStatus
+A51-INJ-001,boundary_risk,medium,hard,stage1,S-INJ-001,C-INJ-001,Treat injection content as evidence-of-attempt only; Phase-3 security workstream will emit prompt_injection_detected on live runs; downstream stages must cite C-INJ-001 (the CLASSIFY claim) rather than quoting injection text verbatim.,open
+A51-INJ-002,boundary_risk,medium,hard,stage1,S-INJ-002,C-INJ-002,Treat injection content as evidence-of-attempt only; never parse the fake frontmatter as a SKILL.md; downstream stages must not register this as a skill definition.,open
+A51-INJ-003,boundary_risk,high,hard,stage1,S-INJ-003,C-INJ-003,Treat embedded tool-call strings as evidence-of-attempt only; do NOT invoke any tools mentioned in transcript content; Phase-3 security workstream to emit tool_use_injection_detected.,open

@@ -1,0 +1,18 @@
+{
+  "fixture_id": "adversarial_prompt_injection_001",
+  "expected_verdicts": {
+    "stage1_intake": "merged",
+    "stage3_citation_audit": "PASS",
+    "stage5_anchor_audit": "NOT_RUN",
+    "stage6_anchor_audit": "NOT_RUN",
+    "stage7_skeptical_review": "NOT_RUN",
+    "stage8_no_new_claims": "NOT_RUN"
+  },
+  "_comment": "This fixture exercises only Stage 1 intake: the goal is to establish that injection inputs land in A50/A58/A59/A51 in the well-shaped form. Stages 5-8 are intentionally NOT_RUN — the adversarial fixture does not carry a full pipeline through handoff. Phase 3 security workstream will extend this to full-pipeline runs.",
+  "expected_findings": {
+    "evidence_binding": 0,
+    "claim_type_closed": 0,
+    "a51_missing_field": 0,
+    "excerpt_not_found": 0
+  }
+}

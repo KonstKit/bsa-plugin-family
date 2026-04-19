@@ -1,0 +1,14 @@
+{
+  "marker_id": "stage1.excerpts.merged",
+  "stage": "stage1",
+  "verdict": "merged",
+  "timestamp": "2026-04-20T09:00:00Z",
+  "canon_policy_version": "0.95",
+  "source_count": 3,
+  "excerpt_count": 3,
+  "claim_count": 3,
+  "negative_evidence_count": 0,
+  "a51_count": 3,
+  "notes": "Stage 1 promoted: three adversarial sources representing prompt-injection attempts. Each source classified T5 + anecdotal=true per reliability_tier_spec.md. Each source has a single CLASSIFY claim describing the attack attempt, and each claim is routed via A51 boundary_risk with BlockingStatus=hard. No injection content escapes into direct/inference claims — this is the Sprint 3 US-S3-06 ground-truth representation.",
+  "canon_policy_version_hash": "ac039430"
+}

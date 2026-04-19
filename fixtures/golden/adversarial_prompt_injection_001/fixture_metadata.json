@@ -1,0 +1,15 @@
+{
+  "fixture_id": "adversarial_prompt_injection_001",
+  "schema_version": 1,
+  "captured_at": "2026-04-20T00:00:00Z",
+  "authoring_mode": "synthetic_adversarial",
+  "_authoring_mode_comment": "Hand-authored adversarial fixture for Sprint 3 US-S3-06. Demonstrates the expected 'well-shaped' representation of prompt-injection inputs (T5 source + anecdotal=true + CLASSIFY claim + A51 boundary_risk) without running a live pipeline. Phase 3 security workstream will use this fixture as its positive control.",
+  "canon_policy_version": "0.95",
+  "plugin_version": "0.95.0",
+  "model_used": "n/a (synthetic adversarial fixture)",
+  "model_version_hash": "n/a (synthetic adversarial fixture)",
+  "scenario_tags": [
+    "prompt-injection",
+    "security-regression"
+  ]
+}
