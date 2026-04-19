@@ -59,7 +59,7 @@ Every `H1_exec_brief.md` MUST contain these five sections, in this order, with t
 
 ## Citation Rules
 
-- `[C-xxx]` — reference to A59 direct/inference ClaimID. Required for every factual-looking statement.
+- `[C-xxx]` — reference to A59 direct/inference ClaimID. Required for every positive statement that asserts an entity, quantity, date, commitment, or causal relation.
 - `[AJ:C-xxx]` — reference to A59 analyst_judgment ClaimID. Required for every recommendation / judgment / priority call. The cited row MUST exist in A59 with non-empty `JustificationRationale` referencing ≥ 1 upstream `ClaimID` different from its own (INV-07).
 - `[A51-xxx]` — reference to unresolved item in A51. Required for every uncertainty, contradiction, or decision-needed hypothesis surfaced in H1.
 - Citations MUST resolve to actual rows in the promoted canonical CSVs; `bsa-no-new-claims-auditor` fails the gate on dangling references.
@@ -68,10 +68,11 @@ Every `H1_exec_brief.md` MUST contain these five sections, in this order, with t
 ## Forbidden Content
 
 - New actors, quantities, dates, commitments, causal claims not present in canonical A59.
-- Any assertion stated as "fact" without `[C-xxx]` / `[AJ:C-xxx]` / `[A51-xxx]`.
+- Any positive assertion lacking `[C-xxx]` / `[AJ:C-xxx]` / `[A51-xxx]` citation — unreferenced assertions are INV-01 violations.
 - Speculation about causes or futures absent from canonical claim-layer.
 - KPI numbers not derived from promoted audit reports.
-- Legacy `no-new-facts` terminology outside the migration note in `bsa-no-new-claims-auditor` SKILL.md.
+- Framings that present a claim as already validated ("as confirmed", "as we know") — per `docs/sem_audit_rename.md`, claims always travel one of the three routes (direct/inference evidence-binding, analyst_judgment with JustificationRationale, or `A51Ref`) and are never carried as default-true.
+- Legacy pre-Sprint-2 terminology naming the auditor by its old identifier; see `bsa-no-new-claims-auditor/SKILL.md` terminology note for the narrow legacy-compat exemption.
 
 ## Illustrative Structure
 

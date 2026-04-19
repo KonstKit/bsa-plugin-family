@@ -19,9 +19,9 @@ Artifact: `bsa-no-new-claims-auditor` pass over the H1-H4 pack produced for `pro
 - `analysis/canonical/stage8/readiness_assessment.md`
 
 ## statements/elements audited
-- 37 citation occurrences across H1-H4 (enumerated in `handoff_evidence_binding_map.csv`)
+- 44 bracket-citation occurrences across H1-H4 (enumerated in `handoff_evidence_binding_map.csv`)
 - 5 H3 KPI-scorecard numbers cross-checked against audit reports
-- 4 H3 planned SCN-ID placeholders (bsa-test-scenario-builder seeds, Phase 3)
+- 5 H3 planned SCN-ID placeholders (bsa-test-scenario-builder seeds, Phase 3)
 - 2 H4 A51-route rows cross-checked against A51_issue_route_register.csv
 
 ## allowed paraphrase count
@@ -43,4 +43,4 @@ Artifact: `bsa-no-new-claims-auditor` pass over the H1-H4 pack produced for `pro
 ## Cross-references
 - Contract: `skills/bsa-no-new-claims-auditor/references/no-new-claims-contract.md`
 - Pack specs: `skills/bsa-handoff-packager/references/h{1,2,3,4}_spec.md`
-- Manifest: `handoff_manifest.json` (digest `8a074ac0…`)
+- Manifest: `handoff_manifest.json` (digest `970989ca…`)

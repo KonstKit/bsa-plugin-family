@@ -19,7 +19,7 @@
   },
   "checksum": {
     "algorithm": "sha256",
-    "digest": "8a074ac028ef102bc1323d6d6e2c4a95f583b9874b31651b1b74eb6115ca1c80",
+    "digest": "970989ca8dc7de595072b25a84cb5ec14f405eb8888da024fd1d32eacd98e4dc",
     "covers": [
       "H1_exec_brief.md",
       "H2_delivery_packet.md",

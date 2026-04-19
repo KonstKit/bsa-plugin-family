@@ -1,39 +1,45 @@
 Citation,CitationType,Pack,Section,CanonicalRow,CanonicalPath
 [C-001],direct,H1,Executive Summary,C-001,canonical/core_controls/A59_claim_register.csv
-[C-001],direct,H1,Key Findings,C-001,canonical/core_controls/A59_claim_register.csv
-[C-001],direct,H2,Requirements Summary - FR,C-001,canonical/core_controls/A59_claim_register.csv
-[C-002],direct,H1,Key Findings,C-002,canonical/core_controls/A59_claim_register.csv
-[C-002],direct,H2,Requirements Summary - FR,C-002,canonical/core_controls/A59_claim_register.csv
-[C-003],direct,H1,Key Findings,C-003,canonical/core_controls/A59_claim_register.csv
-[C-003],direct,H2,Requirements Summary - FR,C-003,canonical/core_controls/A59_claim_register.csv
 [C-004],direct,H1,Executive Summary,C-004,canonical/core_controls/A59_claim_register.csv
-[C-004],direct,H1,Key Findings,C-004,canonical/core_controls/A59_claim_register.csv
-[C-004],direct,H2,Requirements Summary - FR,C-004,canonical/core_controls/A59_claim_register.csv
 [C-005],inference,H1,Executive Summary,C-005,canonical/core_controls/A59_claim_register.csv
-[C-005],inference,H1,Key Findings,C-005,canonical/core_controls/A59_claim_register.csv
-[C-005],inference,H1,Risks & Blockers,C-005,canonical/core_controls/A59_claim_register.csv
-[C-005],inference,H1,Recommended Next Steps (upstream of AJ:C-008),C-005,canonical/core_controls/A59_claim_register.csv
-[C-005],inference,H2,Requirements Summary - NFR,C-005,canonical/core_controls/A59_claim_register.csv
-[C-005],inference,H4,Decisions Required (upstream of AJ:C-008),C-005,canonical/core_controls/A59_claim_register.csv
 [C-006],inference,H1,Executive Summary,C-006,canonical/core_controls/A59_claim_register.csv
-[C-006],inference,H1,Risks & Blockers,C-006,canonical/core_controls/A59_claim_register.csv
-[C-007],direct,H1,Key Findings,C-007,canonical/core_controls/A59_claim_register.csv
-[C-007],direct,H2,Requirements Summary - NFR,C-007,canonical/core_controls/A59_claim_register.csv
 [AJ:C-008],analyst_judgment,H1,Executive Summary,C-008,canonical/core_controls/A59_claim_register.csv
+[C-001],direct,H1,Key Findings (≤5),C-001,canonical/core_controls/A59_claim_register.csv
+[C-002],direct,H1,Key Findings (≤5),C-002,canonical/core_controls/A59_claim_register.csv
+[C-003],direct,H1,Key Findings (≤5),C-003,canonical/core_controls/A59_claim_register.csv
+[C-004],direct,H1,Key Findings (≤5),C-004,canonical/core_controls/A59_claim_register.csv
+[C-005],inference,H1,Key Findings (≤5),C-005,canonical/core_controls/A59_claim_register.csv
+[A51-001],a51_route,H1,Key Findings (≤5),A51-001,canonical/core_controls/A51_issue_route_register.csv
+[C-007],direct,H1,Key Findings (≤5),C-007,canonical/core_controls/A59_claim_register.csv
 [AJ:C-008],analyst_judgment,H1,Recommended Next Steps,C-008,canonical/core_controls/A59_claim_register.csv
-[AJ:C-008],analyst_judgment,H2,Requirements Summary - FR-005,C-008,canonical/core_controls/A59_claim_register.csv
-[AJ:C-008],analyst_judgment,H3,Test Scenario Seed (SCN-TSB-DUP-DETECT-001),C-008,canonical/core_controls/A59_claim_register.csv
-[AJ:C-008],analyst_judgment,H4,Decisions Required,C-008,canonical/core_controls/A59_claim_register.csv
-[A51-001],a51_route,H1,Key Findings,A51-001,canonical/core_controls/A51_issue_route_register.csv
+[C-005],inference,H1,Recommended Next Steps,C-005,canonical/core_controls/A59_claim_register.csv
 [A51-001],a51_route,H1,Recommended Next Steps,A51-001,canonical/core_controls/A51_issue_route_register.csv
-[A51-001],a51_route,H1,Risks & Blockers,A51-001,canonical/core_controls/A51_issue_route_register.csv
-[A51-001],a51_route,H2,Assumptions & A51 Routes,A51-001,canonical/core_controls/A51_issue_route_register.csv
-[A51-001],a51_route,H2,Next Gate Preconditions,A51-001,canonical/core_controls/A51_issue_route_register.csv
-[A51-001],a51_route,H4,Open Items Digest,A51-001,canonical/core_controls/A51_issue_route_register.csv
-[A51-001],a51_route,H4,Decisions Required,A51-001,canonical/core_controls/A51_issue_route_register.csv
 [A51-002],a51_route,H1,Recommended Next Steps,A51-002,canonical/core_controls/A51_issue_route_register.csv
+[C-005],inference,H1,Risks & Blockers,C-005,canonical/core_controls/A59_claim_register.csv
+[A51-001],a51_route,H1,Risks & Blockers,A51-001,canonical/core_controls/A51_issue_route_register.csv
 [A51-002],a51_route,H1,Risks & Blockers,A51-002,canonical/core_controls/A51_issue_route_register.csv
-[A51-002],a51_route,H2,Assumptions & A51 Routes,A51-002,canonical/core_controls/A51_issue_route_register.csv
+[C-006],inference,H1,Risks & Blockers,C-006,canonical/core_controls/A59_claim_register.csv
+[C-001],direct,H2,Requirements Summary (references fr_register/nfr_register),C-001,canonical/core_controls/A59_claim_register.csv
+[C-002],direct,H2,Requirements Summary (references fr_register/nfr_register),C-002,canonical/core_controls/A59_claim_register.csv
+[C-003],direct,H2,Requirements Summary (references fr_register/nfr_register),C-003,canonical/core_controls/A59_claim_register.csv
+[C-004],direct,H2,Requirements Summary (references fr_register/nfr_register),C-004,canonical/core_controls/A59_claim_register.csv
+[AJ:C-008],analyst_judgment,H2,Requirements Summary (references fr_register/nfr_register),C-008,canonical/core_controls/A59_claim_register.csv
+[C-007],direct,H2,Requirements Summary (references fr_register/nfr_register),C-007,canonical/core_controls/A59_claim_register.csv
+[C-007],direct,H2,Requirements Summary (references fr_register/nfr_register),C-007,canonical/core_controls/A59_claim_register.csv
+[C-005],inference,H2,Requirements Summary (references fr_register/nfr_register),C-005,canonical/core_controls/A59_claim_register.csv
+[A51-001],a51_route,H2,Requirements Summary (references fr_register/nfr_register),A51-001,canonical/core_controls/A51_issue_route_register.csv
+[A51-001],a51_route,H2,Next Gate Preconditions,A51-001,canonical/core_controls/A51_issue_route_register.csv
 [A51-002],a51_route,H2,Next Gate Preconditions,A51-002,canonical/core_controls/A51_issue_route_register.csv
-[A51-002],a51_route,H4,Open Items Digest,A51-002,canonical/core_controls/A51_issue_route_register.csv
-[A51-002],a51_route,H4,Decisions Required,A51-002,canonical/core_controls/A51_issue_route_register.csv
+[C-001],direct,H3,"Test Scenario Seed (placeholders for bsa-test-scenario-builder, Phase 3)",C-001,canonical/core_controls/A59_claim_register.csv
+[C-002],direct,H3,"Test Scenario Seed (placeholders for bsa-test-scenario-builder, Phase 3)",C-002,canonical/core_controls/A59_claim_register.csv
+[C-007],direct,H3,"Test Scenario Seed (placeholders for bsa-test-scenario-builder, Phase 3)",C-007,canonical/core_controls/A59_claim_register.csv
+[C-003],direct,H3,"Test Scenario Seed (placeholders for bsa-test-scenario-builder, Phase 3)",C-003,canonical/core_controls/A59_claim_register.csv
+[C-004],direct,H3,"Test Scenario Seed (placeholders for bsa-test-scenario-builder, Phase 3)",C-004,canonical/core_controls/A59_claim_register.csv
+[AJ:C-008],analyst_judgment,H3,"Test Scenario Seed (placeholders for bsa-test-scenario-builder, Phase 3)",C-008,canonical/core_controls/A59_claim_register.csv
+[C-005],inference,H3,"Test Scenario Seed (placeholders for bsa-test-scenario-builder, Phase 3)",C-005,canonical/core_controls/A59_claim_register.csv
+[AJ:C-008],analyst_judgment,H4,Decisions Required (by severity),C-008,canonical/core_controls/A59_claim_register.csv
+[C-005],inference,H4,Decisions Required (by severity),C-005,canonical/core_controls/A59_claim_register.csv
+[A51-002],a51_route,H4,Decisions Required (by severity),A51-002,canonical/core_controls/A51_issue_route_register.csv
+[C-005],inference,H4,Decisions Required (by severity),C-005,canonical/core_controls/A59_claim_register.csv
+[A51-002],a51_route,H4,Decisions Required (by severity),A51-002,canonical/core_controls/A51_issue_route_register.csv
+[A51-001],a51_route,H4,Decisions Required (by severity),A51-001,canonical/core_controls/A51_issue_route_register.csv

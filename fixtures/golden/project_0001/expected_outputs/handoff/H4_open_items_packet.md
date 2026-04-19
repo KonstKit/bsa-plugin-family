@@ -11,13 +11,13 @@
 
 **Medium**
 
-1. Approve introduction of intake-side near-duplicate detection before evaluating channel-specific SLA variants. [AJ:C-008] supported by [C-005] (duplicate-rate pain point) and the PM-preference reference inside C-008's JustificationRationale [A51-002]
-   - Rationale: duplicate-rate pain point is validated (A51-001 pending but consistent with PM verbatim), and the PM explicitly preferred retaining the four-outcome model while adding detection.
+1. Approve introduction of intake-side near-duplicate detection before evaluating channel-specific SLA variants. [AJ:C-008] supported by [C-005] and the PM-preference reference inside C-008's JustificationRationale [A51-002]
+   - Rationale (reproduced from C-008 JustificationRationale): recommendation is derived from the duplicate-rate pain point [C-005] and the PM's explicit preference to keep the four-outcome model while adding duplicate detection; requires stakeholder validation on channel-specific SLA variants [A51-002].
 
 **Low**
 
 2. Accept residual uncertainty on the 15% duplicate-rate figure until ticketing-system telemetry confirms. [A51-001]
-   - Rationale: informational A51 route; delivery-safe under current SLA plan; revisit after detection ships.
+   - Rationale (reproduced from A51-001 NextAction): confirm the "fifteen percent" duplicate-rate estimate against a ticketing-system report before sizing downstream work.
 
 ## Suggested Owners
 
