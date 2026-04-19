@@ -15,7 +15,7 @@
 
 ## Main Sequence
 1. Stage1 (`bsa-evidence-intake` -> `bsa-claim-binder`) -> `stage1.excerpts.merged`.
-2. Stage2 runtime-native context/state pass -> `stage2.context_state.pass`.
+2. Stage2 via `bsa-context-framer` (context/state framing) -> `stage2.context_state.pass`.
 3. Stage3 semantic extraction + stage audit -> `stage3.citation_audit.pass`.
 4. Stage4 domain modeling.
 5. Stage5 backbone construction + anchor audit -> `stage5.anchor_audit.pass`.

@@ -23,4 +23,4 @@
 - Fact promotion requires evidence binding or explicit `A51Ref`.
 - `A51` tracks uncertainty and unresolved contradictions; it is never a substitute evidence source for positive factual claims.
 - Discovery outputs do not bypass main-cycle governance.
-- `stage2` is runtime-native and remains governed by the same proposal->promotion ownership model.
+- `stage2` is worker-owned by `bsa-context-framer` (Sprint 1 US-S1-01); the proposal->promotion ownership model is identical to other Stage-N workers.

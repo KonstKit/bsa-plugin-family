@@ -9,6 +9,14 @@ Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, 
 ### Added
 - `skills/bsa-context-framer/` — new worker skill closing the Stage 2 runtime-native gap (Sprint 1 US-S1-01). Produces `context_state_frame.md`, `stakeholder_authority_map.md`, `system_context_seed.md`, `constraints_dependencies_route.md`, `stage2_summary.json` under `analysis/proposals/stage2/`. Three references: `context-state-contract.md` (artifact shape), `stakeholder-authority-rules.md` (authority taxonomy + contestation flow), `system-context-seed-template.md` (system-context structure + sidecar hook). Validation bindings `SCN-STAGE2-001-A..C`. Invariants: INV-01 evidence-binding per row; INV-07 analyst_judgment rows require JustificationRationale with upstream ClaimID references; Stage 2 may not introduce net-new actors/entities/events/statuses/rules.
 
+### Changed
+- `skills/bsa-orchestrator/SKILL.md`: Stage 2 description updated from "intentionally runtime-native" to "worker-owned by bsa-context-framer"; worker set for `bsa_pack_direct_mixed_sources` now includes bsa-context-framer between claim-binder and semantic-extractor (Sprint 1 US-S1-01 AC-6, AC-7).
+- `skills/bsa-orchestrator/references/stage2-runtime-contract.md`: gained an Owner section pointing at bsa-context-framer; marked the "runtime-native" label as deprecated; authoritative artifact-shape reference now lives in bsa-context-framer's `context-state-contract.md` with lockstep-change commitment.
+- `skills/bsa-orchestrator/references/validation-scenario-manifest.csv`: added three rows `SCN-STAGE2-001-A/B/C` covering artifact presence, required headers/columns, and summary-fields + analyst_judgment discipline.
+- `skills/bsa-claim-binder/SKILL.md`: invariants expanded to close the ClaimType enum (INV-07), clarify evidence-binding for direct/inference rows, and explicitly state that claim-binder itself does NOT author analyst_judgment rows during Stage 1 intake.
+- `config/request_skill_routes.json`: direct-pack worker_set extended with bsa-context-framer; runtime_notes on the direct route updated to describe the new Stage 2 ownership and the stage2.context_state.pass gate.
+- `tests/test_validate_request_skill_routing.py`: expected direct-pack worker_set assertion updated from 14 to 15 skills (rationale in docstring).
+
 ### Pre-Sprint-1 entries (preserved for reference)
 - Repository bootstrap: baseline structure, .gitignore, README, CHANGELOG, LICENSE, CONTRIBUTING (US-S0-01)
 - Skills imported from `~/.codex/skills/` at canon v0.9 baseline (22 skills: bsa-*, d0-*, c4-plantuml-from-context, camunda-bpmn-from-context, inot-prompt-builder) (US-S0-01)

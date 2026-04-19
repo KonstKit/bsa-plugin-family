@@ -62,7 +62,7 @@ analysis/
 ## Execution Paths
 Without discovery:
 1. `stage1` (`bsa-evidence-intake` -> `bsa-claim-binder`)
-2. `stage2` (runtime-native context/state stage; no dedicated worker skill)
+2. `stage2` (context/state framing by `bsa-context-framer`)
 3. `stage3`
 4. `stage4`
 5. `stage5`
@@ -75,7 +75,7 @@ With discovery:
 1. `d1 -> d2 -> d3 -> d4 -> d5`
 2. discovery decision (`go/pivot/more_research/no_go`)
 3. if `go`: `bsa.stage1.entry.enabled` then main cycle starts at composite `stage1`
-4. discovery `d5` also provides `stage2_seed_bundle.md` for runtime-native Stage 2 when applicable
+4. discovery `d5` also provides `stage2_seed_bundle.md` consumed by `bsa-context-framer` when applicable
 
 ## Promotion Sequence (Two-Key)
 1. Validate stage-owned proposal directory.

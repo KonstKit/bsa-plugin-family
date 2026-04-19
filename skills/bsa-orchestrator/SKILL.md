@@ -11,7 +11,7 @@ Use this skill as the control plane for discovery and main-cycle execution.
 - Create and maintain `analysis/` + `analysis/discovery/` runtime structures.
 - Treat completion as `artifact-first`: required files + markers are the contract; chat prose is never a substitute.
 - Route Stage 1 as a composite stage: `bsa-evidence-intake` -> `bsa-claim-binder`.
-- Execute Stage 2 as a runtime-native stage (`stage2`) with no separate worker skill.
+- Execute Stage 2 via the dedicated worker `bsa-context-framer` between Stage 1 promotion and Stage 3 entry; promotion gated by `stage2.context_state.pass`.
 - Enforce single-writer canonical ownership for shared controls `A48/A50/A51` and promoted claim/anchor controls `A58/A59/A60/A61`.
 - Enforce two-key promotion gates:
   - evidence-binding (`ClaimID` with `SourceID+ExcerptID`, or explicit `A51Ref` for unresolved items),
@@ -28,7 +28,7 @@ Use this skill as the control plane for discovery and main-cycle execution.
 
 ## Stage Model
 - Main cycle ordering is explicit: `stage1 -> stage2 -> stage3 -> stage4 -> stage5 -> stage6 -> stage7 -> stage8 -> handoff`.
-- `stage2` is intentionally runtime-native. It is executed/promoted by orchestrator runtime and does not have a dedicated `bsa-*` skill.
+- `stage2` is worker-owned by `bsa-context-framer` (added Sprint 1 US-S1-01). The orchestrator routes Stage 1 promoted claim-layer into the framer, receives 5 proposal artifacts (context_state_frame / stakeholder_authority_map / system_context_seed / constraints_dependencies_route / stage2_summary.json), runs the Stage 2 audit flow, and promotes on `stage2.context_state.pass`.
 - Discovery branch (`d1..d5`) remains optional and precedes main-cycle entry.
 - `d0-*` skill names are a namespace label for the discovery branch family, not a stage number.
 
@@ -39,6 +39,7 @@ Use this skill as the control plane for discovery and main-cycle execution.
   - `bsa-orchestrator`
   - `bsa-evidence-intake`
   - `bsa-claim-binder`
+  - `bsa-context-framer`
   - `bsa-semantic-extractor`
   - `bsa-domain-modeler`
   - `bsa-backbone-builder`
@@ -50,7 +51,7 @@ Use this skill as the control plane for discovery and main-cycle execution.
   - `bsa-no-new-facts-auditor`
   - `bsa-validation-readiness`
   - `bsa-handoff-packager`
-- Main-cycle `stage2` is always included as runtime-native orchestrator execution between Stage 1 and Stage 3.
+- `bsa-context-framer` runs between Stage 1 composite (`bsa-evidence-intake` -> `bsa-claim-binder`) and `bsa-semantic-extractor`. It owns Stage 2 framing; the orchestrator gates Stage 3 start on `stage2.context_state.pass`.
 - The required worker set for `discovery_pack_mixed_sources` is:
   - `bsa-orchestrator`
   - `d0-problem-framer`
@@ -103,7 +104,7 @@ Discovery (runtime contract):
 3. If discovery mode: run `d1 -> d2 -> d3 -> d4 -> d5`.
 4. Validate discovery decision markers and emit `bsa.stage1.entry.enabled` only on `discovery.go`.
 5. Run Stage 1 composite (`intake -> claim-binder`) and promote.
-6. Run Stage 2 runtime-native context/state stage and promote.
+6. Run Stage 2 via `bsa-context-framer` to produce the five context/state proposal artifacts; run the Stage 2 audit flow and promote on `stage2.context_state.pass`.
 7. Run Stage 3 through Stage 6 with required audit markers.
 8. Run Stage 7 validation gates and Stage 8 no-new-claims gate.
 9. Run handoff packaging; enforce final no-new-claims gate.

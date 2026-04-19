@@ -5,6 +5,9 @@ SCN-ORCH-001-C,Promote artifacts through lock-based merge,bsa-orchestrator,Promo
 SCN-ORCH-001-D,Enforce evidence-binding on promotion,bsa-orchestrator,Promotion fails when ClaimID or A51Ref traceability is missing
 SCN-ORCH-001-E,Enforce D0 to BSA bridge markers,bsa-orchestrator,Stage 1 entry is blocked without discovery.go and bsa.stage1.entry.enabled
 SCN-STAGE13-001,Validate Stage 1 to Stage 3 evidence and semantic contracts,bsa-evidence-intake|bsa-claim-binder|bsa-semantic-extractor,Claim-layer and semantic outputs meet contract gates
+SCN-STAGE2-001-A,Validate Stage 2 required artifact set presence and shape,bsa-context-framer,All five Stage 2 proposal artifacts exist with shape-valid content
+SCN-STAGE2-001-B,Validate Stage 2 required headers and column schemas,bsa-context-framer,Required sections in context_state_frame and system_context_seed plus required columns in stakeholder_authority_map and constraints_dependencies_route are present and evidence-cited
+SCN-STAGE2-001-C,Validate Stage 2 summary fields and analyst_judgment discipline,bsa-context-framer,stage2_summary.json carries all required fields and digests; any ClaimType=analyst_judgment row authored under Stage 2 has non-empty JustificationRationale referencing an upstream ClaimID different from its own
 SCN-STAGE46-001,Validate Stage 4 to Stage 6 modeling and anchor contracts,bsa-domain-modeler|bsa-backbone-builder|bsa-contract-builder,Path-aligned artifacts and A61-ready anchors are auditable
 SCN-STAGE78-001,Validate Stage 7 to Stage 8 readiness and handoff,bsa-validation-readiness|bsa-handoff-packager,Readiness and handoff outputs pass mandatory gate set
 SCN-DISC12-001,Validate D1 governance framing outputs,d0-problem-framer,Problem framing remains discovery-only and governance-bound

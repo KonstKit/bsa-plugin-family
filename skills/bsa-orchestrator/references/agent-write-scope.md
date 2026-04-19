@@ -13,7 +13,7 @@ Workers write only to owned proposal/view folders. Canonical writes are orchestr
 | `d0-synthesis-gatekeeper` | `analysis/discovery/proposals/d5/` | canonical/handoff |
 | `bsa-evidence-intake` | `analysis/proposals/stage1/` | canonical/handoff |
 | `bsa-claim-binder` | `analysis/proposals/stage1/` | canonical/handoff |
-| `stage2` (runtime-native) | `analysis/proposals/stage2/` (runtime executor output) | canonical/handoff direct writes outside orchestrator promotion |
+| `bsa-context-framer` | `analysis/proposals/stage2/` | canonical/handoff |
 | `bsa-semantic-extractor` | `analysis/proposals/stage3/` | canonical/handoff |
 | `bsa-domain-modeler` | `analysis/proposals/stage4/` | canonical/handoff |
 | `bsa-backbone-builder` | `analysis/proposals/stage5/` | canonical/handoff |

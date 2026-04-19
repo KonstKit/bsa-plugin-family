@@ -11,6 +11,7 @@
         "bsa-orchestrator",
         "bsa-evidence-intake",
         "bsa-claim-binder",
+        "bsa-context-framer",
         "bsa-semantic-extractor",
         "bsa-domain-modeler",
         "bsa-backbone-builder",
@@ -24,7 +25,7 @@
         "bsa-handoff-packager"
       ],
       "runtime_notes": [
-        "Main-cycle stage2 is orchestrator runtime-native between Stage 1 and Stage 3 (Sprint 1 US-S1-01 introduces bsa-context-framer as the explicit owner and adds it to this worker_set)."
+        "Stage 2 is worker-owned by bsa-context-framer (Sprint 1 US-S1-01): runs between bsa-claim-binder and bsa-semantic-extractor. Stage 3 start is gated on stage2.context_state.pass."
       ]
     },
     {

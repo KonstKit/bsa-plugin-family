@@ -35,9 +35,11 @@ Run this skill inside composite Stage 1, after intake and before semantic extrac
 6. Write all outputs under `analysis/proposals/stage1/`.
 
 ## Invariants
-- No claim in `A59` without `SourceID` and `ExcerptID`.
+- `A59.ClaimType` is closed to exactly `{direct, inference, analyst_judgment}` per `governance/immutable_invariants.md` INV-07.
+- `direct` and `inference` rows require `SourceID` and `ExcerptID` (or explicit `A51Ref` when the row guards an unresolved item).
 - No excerpt in `A58` is valid without a reproducible locator.
 - Inference claims must expose their basis; they cannot masquerade as direct quotes.
+- `analyst_judgment` rows are authored ONLY by downstream skills that explicitly own analytical recommendations (e.g. `bsa-context-framer` in Stage 2, `bsa-handoff-packager` in H1/H4). Every such row MUST carry non-empty `JustificationRationale` referencing at least one upstream `ClaimID` different from its own. `bsa-claim-binder` itself does not author `analyst_judgment` rows during Stage 1 intake — its job is the direct/inference claim-layer.
 - Positive factual claims are never authored from `A51` alone.
 - Claim-layer remains proposal-only until orchestrator promotion.
 

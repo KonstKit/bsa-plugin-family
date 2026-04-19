@@ -72,11 +72,17 @@ def test_ac1_repo_manifest_has_two_request_types() -> None:
 
 
 def test_ac1_direct_pack_worker_set_matches_spec() -> None:
-    """AC-1: bsa_pack_direct_mixed_sources worker_set matches bsa-orchestrator/SKILL.md:38-52."""
+    """AC-1: bsa_pack_direct_mixed_sources worker_set matches bsa-orchestrator/SKILL.md.
+
+    Sprint 1 US-S1-01 added `bsa-context-framer` as Stage 2 owner between
+    claim-binder and semantic-extractor. Expected set is the Phase-0
+    14 skills PLUS bsa-context-framer.
+    """
     data = json.loads(DEFAULT_ROUTING.read_text(encoding="utf-8"))
     direct = next(r for r in data["routes"] if r["request_type"] == "bsa_pack_direct_mixed_sources")
     expected = {
         "bsa-orchestrator", "bsa-evidence-intake", "bsa-claim-binder",
+        "bsa-context-framer",
         "bsa-semantic-extractor", "bsa-domain-modeler", "bsa-backbone-builder",
         "bsa-anchor-auditor", "bsa-contract-builder", "bsa-citation-auditor",
         "bsa-consistency-auditor", "bsa-skeptical-reviewer", "bsa-no-new-facts-auditor",

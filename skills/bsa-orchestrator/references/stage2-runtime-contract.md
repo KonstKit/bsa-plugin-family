@@ -1,7 +1,10 @@
 # Stage 2 Runtime Contract
 
 ## Purpose
-Specify required Stage 2 runtime-native outputs produced before Stage 3.
+Specify required Stage 2 outputs produced before Stage 3.
+
+## Owner
+Stage 2 is worker-owned by [`bsa-context-framer`](../../bsa-context-framer/SKILL.md) starting Sprint 1 (US-S1-01). The prior "runtime-native" label is deprecated. The skill's [`context-state-contract.md`](../../bsa-context-framer/references/context-state-contract.md) is the authoritative artifact-shape reference; this document stays in lockstep — any change to required headers, columns, or fields happens in both files in the same PR.
 
 ## Required Stage 2 Artifacts
 - `analysis/proposals/stage2/context_state_frame.md`
