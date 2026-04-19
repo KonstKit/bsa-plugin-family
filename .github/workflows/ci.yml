@@ -47,6 +47,10 @@ jobs:
         run: |
           python scripts/validate_skill_structure.py skills/*/SKILL.md --quiet
 
+      - name: Routing manifest validator (US-S05-02)
+        run: |
+          python scripts/validate_request_skill_routing.py
+
       - name: Inventory audit (US-S0-04)
         run: |
           python scripts/inventory_audit.py --output docs/inventory_audit.md

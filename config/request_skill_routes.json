@@ -1,0 +1,66 @@
+{
+  "$schema": "./request_skill_routes.schema.json",
+  "_description": "Repo-visible routing contract referenced by bsa-orchestrator/SKILL.md:66. Maps request types to their mandatory worker skill sets. Enforced by scripts/validate_request_skill_routing.py.",
+  "schema_version": 1,
+  "canon_policy_version": "0.9",
+  "routes": [
+    {
+      "request_type": "bsa_pack_direct_mixed_sources",
+      "description": "Build a main-cycle analytical pack from mixed sources (docs, sheets, transcripts, tickets, repos, notes) without the optional discovery branch.",
+      "worker_set": [
+        "bsa-orchestrator",
+        "bsa-evidence-intake",
+        "bsa-claim-binder",
+        "bsa-semantic-extractor",
+        "bsa-domain-modeler",
+        "bsa-backbone-builder",
+        "bsa-anchor-auditor",
+        "bsa-contract-builder",
+        "bsa-citation-auditor",
+        "bsa-consistency-auditor",
+        "bsa-skeptical-reviewer",
+        "bsa-no-new-facts-auditor",
+        "bsa-validation-readiness",
+        "bsa-handoff-packager"
+      ],
+      "runtime_notes": [
+        "Main-cycle stage2 is orchestrator runtime-native between Stage 1 and Stage 3 (Sprint 1 US-S1-01 introduces bsa-context-framer as the explicit owner and adds it to this worker_set)."
+      ]
+    },
+    {
+      "request_type": "discovery_pack_mixed_sources",
+      "description": "Discovery-first pipeline (D1-D5) producing synthesis outputs. Stage 1-8 main cycle activates only on discovery.go verdict.",
+      "worker_set": [
+        "bsa-orchestrator",
+        "d0-problem-framer",
+        "d0-context-researcher",
+        "d0-hypothesis-prioritizer",
+        "d0-feasibility-assessor",
+        "d0-synthesis-gatekeeper",
+        "bsa-citation-auditor",
+        "bsa-skeptical-reviewer",
+        "bsa-no-new-facts-auditor"
+      ],
+      "conditional_workers": [
+        {
+          "worker": "bsa-evidence-intake",
+          "trigger": "mixed-source inventory, contradiction scan, or Stage 1 bridge materialization required"
+        }
+      ]
+    }
+  ],
+  "sidecars": [
+    {
+      "skill": "c4-plantuml-from-context",
+      "policy": "derived-only; add only when anchor-manifest trigger contract is met (see bsa-orchestrator/references/sidecar-integration.md)"
+    },
+    {
+      "skill": "camunda-bpmn-from-context",
+      "policy": "derived-only; add only when anchor-manifest trigger contract is met"
+    },
+    {
+      "skill": "inot-prompt-builder",
+      "policy": "derived-only; advisory output under analysis/views/adjudication/"
+    }
+  ]
+}
