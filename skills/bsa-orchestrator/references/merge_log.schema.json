@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kkitanin/bsa-plugin-family/schemas/merge_log.schema.json",
+  "title": "Discovery -> Main Merge Log Entry",
+  "description": "Schema for a single line of analysis/canonical/merge_logs/discovery_to_main_merge_log.jsonl. Each line is one merge event emitted by bsa-orchestrator during the discovery->Stage-1 bridge. See skills/bsa-orchestrator/references/discovery_to_main_merge.md for the full contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event",
+    "emitted_at",
+    "run_id",
+    "canon_policy_version",
+    "resolution"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "Stable identifier for this event within the run. Pattern: MRG-<6+ digits>.",
+      "pattern": "^MRG-\\d{6,}$"
+    },
+    "event": {
+      "type": "string",
+      "enum": [
+        "source_reused",
+        "source_new",
+        "excerpt_reused",
+        "excerpt_text_conflict",
+        "claim_lineage",
+        "claim_conflict",
+        "source_tier_mismatch",
+        "a60_lineage"
+      ]
+    },
+    "emitted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "RunID from A48_run_context_card.md",
+      "minLength": 1
+    },
+    "canon_policy_version": {
+      "type": "string",
+      "description": "CanonPolicyVersion active at merge time. Accepts bare '<M.N>' / '<M.N.P>' or Sprint-3 '<M.N.P>+hash:<sha256>' form.",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:\\.(0|[1-9]\\d*))?(?:\\+hash:[a-f0-9]{6,64})?$"
+    },
+    "resolution": {
+      "type": "string",
+      "enum": [
+        "informational",
+        "soft_resolved",
+        "hard_blocked"
+      ],
+      "description": "informational: no analyst action. soft_resolved: orchestrator resolved automatically (e.g., tier-mismatch higher-wins). hard_blocked: promotion halted; A51 contradiction raised."
+    },
+    "discovery_id": {
+      "type": "string",
+      "description": "Discovery-side identifier involved in the event (D-C-xxx / S-xxx / E-xxx). Required for all events except source_new."
+    },
+    "main_id": {
+      "type": "string",
+      "description": "Main-side identifier involved in the event (C-xxx / S-xxx / E-xxx). Required for events that produce a main-side row (source_reused, source_new, excerpt_reused, claim_lineage, a60_lineage)."
+    },
+    "a51_ref": {
+      "type": "string",
+      "description": "A51Ref raised when resolution=hard_blocked. Required iff resolution=hard_blocked.",
+      "pattern": "^A51-\\d+$"
+    },
+    "conflict_detail": {
+      "type": "object",
+      "description": "Free-form detail for conflict events. Required iff event ends in '_conflict' or '_mismatch'.",
+      "additionalProperties": true,
+      "properties": {
+        "discovery_value": {},
+        "main_value": {},
+        "locator": {"type": "string"},
+        "field": {"type": "string"}
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional free-text annotation for human readers."
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"resolution": {"const": "hard_blocked"}}, "required": ["resolution"]},
+      "then": {"required": ["a51_ref", "conflict_detail"]}
+    },
+    {
+      "if": {"properties": {"event": {"const": "claim_conflict"}}, "required": ["event"]},
+      "then": {"required": ["discovery_id", "main_id", "conflict_detail", "a51_ref"]}
+    },
+    {
+      "if": {"properties": {"event": {"const": "excerpt_text_conflict"}}, "required": ["event"]},
+      "then": {"required": ["discovery_id", "main_id", "conflict_detail", "a51_ref"]}
+    },
+    {
+      "if": {"properties": {"event": {"const": "source_tier_mismatch"}}, "required": ["event"]},
+      "then": {"required": ["discovery_id", "main_id", "conflict_detail"]}
+    },
+    {
+      "if": {"properties": {"event": {"const": "claim_lineage"}}, "required": ["event"]},
+      "then": {"required": ["discovery_id", "main_id"]}
+    },
+    {
+      "if": {"properties": {"event": {"const": "source_reused"}}, "required": ["event"]},
+      "then": {"required": ["discovery_id", "main_id"]}
+    },
+    {
+      "if": {"properties": {"event": {"const": "excerpt_reused"}}, "required": ["event"]},
+      "then": {"required": ["discovery_id", "main_id"]}
+    },
+    {
+      "if": {"properties": {"event": {"const": "a60_lineage"}}, "required": ["event"]},
+      "then": {"required": ["discovery_id", "main_id"]}
+    },
+    {
+      "if": {"properties": {"event": {"const": "source_new"}}, "required": ["event"]},
+      "then": {"required": ["main_id"]}
+    }
+  ]
+}

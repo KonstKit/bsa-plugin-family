@@ -7,6 +7,7 @@
 4. Shared-governance policy is not violated (`A48/A50/A51` parallel ledger check).
 5. No hard-blocking `A51` item remains unresolved for the promoted scope.
 6. Merge lock is acquired.
+7. Discovery → main merge step — when the current run is in `discovery_then_bsa` mode and `discovery.go` has fired, run the discovery→main merge per [discovery_to_main_merge.md](discovery_to_main_merge.md) before promoting Stage 1. Any `claim_conflict` or `excerpt_text_conflict` event halts the promotion via a hard-blocking `A51` contradiction row; `source_tier_mismatch` events are logged but non-blocking.
 
 ## Required Audit Markers
 Discovery:

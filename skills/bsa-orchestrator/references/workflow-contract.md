@@ -80,16 +80,17 @@ With discovery:
 ## Promotion Sequence (Two-Key)
 1. Validate stage-owned proposal directory.
 2. Validate evidence-binding and shared-control-surface references.
-3. Validate required audit marker(s).
-4. Acquire merge lock.
-5. Promote artifacts.
-6. Promote control surfaces:
-   - `A50/A51/A58/A59/A60` after main-cycle `stage1`
+3. Run the **discovery → main merge step** when in `discovery_then_bsa` mode and `discovery.go` has fired. Emit `merge_log.jsonl` entries per [discovery_to_main_merge.md](discovery_to_main_merge.md) and [merge_log.schema.json](merge_log.schema.json). Hard-blocking events (`claim_conflict`, `excerpt_text_conflict`) halt promotion here with an `A51` contradiction row.
+4. Validate required audit marker(s).
+5. Acquire merge lock.
+6. Promote artifacts.
+7. Promote control surfaces:
+   - `A50/A51/A58/A59/A60` after main-cycle `stage1` (carrying forward discovery lineage per the merge step above when applicable)
    - Stage 2 context/state outputs after `stage2`
    - discovery `A58/A59/A60` after `d2`
    - `A61` after `stage6`
-7. Emit next ready/control markers and append event log.
-8. Invalidate downstream markers on re-entry.
+8. Emit next ready/control markers and append event log. For runs that executed the merge step, also append merge events to `analysis/canonical/merge_logs/discovery_to_main_merge_log.jsonl`.
+9. Invalidate downstream markers on re-entry.
 
 ## Blocking Rule
 - Canonical promotion stops when new claims, hidden assumptions, or hard-blocking `A51` items remain unresolved.
