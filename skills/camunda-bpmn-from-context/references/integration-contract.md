@@ -69,23 +69,23 @@ Authoritative JSON Schema: [anchor_manifest.schema.json](anchor_manifest.schema.
       "anchor_map": [
         {
           "element_id": "StartEvent_intake",
-          "element_kind": "StartEvent",
+          "element_kind": "startEvent",
           "a61_anchor_id": "ANC-EVT-001",
           "notes": "Triggered by any of the three intake channels (C-001 family)"
         },
         {
           "element_id": "Task_assign_severity",
-          "element_kind": "Task",
+          "element_kind": "task",
           "a61_anchor_id": "ANC-TASK-002"
         },
         {
           "element_id": "Gateway_severity_branch",
-          "element_kind": "ExclusiveGateway",
+          "element_kind": "exclusiveGateway",
           "a61_anchor_id": "ANC-DEC-001"
         },
         {
           "element_id": "SequenceFlow_high_to_page",
-          "element_kind": "SequenceFlow",
+          "element_kind": "sequenceFlow",
           "a61_anchor_id": "ANC-FLOW-003"
         }
       ]
@@ -104,7 +104,14 @@ Required fields:
 
 Per-element required fields:
 - `element_id` — exact BPMN element `id` attribute as used inside the `.bpmn` XML.
-- `element_kind` — one of the modeled BPMN 2.0 types: `StartEvent`, `Task`, `UserTask`, `ServiceTask`, `ReceiveTask`, `SendTask`, `ScriptTask`, `BusinessRuleTask`, `ManualTask`, `CallActivity`, `SubProcess`, `ExclusiveGateway`, `ParallelGateway`, `InclusiveGateway`, `EventBasedGateway`, `BoundaryEvent`, `IntermediateCatchEvent`, `IntermediateThrowEvent`, `EndEvent`, `SequenceFlow`, `MessageFlow`, `Participant`, `Lane`, `DataObject`.
+- `element_kind` — BPMN 2.0 XML tag name of the modeled element (camelCase to match the BPMN spec). Full enum is enforced by `anchor_manifest.schema.json` and covers the subset documented in `references/support-matrix.md`:
+  - **events:** `startEvent`, `endEvent`, `intermediateCatchEvent`, `intermediateThrowEvent`, `boundaryEvent`.
+  - **tasks:** `task`, `userTask`, `serviceTask`, `receiveTask`, `sendTask`, `scriptTask`, `businessRuleTask`, `manualTask`.
+  - **subprocess-like activities:** `callActivity`, `subProcess`, `transaction`, `adHocSubProcess`.
+  - **gateways:** `exclusiveGateway`, `parallelGateway`, `inclusiveGateway`, `eventBasedGateway`, `complexGateway`.
+  - **flows and collaboration:** `sequenceFlow`, `messageFlow`, `participant`, `lane`, `laneSet`.
+  - **data and annotations:** `dataObject`, `dataObjectReference`, `dataStoreReference`, `textAnnotation`, `association`, `group`.
+  - **not element kinds (these are attributes of event elements, not standalone IDs):** `messageEventDefinition`, `timerEventDefinition`, `signalEventDefinition`, `errorEventDefinition`, `escalationEventDefinition`, `conditionalEventDefinition`, `terminateEventDefinition`, `cancelEventDefinition`, `compensateEventDefinition`, `linkEventDefinition`, `multipleEventDefinition`. Anchor these by pointing `element_kind` at the owning event element (`startEvent`, `boundaryEvent`, etc.) and using `notes` to record the event-definition subtype if helpful.
 - `a61_anchor_id` — canonical anchor ID; MUST exist in `analysis/canonical/core_controls/A61*`.
 
 Optional fields:

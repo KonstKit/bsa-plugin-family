@@ -93,7 +93,7 @@ Required fields:
 
 Per-element required fields:
 - `view_element_id` — PlantUML alias / identifier used inside the `.puml`.
-- `view_element_kind` — one of `Person`, `System`, `System_Ext`, `Container`, `Container_Ext`, `Component`, `Component_Ext`, `Rel`, `System_Boundary`, `Container_Boundary`, `Deployment_Node`, `Enterprise_Boundary`.
+- `view_element_kind` — one of the C4-PlantUML macro names documented in `references/c4-plantuml-syntax.md`. Full enum is enforced by `anchor_manifest.schema.json` and covers: people (`Person`, `Person_Ext`), systems (`System`, `System_Ext`, `SystemDb`, `SystemDb_Ext`, `SystemQueue`, `SystemQueue_Ext`), containers (`Container`, `Container_Ext`, `ContainerDb`, `ContainerDb_Ext`, `ContainerQueue`, `ContainerQueue_Ext`), components (`Component`, `Component_Ext`, `ComponentDb`, `ComponentDb_Ext`, `ComponentQueue`, `ComponentQueue_Ext`), boundaries (`Boundary`, `Enterprise_Boundary`, `System_Boundary`, `Container_Boundary`), deployment (`Deployment_Node`, `Deployment_Node_L`, `Deployment_Node_R`, `Node`, `Node_L`, `Node_R`), and relationships (`Rel`, `BiRel`, `RelIndex`). Directional relationship variants (`Rel_U`, `BiRel_Left`, etc.) collapse to their base kind for anchor-mapping purposes.
 - `a61_anchor_id` — canonical anchor ID; MUST exist in `analysis/canonical/core_controls/A61*`.
 
 Optional fields:

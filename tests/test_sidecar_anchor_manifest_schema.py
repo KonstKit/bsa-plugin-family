@@ -86,23 +86,57 @@ def _bpmn_happy_path() -> dict:
                 "anchor_map": [
                     {
                         "element_id": "StartEvent_intake",
-                        "element_kind": "StartEvent",
+                        "element_kind": "startEvent",
                         "a61_anchor_id": "ANC-EVT-001",
                     },
                     {
                         "element_id": "Task_assign_severity",
-                        "element_kind": "Task",
+                        "element_kind": "task",
                         "a61_anchor_id": "ANC-TASK-002",
                     },
                     {
                         "element_id": "SequenceFlow_high_to_page",
-                        "element_kind": "SequenceFlow",
+                        "element_kind": "sequenceFlow",
                         "a61_anchor_id": "ANC-FLOW-003",
                     },
                 ],
             }
         ],
     }
+
+
+# Kinds previously flagged by codex round 1 as "documented but missing from
+# schema enum"; these tests pin them as accepted so the enum/taxonomy gap
+# cannot reopen silently.
+C4_PREVIOUSLY_MISSING_KINDS = (
+    "Person_Ext",
+    "SystemDb",
+    "SystemQueue",
+    "ContainerDb",
+    "ContainerQueue",
+    "ComponentDb",
+    "ComponentQueue",
+    "Boundary",
+    "Deployment_Node_L",
+    "Deployment_Node_R",
+    "Node",
+    "Node_L",
+    "Node_R",
+    "BiRel",
+    "RelIndex",
+)
+
+BPMN_PREVIOUSLY_MISSING_KINDS = (
+    "complexGateway",
+    "laneSet",
+    "dataObjectReference",
+    "dataStoreReference",
+    "textAnnotation",
+    "association",
+    "group",
+    "transaction",
+    "adHocSubProcess",
+)
 
 
 # ---- meta-schema conformance --------------------------------------------
@@ -243,6 +277,114 @@ def test_bpmn_rejects_unknown_top_level_field() -> None:
     doc["extra_field_not_in_schema"] = True
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.Draft202012Validator(schema).validate(doc)
+
+
+# ---- enum completeness regression (US-S3-01 review round 1) ------------
+#
+# Codex round 1 flagged that the initial schema enums dropped documented
+# taxonomy entries (Person_Ext / ContainerDb / ... / complexGateway / ...),
+# which would silently reject valid manifests. These tests pin every
+# previously-missing kind as accepted and also guarantee the schema enum
+# stays a strict superset of the documented taxonomy.
+
+
+@pytest.mark.parametrize("kind", C4_PREVIOUSLY_MISSING_KINDS)
+def test_c4_schema_accepts_previously_missing_kind(kind: str) -> None:
+    """Pin every previously-missing C4 macro kind as schema-accepted."""
+    schema = _load(C4_SCHEMA)
+    doc = _c4_happy_path()
+    doc["view_files"][0]["anchor_map"].append(
+        {
+            "view_element_id": f"probe_{kind}",
+            "view_element_kind": kind,
+            "a61_anchor_id": "ANC-PROBE-001",
+        }
+    )
+    jsonschema.Draft202012Validator(schema).validate(doc)
+
+
+@pytest.mark.parametrize("kind", BPMN_PREVIOUSLY_MISSING_KINDS)
+def test_bpmn_schema_accepts_previously_missing_kind(kind: str) -> None:
+    """Pin every previously-missing BPMN element kind as schema-accepted."""
+    schema = _load(BPMN_SCHEMA)
+    doc = _bpmn_happy_path()
+    doc["view_files"][0]["anchor_map"].append(
+        {
+            "element_id": f"probe_{kind}",
+            "element_kind": kind,
+            "a61_anchor_id": "ANC-PROBE-001",
+        }
+    )
+    jsonschema.Draft202012Validator(schema).validate(doc)
+
+
+def test_c4_enum_is_superset_of_documented_taxonomy() -> None:
+    """Structural guarantee: every C4 macro name called out in
+    references/c4-plantuml-syntax.md as a selectable view element kind
+    must appear in the schema enum. This prevents a future doc update
+    from silently creating a new unvalidated kind.
+
+    We scan for the documented macro-family names and check each against
+    the schema enum. Directional relationship variants (Rel_U, BiRel_L,
+    etc.) are intentionally collapsed to their base kind in the enum and
+    are therefore excluded from this superset check.
+    """
+    schema = _load(C4_SCHEMA)
+    enum = set(
+        schema["properties"]["view_files"]["items"]["properties"]["anchor_map"][
+            "items"
+        ]["properties"]["view_element_kind"]["enum"]
+    )
+    # Authoritative documented kinds the enum MUST cover.
+    documented = {
+        "Person", "Person_Ext",
+        "System", "System_Ext", "SystemDb", "SystemDb_Ext",
+        "SystemQueue", "SystemQueue_Ext",
+        "Container", "Container_Ext",
+        "ContainerDb", "ContainerDb_Ext",
+        "ContainerQueue", "ContainerQueue_Ext",
+        "Component", "Component_Ext",
+        "ComponentDb", "ComponentDb_Ext",
+        "ComponentQueue", "ComponentQueue_Ext",
+        "Boundary", "Enterprise_Boundary",
+        "System_Boundary", "Container_Boundary",
+        "Deployment_Node", "Deployment_Node_L", "Deployment_Node_R",
+        "Node", "Node_L", "Node_R",
+        "Rel", "BiRel", "RelIndex",
+    }
+    missing = documented - enum
+    assert not missing, f"C4 schema enum missing documented kinds: {sorted(missing)}"
+
+
+def test_bpmn_enum_is_superset_of_documented_taxonomy() -> None:
+    """Structural guarantee: every BPMN element kind called out in
+    references/support-matrix.md as a supported construct must appear
+    in the schema enum (element-level kinds only — event definitions are
+    attributes of event elements, not standalone IDs, and are therefore
+    excluded).
+    """
+    schema = _load(BPMN_SCHEMA)
+    enum = set(
+        schema["properties"]["view_files"]["items"]["properties"]["anchor_map"][
+            "items"
+        ]["properties"]["element_kind"]["enum"]
+    )
+    documented = {
+        "startEvent", "endEvent",
+        "intermediateCatchEvent", "intermediateThrowEvent",
+        "boundaryEvent",
+        "task", "userTask", "serviceTask", "receiveTask", "sendTask",
+        "scriptTask", "businessRuleTask", "manualTask",
+        "callActivity", "subProcess", "transaction", "adHocSubProcess",
+        "exclusiveGateway", "parallelGateway", "inclusiveGateway",
+        "eventBasedGateway", "complexGateway",
+        "sequenceFlow", "messageFlow",
+        "participant", "lane", "laneSet",
+        "dataObject", "dataObjectReference", "dataStoreReference",
+        "textAnnotation", "association", "group",
+    }
+    missing = documented - enum
+    assert not missing, f"BPMN schema enum missing documented kinds: {sorted(missing)}"
 
 
 if __name__ == "__main__":
