@@ -24,6 +24,6 @@
     "hash_full": "cbba8e53b0312aeec2744e17d018583fcd96bba613a6b39be58ab702cb44fcb0",
     "computed_by": "scripts/compute_canon_hash.py",
     "computed_at": "2026-04-20T16:00:00Z",
-    "_comment": "Custom field — Claude Code preserves unknown top-level fields. Recomputed at release time by .github/workflows/release.yml; a mismatch between this value and the script output blocks publish."
+    "_comment": "Custom field — Claude Code preserves unknown top-level fields. Recomputed manually via scripts/compute_canon_hash.py after any POLICY_GLOBS edit; tests/test_plugin_manifest.py::test_manifest_canon_hash_matches_current_script_output fails locally on any drift between this value and the live script output."
   }
 }
