@@ -9,7 +9,7 @@ Evidence-first BA/SA analytical pipeline packaged as a Claude Code plugin. Anti-
 ```
 /plugin marketplace add https://github.com/kkitanin/bsa-plugin-family
 /plugin install bsa-full
-/plugin list       # expect bsa-full@1.0.0-rc2 (or @1.0.0 after final cut)
+/plugin list       # expect bsa-full@1.0.0
 ```
 
 Full install / uninstall / upgrade: [INSTALL.md](INSTALL.md).
@@ -32,7 +32,7 @@ Each `/bsa-stage N` invocation runs the stage's full worker chain (worker + any 
 
 ## Status
 
-**v1.0.0-rc2** — release candidate 2; the final `v1.0.0` tag lands in Sprint 4.5 US-S45-03 after this docs + fixture cohort is reviewed.
+**v1.0.0** — first public release (Phase 0-2 MVP close, Sprint 4.5 US-S45-03).
 
 23 skills • 6 slash-commands • 3 safety hooks • 3 golden fixtures + 1 adversarial • 302 unit tests • evidence-bound claim layer (INV-01) • closed `ClaimType` enum (INV-07) • tier-aware weighted coverage (KPI-001) • two-key promotion • no-new-claims gate.
 

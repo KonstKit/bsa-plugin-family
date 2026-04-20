@@ -10,9 +10,9 @@
 |---|---|---|---|
 | US-S45-01 Part A — project_0002 prep-shell upgraded to full fixture | done | `b7438aa` | 0 (clean pass, aligned to Part B templates) |
 | US-S45-01 Part B — project_0003 authored from scratch (process + discovery + multi-stakeholder conflict) | done | `d147236` + `92cccae` (round-1 fixes) | 2 |
-| US-S45-02 — 6 docs/ pages + README polish | done | `<docs-commit>` | `<N>` |
-| US-S45-03 — v1.0.0 final tag | done | `<tag-commit>` + `v1.0.0` | 0 (release workflow gates pass or fail) |
-| Sprint 4.5 retrospective (this file) | done | `<retro-commit>` | `<N>` |
+| US-S45-02 — 6 docs/ pages + README polish | done | `5294651` + `d815649` (round-2 fixes) | 3 |
+| US-S45-03 — v1.0.0 final tag | done | this commit + `v1.0.0` tag | 0 (release workflow gates pass at tag push time) |
+| Sprint 4.5 retrospective (this file) | done | this commit | 0 (hash placeholders filled at US-S45-03) |
 
 Plus: `v1.0.0` git tag (pending US-S45-03).
 
@@ -56,9 +56,9 @@ Plus: `v1.0.0` git tag (pending US-S45-03).
 ## Metrics
 
 - **Tests:** 302 total (stable from Sprint 3/4 baseline — fixture authoring adds no new test cases, only new fixture files). Runtime: ~9s on Python 3.9.6.
-- **Commits:** `<total>` approved in Sprint 4.5 across: US-S45-01 Part A (1 commit), US-S45-01 Part B (1 feat + 1 fix from round-1 codex review = 2 commits), US-S45-02 (1-2 commits depending on review rounds), US-S45-03 (1 chore bump + tag), this retro (1 commit).
-- **Review rounds:** US-S45-01 Part A passed clean (round 0 — template already established from project_0002 shape). US-S45-01 Part B took 2 rounds (round 1 REJECT on C-007 JustificationRationale inconsistency + stage2 dependency count mismatch; round 2 APPROVE after fold-in + extension).
-- **Lines of committed changes:** ~3500 (~2000 for project_0002 expansion + ~1500 for project_0003 + ~1800 for docs). Fixtures dominate; docs ~1800 LOC across 6 pages + README rewrite.
+- **Commits:** 6 approved in Sprint 4.5: US-S45-01 Part A (`b7438aa`), US-S45-01 Part B feat + round-1 fix (`d147236` + `92cccae`), US-S45-02 docs + round-2 fixes (`5294651` + `d815649`), US-S45-03 version bump + retro + CHANGELOG (this commit).
+- **Review rounds:** US-S45-01 Part A passed clean (round 0 — template already established from project_0002 shape). US-S45-01 Part B took 2 rounds (round 1 REJECT on C-007 JustificationRationale inconsistency + stage2 dependency count mismatch; round 2 APPROVE after fold-in + extension). US-S45-02 docs took 3 rounds (round 1 REJECT on stage-map + marker-path + runtime-layout + INV-01 scope + version wording + tier-delta IssueType; round 2 REJECT on remaining version/layout/INV-01 residual; round 3 APPROVE after targeted fixes).
+- **Lines of committed changes:** ~3500 across the sprint (~2000 for project_0002 expansion + ~1500 for project_0003 + ~1800 for docs + retro + CHANGELOG). Fixtures dominate by file count; docs + retro ~2300 LOC across 7 pages.
 - **Fixture axis matrix complete:** process × direct + structural × discovery + mixed-tier + process × discovery × multi-stakeholder-conflict. Three primary fixtures cover both modes (direct + discovery), both paths (process + structural), three domains (support-ticket ops + analytics platform ownership + procurement approval workflow), and single-stakeholder vs multi-stakeholder-conflict evidence mixes. Plus one adversarial fixture (prompt-injection) for the Phase 3 security baseline.
 
 ## What went well

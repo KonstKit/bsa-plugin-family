@@ -53,6 +53,11 @@
       "glob": "fixtures/golden/*/expected_outputs/handoff/handoff_manifest.json",
       "reason": "Handoff manifest JSON files embed sha256 digests (64-char hex) over the covered packs; digests occasionally contain 10-11 digit numeric substrings the phone heuristic catches. Integrity checksums, not PII.",
       "added_at": "2026-04-20"
+    },
+    {
+      "glob": "CHANGELOG.md",
+      "reason": "The CHANGELOG documents release-artifact sha256 digests (handoff manifests, canon hash); those 64-char hex strings contain 10-11 digit numeric substrings the phone heuristic catches. Release-metadata checksums, not PII.",
+      "added_at": "2026-04-20"
     }
   ]
 }

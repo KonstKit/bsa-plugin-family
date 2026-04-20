@@ -4,6 +4,35 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.0.0] — 2026-04-20
+
+Sprint 4.5 close — **first public release** of `bsa-full`. Phase 0-2 MVP ships on-budget across the 12-week roadmap: 23 skills, 6 slash-commands, 3 safety hooks, 3 golden fixtures + 1 adversarial, 302 unit tests, 7 immutable invariants under canon hash `cbba8e53…`.
+
+### Added
+- **US-S45-01 Part A** (`b7438aa`) — `fixtures/golden/project_0002/`: prep-shell (Sprint 2 US-S2-03) upgraded to full passing fixture. 5 canonical core_controls + 5 stage2 artifacts + 7 main-cycle markers + H1-H4 handoff pack with manifest digest `556138828a314c47bf91a89033e7985a38147405582f2e62488ab9323df8e9d2`. Exercises structural path + discovery mode + mixed-tier evidence.
+- **US-S45-01 Part B** (`d147236` + `92cccae`) — `fixtures/golden/project_0003/`: authored from scratch. Process path + discovery mode + multi-stakeholder conflict (procurement approval workflow). Two T4 sources contradict at tier-delta 0 → both inference claims (C-005, C-006) contested with `ClaimStrength=0.0`, routed to `A51-002` with `BlockingStatus=hard`. Analyst_judgment row (C-007) threads all 5 upstream ClaimIDs per INV-07. Handoff manifest digest `ac61192fdffee7e53a47804e4be841dd22b71e7422734860abb55702c0f86bcb`. Demonstrates the hard-blocker handoff policy (contested `A51` hard blocks downstream execution, not handoff emission).
+- **US-S45-02** (`5294651` + `d815649`) — 6 user-facing docs + README polish: `docs/getting_started.md` (install + 30-sec tour + walkthrough), `docs/workflow.md` (stage-by-stage main + discovery, 7 invariants, tier-delta rule), `docs/commands_reference.md` (every slash-command with flags, preconditions, failure modes), `docs/troubleshooting.md` (10 failure modes), `docs/architecture_overview.md` (23 skills across 6 roles, three-layer governance, runtime layout), `docs/faq.md` (12 entries). README.md polished with 30-sec tour, docs index, Phase 2.5 shakedown gate note.
+- **US-S45-03** (this commit) — version bump `1.0.0-rc2` → `1.0.0` in `.claude-plugin/plugin.json` (both `version` and `canonPolicyVersion.semver`). Sprint 4.5 retrospective finalized in `docs/retros/sprint_4_5.md`. CHANGELOG `[v1.0.0]` entry (this).
+
+### Changed
+- `CHANGELOG.md` — new `[v1.0.0]` section above `[v1.0.0-rc2]`.
+- `README.md` — status line now reads `v1.0.0` (was `v1.0.0-rc2` / `v0.9.0-foundation` before).
+
+### Canon policy version
+- **Unchanged** at `cbba8e53b0312aeec2744e17d018583fcd96bba613a6b39be58ab702cb44fcb0` between `v1.0.0-rc2` and `v1.0.0`. Sprint 4.5 is fixture + documentation work; no POLICY_GLOBS file changed, so the hash is stable. `canonPolicyVersion.semver` bumped `1.0.0-rc2` → `1.0.0` in lockstep with `version`. Full CanonPolicyVersion string: `1.0.0+hash:cbba8e53b0312aeec2744e17d018583fcd96bba613a6b39be58ab702cb44fcb0`. Release workflow's hash-match gate recomputes and confirms equality at tag time.
+
+### Phase 2.5 external shakedown gate
+- `v1.0.0` triggers the Phase 2.5 external shakedown gate. 2-4 weeks of real-project usage by non-self-owned analysts is required before Phase 3 dev-handoff extension begins. Blocker-findings → v1.0.x hotfix, not Phase 3 kickoff.
+
+### Out of scope for v1.0.0
+- Dev-handoff extension (bsa-nfr-collector, bsa-story-writer, bsa-test-scenario-builder, bsa-traceability-matrix, bsa-backlog-bridge) — Phase 3.
+- Machine-readable Stage 6 (OpenAPI / AsyncAPI / proto generation) — Phase 3.
+- Plugin decomposition (bsa-core / bsa-discovery / bsa-sidecars split) — Phase 4.
+- Domain/stack packs (fintech, healthcare, regulated) — Phase 5.
+- Reality-probe layer — Phase 6.
+- Self-improvement telemetry + evolution-miner — Phase 7.
+- Marketplace + certification framework — Phase 8.
+
 ## [v1.0.0-rc2] — 2026-04-20
 
 Sprint 4 plugin MVP close. All four US-S4-* stories delivered; Sprint 4.5 (fixture/docs pass + v1.0.0 final tag) remains.
