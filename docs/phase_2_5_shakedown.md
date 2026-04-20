@@ -117,7 +117,7 @@ If any shakedown finding is flagged `severity=critical` (pipeline cannot complet
 3. **CHANGELOG** — add `## [v1.0.1] — <date>` (or appropriate patch number) with finding + fix citation.
 4. **Plugin version bump** `.claude-plugin/plugin.json`: `1.0.0` → `1.0.1`. `canonPolicyVersion.semver` matching. If the fix touched a POLICY_GLOBS file, recompute canon hash and bump accordingly per [contract-versioning.md](../skills/bsa-orchestrator/references/contract-versioning.md) major/minor/patch rules.
 5. **Local smoke-test** on the engagement that surfaced the finding, and at least one other fixture.
-6. **Tag** `v1.0.1` on the hotfix branch, then **cherry-pick** the fix commits onto `main` (fast-forward back-merge is not available because `main` has already moved past `v1.0.0` with post-release cleanup commits). The resulting `main` state should be equivalent to the hotfix branch's contents.
+6. **Tag** `v1.0.1` on the hotfix branch, then **cherry-pick** the fix commits onto `main` (fast-forward back-merge is not available because `main` has already moved past `v1.0.0` with post-release cleanup commits). After the cherry-pick, `main` carries its own post-`v1.0.0` history PLUS the hotfix commits; it is NOT a full-tree copy of the hotfix branch. The `v1.0.1` tag on the hotfix branch remains the authoritative release-tree reference for installs.
 7. **Re-install** in the shakedown cohort via `/plugin marketplace update bsa-marketplace` + `/plugin install bsa-full@bsa-marketplace`.
 
 After the cherry-pick lands on `main`, the `release/1.0.x` branch can be deleted; the `v1.0.1` tag retains the exact tree that was re-installed. No long-lived `release/1.0.x` branch beyond the hotfix window.
