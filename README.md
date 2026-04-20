@@ -1,46 +1,83 @@
 # BSA Plugin Family
 
-![CI](https://github.com/OWNER/bsa-plugin-family/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/kkitanin/bsa-plugin-family/actions/workflows/ci.yml/badge.svg)
 
-Evidence-first BA/SA analytical pipeline packaged as a Claude Code plugin family. Anti-hallucination gates, claim-binding traceability, two-key promotion, and artifact-first governance.
+Evidence-first BA/SA analytical pipeline packaged as a Claude Code plugin. Anti-hallucination gates, claim-binding traceability, two-key promotion, and artifact-first governance.
 
-> **Note:** the CI badge above points at `OWNER/bsa-plugin-family` as a placeholder. Replace `OWNER` with the actual GitHub owner once the repo is pushed to a remote.
+## Install
+
+```
+/plugin marketplace add https://github.com/kkitanin/bsa-plugin-family
+/plugin install bsa-full
+/plugin list       # expect bsa-full@1.0.0-rc2 (or @1.0.0 after final cut)
+```
+
+Full install / uninstall / upgrade: [INSTALL.md](INSTALL.md).
+
+## 30-second tour
+
+```
+cd /tmp/my-engagement
+/bsa-start --mode=direct
+# drop your sources under analysis/proposals/stage1/inputs/
+/bsa-stage 1          # runs bsa-evidence-intake + bsa-claim-binder
+/bsa-promote
+/bsa-stage 2          # runs bsa-context-framer
+/bsa-promote
+# ... Stages 3-8 (each with its own worker chain + in-stage audits) ...
+/bsa-handoff
+```
+
+Each `/bsa-stage N` invocation runs the stage's full worker chain (worker + any in-stage auditor) per the routing manifest. The standalone `/bsa-audit <kind>` command is only needed to re-run a specific audit against current proposals. Full walkthrough + discovery mode: [docs/getting_started.md](docs/getting_started.md).
 
 ## Status
 
-**v0.9.0-foundation** — Phase 0 (Foundation). Not yet installable. Development tracked in maintainer's private sprint plan.
+**v1.0.0-rc2** — release candidate 2; the final `v1.0.0` tag lands in Sprint 4.5 US-S45-03 after this docs + fixture cohort is reviewed.
 
-Target MVP: `bsa-full@1.0.0` over a 12-week roadmap across Phase 0 (Foundation), Phase 1 (P0 Stabilization), and Phase 2 (Plugin MVP).
+23 skills • 6 slash-commands • 3 safety hooks • 3 golden fixtures + 1 adversarial • 302 unit tests • evidence-bound claim layer (INV-01) • closed `ClaimType` enum (INV-07) • tier-aware weighted coverage (KPI-001) • two-key promotion • no-new-claims gate.
+
+Phase 2.5 external shakedown (2-4 weeks of real-project usage) is the gate before Phase 3 dev-handoff extension begins. See [docs/faq.md](docs/faq.md) "Is this ready for production use?" for the boundaries.
 
 ## Architecture
 
 Two-phase pipeline:
 
-- **Discovery (D1-D5, optional):** problem framing → context research → hypothesis prioritization → feasibility → synthesis
-- **Main cycle (Stage 1-8 + Handoff):** evidence intake → claim binding → context/state → semantic → catalogs → backbone → contracts → validation → readiness → H1-H4 handoff
+- **Discovery (D1-D5, optional):** problem framing → context research → hypothesis prioritization → feasibility → synthesis.
+- **Main cycle (Stage 1-8 + Handoff):** evidence intake → claim binding → context/state → semantic catalogs → backbone → contracts → skeptical review → no-new-claims gate → H1-H4 handoff pack.
 
-Governance invariants: evidence-binding, single-writer canonical, no-new-claims, two-key promotion, composition-via-orchestrator, `ClaimType` schema closed. Registry: [governance/immutable_invariants.md](governance/immutable_invariants.md).
+Governance invariants: evidence-binding, single-writer canonical, no-new-claims, two-key promotion, composition-via-orchestrator, `ClaimType` schema closed. Registry: [governance/immutable_invariants.md](governance/immutable_invariants.md). Full architecture: [docs/architecture_overview.md](docs/architecture_overview.md).
 
 ## Repository layout
 
 ```
-skills/                 23 worker/auditor/sidecar skills (bsa-*, d0-*, sidecars)
-scripts/                Bootstrap + (Sprint 0.5+) validators, fixture runners, migration tools
-tests/                  Unit tests for scripts
-fixtures/golden/        (Sprint 0.5+) Regression fixtures (end-to-end pipeline runs)
-config/                 (Sprint 0.5+) Routing manifest + runtime profiles
-governance/             Immutable invariants + (Sprint 3+) contract versioning
-migrations/             (Sprint 2+) Version-to-version migration packs
-docs/                   (Sprint 0+) Inventory audits, privacy reports, architecture
-.github/workflows/      (Sprint 0+) CI pipelines
-.claude-plugin/         (Sprint 4+) Plugin manifest
+.claude-plugin/         Plugin manifest (plugin.json with canonPolicyVersion)
+commands/               6 slash commands (/bsa-start, /bsa-status, /bsa-stage, /bsa-promote, /bsa-audit, /bsa-handoff)
+hooks/                  3 safety hooks (SessionStart, PreToolUse:Write, PreToolUse:Bash)
+skills/                 23 worker/auditor/sidecar skills (bsa-*, d0-*, sidecars, inot-prompt-builder)
+scripts/                Validators, fixture runners, canon-hash computer, migration tools
+tests/                  302 unit tests
+fixtures/golden/        3 regression fixtures + 1 adversarial prompt-injection fixture
+config/                 Orchestrator routing manifest (request_skill_routes.json)
+governance/             Immutable invariants registry
+migrations/             v0.9 → v1.0 migration pack
+docs/                   User + maintainer documentation
+.github/workflows/      CI (per-PR) + release (tag-driven)
 ```
 
-Note: 23 skills as of Sprint 1 — `bsa-context-framer` (Stage 2 worker) was added after the Phase 0 baseline of 22 skills.
+## Documentation
+
+- [docs/getting_started.md](docs/getting_started.md) — install + first run.
+- [docs/workflow.md](docs/workflow.md) — stage-by-stage walkthrough (+ discovery mode).
+- [docs/commands_reference.md](docs/commands_reference.md) — every slash command with flags.
+- [docs/troubleshooting.md](docs/troubleshooting.md) — common failure modes.
+- [docs/architecture_overview.md](docs/architecture_overview.md) — skill families + invariants + governance.
+- [docs/faq.md](docs/faq.md) — FAQ.
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Single maintainer, solo + AI-assist workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Solo maintainer, AI-assisted workflow. All PRs go through CI + codex review before merge.
+
+Sprint history: [docs/retros/](docs/retros/).
 
 ## License
 
