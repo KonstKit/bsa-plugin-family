@@ -10,17 +10,44 @@ Installation, uninstall, and troubleshooting guide for the BSA Plugin Family (`b
 
 ## Install
 
+Two supported install paths — **public marketplace** (the default) and **local marketplace** (for internal-only shakedown / dev-loop without a public push).
+
+### Public marketplace
+
 ```
 /plugin marketplace add https://github.com/kkitanin/bsa-plugin-family
-/plugin install bsa-full
+/plugin install bsa-full@bsa-marketplace
 ```
 
-What happens under the hood:
-1. Claude Code clones the repo into its plugin cache.
-2. It reads `.claude-plugin/plugin.json` to discover the plugin name (`bsa-full`) and skill/command/hook paths.
-3. All 23 skills under `./skills/` become available via their `SKILL.md` `name` field.
-4. All 6 slash commands under `./commands/` become available as `/bsa-start`, `/bsa-status`, `/bsa-stage`, `/bsa-promote`, `/bsa-audit`, `/bsa-handoff`.
-5. The three hooks in `./hooks/hooks.json` (SessionStart, PreToolUse:Write, PreToolUse:Bash) register with the event dispatcher.
+### Local marketplace (internal shakedown)
+
+Use this when you want to install directly from a local checkout without pushing the repo to a public remote. The repo ships a `.claude-plugin/marketplace.json` catalog that Claude Code picks up when the local path is added as a marketplace source:
+
+```
+/plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
+/plugin install bsa-full@bsa-marketplace
+```
+
+`/plugin marketplace add <absolute-path>` treats the path as a marketplace root (requires `.claude-plugin/marketplace.json`). Relative paths also work (e.g., `./bsa-plugin-family` if you're in a sibling directory). `file://` URLs are NOT supported — use bare paths.
+
+After changing `marketplace.json` or `plugin.json`, run `/plugin marketplace update bsa-marketplace` to refresh Claude Code's catalog.
+
+### Session-only install (quick smoke test)
+
+No marketplace setup required; plugin loads for one session only:
+
+```
+claude --plugin-dir /Users/kkitanin/projects/bsa-plugin-family
+```
+
+Useful for verifying the plugin loads end-to-end before committing to the full local-marketplace flow.
+
+### What happens under the hood (both install paths)
+
+1. Claude Code reads `.claude-plugin/plugin.json` to discover the plugin name (`bsa-full`) and skill/command/hook paths.
+2. All 23 skills under `./skills/` become available via their `SKILL.md` `name` field.
+3. All 6 slash commands under `./commands/` become available as `/bsa-start`, `/bsa-status`, `/bsa-stage`, `/bsa-promote`, `/bsa-audit`, `/bsa-handoff`.
+4. The three hooks in `./hooks/hooks.json` (SessionStart, PreToolUse:Write, PreToolUse:Bash) register with the event dispatcher.
 
 Verify the install:
 
@@ -28,7 +55,7 @@ Verify the install:
 /plugin list
 ```
 
-Expected output includes `bsa-full@1.0.0-rc1` (or `@1.0.0` at the final cut).
+Expected output includes `bsa-full@1.0.0` (or `@1.0.0-rcN` on an intermediate release candidate).
 
 ## First use — in a fresh project directory
 
@@ -56,12 +83,21 @@ To reinstall later, re-run the install commands. Your workspace picks up where i
 
 ## Upgrade
 
+**Public marketplace:**
+
 ```
 /plugin marketplace add https://github.com/kkitanin/bsa-plugin-family   # already-added is OK, refreshes cache
-/plugin install bsa-full@latest
+/plugin install bsa-full@bsa-marketplace
 ```
 
-Claude Code checks GitHub Releases to determine available versions; pinning to an earlier tag is supported via `@v1.0.0-rc1`.
+**Local marketplace:**
+
+```
+/plugin marketplace update bsa-marketplace   # re-reads local marketplace.json + plugin.json
+/plugin install bsa-full@bsa-marketplace
+```
+
+Claude Code checks the marketplace catalog (and, for the public path, GitHub Releases) to determine available versions; pinning to an earlier tag is supported via `@v1.0.0-rc2` on the public marketplace or by checking out the tag locally before `/plugin marketplace update` on the local one.
 
 After an upgrade, check the `/bsa-status` output for a `policy_version_drift_warning`: the plugin's `CanonPolicyVersion` may have moved between your last workspace run and the new plugin version. This is advisory in Sprint 3/4 (bumps are expected); Phase 3+ may elevate it to blocking for production runs.
 
@@ -70,7 +106,7 @@ After an upgrade, check the `/bsa-status` output for a `policy_version_drift_war
 ### "Plugin installed but `/bsa-*` commands don't appear"
 
 - Restart Claude Code.
-- Run `/plugin list` — if `bsa-full` is not listed, the install didn't take. Re-run `/plugin install bsa-full`.
+- Run `/plugin list` — if `bsa-full` is not listed, the install didn't take. Re-run `/plugin install bsa-full@bsa-marketplace`.
 - Check for a conflicting plugin with the same name in your installed set.
 
 ### "`/bsa-promote` fails with 'missing required marker: ...' even though I ran the audit"
