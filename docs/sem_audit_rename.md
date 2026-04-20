@@ -108,6 +108,8 @@ Grep sweep run against `governance/` after Sprint 2 closed surfaced 4 hits in `g
 
 Cross-ref check: only `skills/bsa-orchestrator/references/discovery_to_main_merge.md:157` references INV-05 by name; it already paraphrases as "A51 is not a positive-claim source", so no breakage from the heading rename.
 
+Documented accepts (post-rewrite): the `2026-04-20` change-log entry inside `governance/immutable_invariants.md` quotes the five legacy phrases verbatim to document the rename. These are `accept-legacy-compat` by the same principle as the `bsa-no-new-claims-auditor` terminology note — quoting a legacy phrase inside an explicit rename-history entry is the only way to keep the audit trail readable. Future grep sweeps over `governance/` should treat hits inside that change-log entry as expected.
+
 ## Ongoing governance
 
 Any future PR that edits any skill under `skills/` or any file under `governance/` MUST:
