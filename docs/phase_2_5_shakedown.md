@@ -1,4 +1,4 @@
-# Phase 2.5 — External Shakedown Gate
+# Phase 2.5 — Internal-Only Shakedown Gate
 
 **Status:** OPEN. Gate blocking Phase 3 kickoff.
 **Mode:** **Internal-only** — solo maintainer on paid-client engagements + own analytical work. No external-user recruitment (decided 2026-04-20 post-v1.0.0).
@@ -7,10 +7,10 @@
 
 ## Why internal-only
 
-Alternative was public-repo + external analyst recruitment (2-3 non-owned-projects). Rejected because:
-- Plugin not pushed to a public remote — maintainer decision per Sprint 4.5 close.
+Alternative was external analyst recruitment (2-3 non-owned-projects). Rejected because:
+- The plugin is a solo-maintainer tool used only by its maintainer; there is no external-user population to recruit from in scope for this phase. A follow-up local-only cleanup commit is removing the public-marketplace install path + CI/release workflows that currently still live in the repo metadata, making the "this plugin is for me" stance explicit throughout.
 - Internal paid-client + own-engagement usage gives the same structural feedback (UX, audit verdicts, KPI-001 target re-calibration data, H1-H4 usefulness) without the coordination overhead of external users.
-- Blocker findings surface the same way; remediation cadence is actually faster with solo feedback loop.
+- Blocker findings surface the same way; remediation cadence is actually faster with a solo feedback loop.
 
 Known trade-off: UX friction that only shows up "in a stranger's hands" (cognitive assumption gaps, undocumented conventions) will NOT surface here. Mitigated by: (a) the 6 docs pages in `docs/` are reader-ready; (b) any remaining doc gap the maintainer stumbles on is immediately loggable below; (c) the first post-Phase-3 external user effectively becomes the "zero-th external shakedown" and any blocker there is treated as a v1.x-patch candidate.
 
@@ -117,10 +117,10 @@ If any shakedown finding is flagged `severity=critical` (pipeline cannot complet
 3. **CHANGELOG** — add `## [v1.0.1] — <date>` (or appropriate patch number) with finding + fix citation.
 4. **Plugin version bump** `.claude-plugin/plugin.json`: `1.0.0` → `1.0.1`. `canonPolicyVersion.semver` matching. If the fix touched a POLICY_GLOBS file, recompute canon hash and bump accordingly per [contract-versioning.md](../skills/bsa-orchestrator/references/contract-versioning.md) major/minor/patch rules.
 5. **Local smoke-test** on the engagement that surfaced the finding, and at least one other fixture.
-6. **Tag** `v1.0.1` on the hotfix branch, merge branch back to `main`.
+6. **Tag** `v1.0.1` on the hotfix branch, then **cherry-pick** the fix commits onto `main` (fast-forward back-merge is not available because `main` has already moved past `v1.0.0` with post-release cleanup commits). The resulting `main` state should be equivalent to the hotfix branch's contents.
 7. **Re-install** in the shakedown cohort via `/plugin marketplace update bsa-marketplace` + `/plugin install bsa-full@bsa-marketplace`.
 
-Fixes merged back to main fast-forward; no long-lived `release/1.0.x` branch beyond the hotfix window.
+After the cherry-pick lands on `main`, the `release/1.0.x` branch can be deleted; the `v1.0.1` tag retains the exact tree that was re-installed. No long-lived `release/1.0.x` branch beyond the hotfix window.
 
 ## Phase 3 kickoff decision
 
