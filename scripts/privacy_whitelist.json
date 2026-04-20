@@ -11,6 +11,11 @@
       "match": "noreply@anthropic.com",
       "reason": "Co-author trailer for AI-assisted commits — Anthropic non-delivery address",
       "added_at": "2026-04-19"
+    },
+    {
+      "match": "cjkitanin689170@gmail.com",
+      "reason": "Plugin author contact email. Published intentionally in .claude-plugin/plugin.json author block and in repo README; this is the maintainer's public address, not a leak.",
+      "added_at": "2026-04-20"
     }
   ],
   "path_globs": [
@@ -38,6 +43,11 @@
       "glob": "skills/inot-prompt-builder/assets/examples/sample_config_injection.json",
       "reason": "Prompt-injection test fixture — intentionally contains attack strings for INoT evals",
       "added_at": "2026-04-19"
+    },
+    {
+      "glob": "docs/retros/*.md",
+      "reason": "Sprint retrospectives commit CanonPolicyVersion SHA-256 hex digests (64 chars each) which sometimes contain 10-digit numeric substrings the phone-number heuristic catches. Hashes are public audit trail, not PII.",
+      "added_at": "2026-04-20"
     }
   ]
 }

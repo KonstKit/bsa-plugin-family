@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so the canon hash is computed against
+          # the exact tagged tree, not a shallow clone.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Verify canon policy hash matches plugin.json
+        id: verify-hash
+        run: |
+          set -euo pipefail
+          computed=$(python scripts/compute_canon_hash.py)
+          declared=$(python -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['canonPolicyVersion']['hash_full'])")
+          echo "computed: ${computed}"
+          echo "declared: ${declared}"
+          if [ "${computed}" != "${declared}" ]; then
+            echo "::error::canon_policy_version hash mismatch between plugin.json (${declared}) and compute_canon_hash.py (${computed})"
+            exit 1
+          fi
+          echo "hash_prefix=${computed:0:8}" >> "$GITHUB_OUTPUT"
+          echo "hash_full=${computed}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify plugin.json semver matches tag
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          tag_semver="${tag#v}"
+          declared=$(python -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")
+          echo "tag_semver: ${tag_semver}"
+          echo "declared:   ${declared}"
+          if [ "${tag_semver}" != "${declared}" ]; then
+            echo "::error::plugin.json version (${declared}) does not match tag (${tag_semver})"
+            exit 1
+          fi
+
+      - name: Run full test suite before publish
+        run: |
+          pytest tests/ -q
+
+      - name: Run fixture runner (all fixtures, both modes)
+        run: |
+          python scripts/fixture_runner.py --mode=both
+
+      - name: Run marker chain validator on project_0001
+        run: |
+          python scripts/validate_marker_chain.py fixtures/golden/project_0001/expected_markers/
+
+      - name: Build distribution archive
+        id: archive
+        run: |
+          set -euo pipefail
+          ref="${{ github.ref_name }}"
+          name="bsa-full-${ref}"
+          # Archive the content a user would install: plugin manifest,
+          # skills, commands, hooks, scripts, minimal docs. Excludes
+          # fixtures (large) + tests (not needed at runtime) + CI.
+          mkdir -p dist
+          git archive --format=tar.gz \
+            --prefix="${name}/" \
+            --output="dist/${name}.tar.gz" \
+            HEAD \
+            .claude-plugin/ \
+            skills/ \
+            commands/ \
+            hooks/ \
+            scripts/compute_canon_hash.py \
+            scripts/validate_marker_chain.py \
+            LICENSE \
+            README.md \
+            CHANGELOG.md \
+            INSTALL.md
+          (cd dist && sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256")
+          echo "archive_path=dist/${name}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum_path=dist/${name}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+          echo "archive_name=${name}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: |
+            BSA Plugin Family release ${{ github.ref_name }}.
+
+            CanonPolicyVersion: ${{ steps.verify-hash.outputs.hash_prefix }} (full: ${{ steps.verify-hash.outputs.hash_full }})
+
+            Install from this repo:
+            ```
+            /plugin marketplace add https://github.com/${{ github.repository }}
+            /plugin install bsa-full
+            ```
+
+            See `CHANGELOG.md` for per-release notes.
+            See `INSTALL.md` for full install + uninstall guidance.
+          files: |
+            ${{ steps.archive.outputs.archive_path }}
+            ${{ steps.archive.outputs.checksum_path }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
