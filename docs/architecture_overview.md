@@ -67,7 +67,7 @@ Every pipeline transition emits a marker under `analysis/runtime/ready/` (main c
 
 `scripts/compute_canon_hash.py` hashes a fixed set of governance-defining files (SKILL.md frontmatter, references with invariants, KPI definitions, reliability tier spec, validation scenario manifest, immutable invariants). The result lives in `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` and is attached to every runtime marker as `canon_policy_version_hash`.
 
-`CanonPolicyVersion = <semver>+hash:<sha256-prefix>`, e.g., `1.0.0+hash:cbba8e53`.
+`CanonPolicyVersion = <semver>+hash:<sha256-prefix>`, e.g., `1.0.0-rc2+hash:cbba8e53` on HEAD; once US-S45-03 bumps the manifest semver, the CanonPolicyVersion will read `1.0.0+hash:cbba8e53`.
 
 Bump rules:
 - **Major** — immutable invariant touched (new invariant, weakening, or changed semantics).
@@ -80,11 +80,11 @@ The release workflow in `.github/workflows/release.yml` recomputes the hash at t
 
 ### Stage 1 — evidence promotion
 
-`/bsa-promote` on Stage 1 moves A48 / A50 / A58 / A59 / A60 / A51 from `analysis/proposals/stage1/` to `analysis/canonical/core_controls/`. Preconditions: INV-01 holds on all A59 rows, `stage1.excerpts.merged.json` emitted.
+`/bsa-promote` on Stage 1 moves A48 / A50 / A58 / A59 / A60 / A51 from `analysis/proposals/stage1/` to `analysis/canonical/core_controls/`. Preconditions: INV-01 holds on every positive `direct`/`inference` row in A59 (analyst_judgment rows are governed by INV-07 instead), and `stage1.excerpts.merged.json` has been emitted.
 
 ### Stage N → N+1 — stage promotion (N ≥ 2)
 
-`/bsa-promote` on a later stage checks its audit marker is present AND its proposal content satisfies INV-01 (for any new A59 rows the stage introduced) AND any stage-specific preconditions (per `run_profile_gates.md`).
+`/bsa-promote` on a later stage checks its audit marker is present AND its proposal content satisfies INV-01 (on any new positive `direct`/`inference` rows the stage introduced into A59) + INV-07 (on any new `analyst_judgment` rows) AND any stage-specific preconditions (per `run_profile_gates.md`).
 
 Between the two gates, the orchestrator holds a file-lock to prevent concurrent writes to canonical.
 
@@ -144,7 +144,11 @@ analysis/
 │   ├── evidence/, bpmn/, c4/, adjudication/, checkpoints/
 ├── handoff/                   ← promoted handoff pack (top-level, NOT under canonical/)
 └── discovery/                 ← (if mode=discovery_then_bsa; parallel shape)
-    ├── runtime/ready/            d*.json markers
+    ├── runtime/
+    │   ├── ready/                d*.json markers
+    │   ├── locks/                file-locks during discovery promotion
+    │   ├── reentry/              re-entry bookkeeping
+    │   └── events/               event log
     ├── canonical/
     │   ├── core_controls/        discovery-local A58/A59/A60 + refs to shared A48/A50/A51
     │   └── d1/ ... d5/           per-sub-stage promoted content

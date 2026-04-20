@@ -2,7 +2,7 @@
 
 ## Is this ready for production use?
 
-Phase 0-2 ships the MVP `bsa-full@1.0.0` (release candidate 2 on HEAD; final `v1.0.0` tag lands at Sprint 4.5 close, US-S45-03) — core pipeline end-to-end, three golden fixtures, CI regression, solo-maintainer-reviewed. It is **not** certified for regulated domains (fintech, healthcare, etc.) — those need the Phase 5 pack layer and Phase 8 certification framework.
+Phase 0-2 ships the MVP `bsa-full@1.0.0-rc2` on HEAD, with the final `@1.0.0` tag landing at Sprint 4.5 close (US-S45-03) — core pipeline end-to-end, three golden fixtures, CI regression, solo-maintainer-reviewed. It is **not** certified for regulated domains (fintech, healthcare, etc.) — those need the Phase 5 pack layer and Phase 8 certification framework.
 
 Phase 2.5 external shakedown (2-4 weeks of real-project usage by non-self-owned analysts) is the gate before Phase 3 feature work begins. If you're trying the plugin on a small internal engagement, you're part of that shakedown — see CONTRIBUTING.md for how to file feedback.
 

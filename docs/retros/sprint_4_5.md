@@ -1,8 +1,8 @@
 # Sprint 4.5 Retrospective — Plugin MVP Release
 
 **Window:** Sprint 4.5 (week 12 of the 12-week Phase 0-2 roadmap).
-**Tag target:** `v1.0.0` (created on HEAD once this retro commit is codex-approved). Sprint 4.5 is fixture + documentation work; canon policy files did not change in this sprint, so the hash stays at `cbba8e53` (carried from v1.0.0-rc2 close).
-**Canon policy version:** `1.0.0+hash:cbba8e53`.
+**Tag target:** `v1.0.0` (created on HEAD once this retro commit is codex-approved + the manifest version bump from `1.0.0-rc2` → `1.0.0` lands). Sprint 4.5 is fixture + documentation work; canon policy files did not change in this sprint, so the hash stays at `cbba8e53` (carried from v1.0.0-rc2 close).
+**Canon policy version at retro emission:** `1.0.0-rc2+hash:cbba8e53`. After US-S45-03 manifest bump: `1.0.0+hash:cbba8e53`.
 
 ## What was delivered
 
@@ -51,7 +51,7 @@ Plus: `v1.0.0` git tag (pending US-S45-03).
 
 - **AC-2** (installable on clean Claude Code): `<pending external shakedown>` — smoke-tested locally via plugin manifest schema check. Phase 2.5 gate will exercise this on non-owned projects (2-4 weeks, blocking for Phase 3 kickoff).
 
-- **AC-3** (CanonPolicyVersion in `.claude-plugin/plugin.json`): PASS. `canonPolicyVersion.semver = "1.0.0"`, `canonPolicyVersion.hash_full = "cbba8e53b0312aeec2744e17d018583fcd96bba613a6b39be58ab702cb44fcb0"`, matches the `compute_canon_hash.py` output at tag time.
+- **AC-3** (CanonPolicyVersion in `.claude-plugin/plugin.json`): will PASS at US-S45-03 commit time. Planned bump: `canonPolicyVersion.semver` `"1.0.0-rc2"` → `"1.0.0"`; `canonPolicyVersion.hash_full` stays `"cbba8e53b0312aeec2744e17d018583fcd96bba613a6b39be58ab702cb44fcb0"` (no POLICY_GLOBS file touched in Sprint 4.5); release workflow's hash-match gate recomputes and confirms equality.
 
 ## Metrics
 

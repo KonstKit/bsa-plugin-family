@@ -99,7 +99,7 @@ Two-key promotion: move a stage's proposal into canonical.
 ```
 
 Preconditions (both must hold):
-1. All rows in the stage's proposal artifacts satisfy INV-01 evidence-binding.
+1. Every positive `direct` or `inference` claim in the stage's proposal artifacts satisfies INV-01 evidence-binding (`SourceID+ExcerptID` OR `A51Ref`). `analyst_judgment` rows are validated against INV-07 (`JustificationRationale` referencing ≥ 1 upstream `ClaimID`).
 2. All required audit markers for the stage are present and `verdict=PASS` (or `merged` for Stage 1).
 
 The PreToolUse:Bash hook refuses execution if either precondition fails, and surfaces the exact missing marker or unbound row.
