@@ -13,12 +13,12 @@ Quickstart for installing `bsa-full` into Claude Code and running the evidence-f
 ## Install
 
 ```
-/plugin marketplace add https://github.com/kkitanin/bsa-plugin-family
-/plugin install bsa-full
-/plugin list      # expect bsa-full@1.0.0-rc2 (or @1.0.0 after the final tag)
+/plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
+/plugin install bsa-full@bsa-marketplace
+/plugin list      # expect bsa-full@1.0.0
 ```
 
-Full install + uninstall + upgrade notes: [../INSTALL.md](../INSTALL.md).
+Full install + uninstall + upgrade notes (including the session-only `claude --plugin-dir` path for quick smoke-tests): [../INSTALL.md](../INSTALL.md).
 
 ## First run — 30-second tour
 

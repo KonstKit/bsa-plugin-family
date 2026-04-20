@@ -2,7 +2,7 @@
 
 ## Workflow
 
-Solo + AI-assist. All changes on feature branches, self-reviewed, merged via PR with CI green.
+Solo + AI-assist, local-only repo (no public remote). All changes land on `main` directly after local self-review + a `codex exec` review round — there is no PR surface because there is no other reviewer.
 
 ### Commit messages
 
@@ -16,16 +16,18 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
 ### Branches
 
-- `main` — protected, CI must pass, no force-push
-- `feat/<sprint>-<short-slug>` — feature branches
-- `fix/<issue-slug>` — bug fixes
+- `main` — the only long-lived branch.
+- `release/1.0.x` — created ONLY during a Phase 2.5 hotfix window, from the `v1.0.0` tag. Deleted after cherry-pick back to `main` (see [docs/phase_2_5_shakedown.md](docs/phase_2_5_shakedown.md) §Blocker → hotfix → re-release procedure).
 
-### Pull Requests
+### Pre-commit checklist
 
-- Every PR references relevant US-ID from sprint plan
-- CI green required (CI pipeline introduced Sprint 0 US-S0-03 — until then, manual local validation)
-- If PR touches any invariant in [governance/immutable_invariants.md](governance/immutable_invariants.md) — PR description MUST include explicit reference + justification + major CanonPolicyVersion bump
-- Changelog updated in same PR
+- `pytest tests/` — 302 tests must pass.
+- `python3 scripts/fixture_runner.py --all` — 4 fixtures must pass.
+- `python3 scripts/privacy_scan.py` — 0 blockers.
+- `python3 scripts/compute_canon_hash.py` — output must match `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` (the `test_manifest_canon_hash_matches_current_script_output` pytest case also enforces this).
+- Every commit references the relevant US-ID from the sprint plan (or `phase-2.5`, `chore`, etc. for post-release work).
+- If the commit touches any invariant in [governance/immutable_invariants.md](governance/immutable_invariants.md) — commit message MUST include explicit reference + justification + major CanonPolicyVersion bump.
+- CHANGELOG updated in the same commit (or the immediately adjacent chore commit).
 
 ## Validation before commit
 
@@ -42,7 +44,7 @@ Validator scripts are introduced across Sprint 0-0.5. Current availability:
 | `scripts/compute_canon_hash.py` | Sprint 3 (US-S3-04) | pending |
 | `scripts/migrate_v0.9_to_v1.0.py` | Sprint 2 (US-S2-02) | pending |
 
-Once a validator is committed, it becomes a mandatory pre-PR check. CI (introduced Sprint 0 US-S0-03) will enforce the current set automatically once `.github/workflows/ci.yml` lands — until then, run validators locally.
+Every validator is a mandatory pre-commit check; they all run locally as part of the checklist above. There is no CI — the repo is local-only.
 
 ## Governance invariants
 
@@ -55,5 +57,5 @@ Core invariants in [governance/immutable_invariants.md](governance/immutable_inv
 ## Privacy
 
 - No client data, PII, secrets, or internal URLs in commits
-- Privacy scanner (Sprint 0 US-S0-04) runs in CI as blocking check once landed
+- Privacy scanner (Sprint 0 US-S0-04) runs as part of every pre-commit checklist and MUST return 0 blockers
 - Fixtures must be sanitized before commit. Per-fixture sanitization notes live in `fixtures/golden/<project_id>/README.md` — these README files are created alongside each fixture starting with `project_0001` in Sprint 0.5 (US-S05-01)

@@ -11,11 +11,6 @@
       "match": "noreply@anthropic.com",
       "reason": "Co-author trailer for AI-assisted commits — Anthropic non-delivery address",
       "added_at": "2026-04-19"
-    },
-    {
-      "match": "cjkitanin689170@gmail.com",
-      "reason": "Plugin author contact email. Published intentionally in .claude-plugin/plugin.json author block and in repo README; this is the maintainer's public address, not a leak.",
-      "added_at": "2026-04-20"
     }
   ],
   "path_globs": [

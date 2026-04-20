@@ -104,7 +104,7 @@ python3 scripts/compute_canon_hash.py    # outputs the new hash
 # commit with message "bump canon policy: X.Y.Z → X.Y.Z+1 (reason)"
 ```
 
-The release workflow (`.github/workflows/release.yml`) recomputes the hash at tag time and refuses to publish on mismatch.
+The plugin-manifest test (`tests/test_plugin_manifest.py::test_manifest_canon_hash_matches_current_script_output`) enforces equality between `plugin.json.canonPolicyVersion.hash_full` and the live `compute_canon_hash.py` output; a drift fails `pytest` on any local run and in any pre-tag check.
 
 ## Where do markers live? How do I inspect them?
 
@@ -134,7 +134,7 @@ Deferred to Phase 3+ (see Sprint plan):
 
 ## Where do I file an issue?
 
-GitHub: <https://github.com/kkitanin/bsa-plugin-family/issues>. Include:
+This is a solo-maintainer, local-only tool. There is no public issue tracker. For findings surfaced during the Phase 2.5 shakedown, log them under `docs/phase_2_5_shakedown.md` §Aggregated findings. For anything else, note them in your own project log and promote to a v1.0.x hotfix or Phase 3+ backlog item when scope is clearer. A useful issue note includes:
 - Plugin version (`/plugin list`).
 - Canon hash (from any recent `*.pass.json` marker).
 - Claude Code version.

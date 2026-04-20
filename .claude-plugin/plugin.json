@@ -3,12 +3,9 @@
   "version": "1.0.0",
   "description": "Business/Systems Analysis plugin family: 23 skills for evidence-bound claim-layer authoring, anti-hallucination audits, sidecar-assisted diagrams, and H1-H4 handoff packaging. Directly consumed by Claude Code.",
   "author": {
-    "name": "Konstantin Kitanin",
-    "email": "cjkitanin689170@gmail.com"
+    "name": "Konstantin Kitanin"
   },
   "license": "MIT",
-  "homepage": "https://github.com/kkitanin/bsa-plugin-family",
-  "repository": "https://github.com/kkitanin/bsa-plugin-family",
   "keywords": [
     "bsa",
     "business-analysis",

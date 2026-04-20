@@ -9,7 +9,7 @@ Common failure modes and fixes. Ordered by what most first-time users hit.
 **Cause:** either the repo wasn't fully cloned (partial fetch) or an out-of-date Claude Code is rejecting a field it doesn't recognize.
 
 **Fix:**
-1. Re-add the marketplace entry: `/plugin marketplace add https://github.com/kkitanin/bsa-plugin-family` (idempotent, refreshes).
+1. Refresh the marketplace catalog: `/plugin marketplace update bsa-marketplace`. If it was never added on this machine, re-add it: `/plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family`.
 2. Upgrade Claude Code to a version that supports the plugin system.
 3. If still failing, check [plugin_api_spike.md](plugin_api_spike.md) for the expected field set; custom fields (`canonPolicyVersion`) are preserved but not required by core plugin discovery.
 
@@ -125,16 +125,16 @@ If the marker truly was lost (editor crash, etc.), you can re-emit it by re-runn
 
 **Prevention:** the single-writer hook prevents non-orchestrator writes to canonical paths, so accidental overwrites from Claude Code sessions are blocked. Manual `rm` is still your own responsibility. Keep frequent git commits.
 
-## 10. CI fails with "canon_policy_version_hash mismatch"
+## 10. `compute_canon_hash.py` reports a mismatch against `plugin.json`
 
-**Symptom:** the release workflow or a marker-chain validator CI step reports a mismatch between `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` and the output of `scripts/compute_canon_hash.py`.
+**Symptom:** `python3 scripts/compute_canon_hash.py` prints a digest different from `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full`. (On a plugin install/upgrade, Claude Code also shows the drift via the `canon_policy_version_hash` field on the most recent marker.)
 
 **Cause:** a canon-policy-defining file was edited (skill frontmatter, reference with invariants, KPI definitions, immutable invariants, reliability tier spec, validation scenario manifest), but the plugin manifest's `hash_full` wasn't recomputed.
 
-**Fix:** run `python3 scripts/compute_canon_hash.py` and copy the output into `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` and `hash_prefix` (first 8 chars). Commit the updated manifest. If the change touched an immutable invariant, also bump the semver major per [contract-versioning.md](../skills/bsa-orchestrator/references/contract-versioning.md).
+**Fix:** run `python3 scripts/compute_canon_hash.py` and copy the output into `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` (first 8 chars into `hash_prefix`). Commit the updated manifest. If the change touched an immutable invariant, also bump the semver major per [contract-versioning.md](../skills/bsa-orchestrator/references/contract-versioning.md).
 
 ## Still stuck?
 
 - Check the per-sprint retros under `docs/retros/` for known issues and resolutions.
 - Run `python3 scripts/validate_marker_chain.py analysis/runtime/ready/` and `python3 scripts/fixture_runner.py --fixture <your-fixture>` for structured diagnostics.
-- File a GitHub issue with the marker log + the audit report + your Claude Code version.
+- Log findings in `docs/phase_2_5_shakedown.md` if you're inside the shakedown window; otherwise keep a private project log.

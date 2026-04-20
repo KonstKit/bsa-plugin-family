@@ -10,37 +10,30 @@ Installation, uninstall, and troubleshooting guide for the BSA Plugin Family (`b
 
 ## Install
 
-Two supported install paths — **public marketplace** (the default) and **local marketplace** (for internal-only shakedown / dev-loop without a public push).
+This is a **local-only, solo-maintainer tool**. The repo is not pushed to a public remote and not listed on any marketplace. Two install paths:
 
-### Public marketplace
+### Local marketplace (recommended — persistent)
 
-```
-/plugin marketplace add https://github.com/kkitanin/bsa-plugin-family
-/plugin install bsa-full@bsa-marketplace
-```
-
-### Local marketplace (internal shakedown)
-
-Use this when you want to install directly from a local checkout without pushing the repo to a public remote. The repo ships a `.claude-plugin/marketplace.json` catalog that Claude Code picks up when the local path is added as a marketplace source:
+The repo ships a `.claude-plugin/marketplace.json` catalog that Claude Code picks up when the local path is added as a marketplace source:
 
 ```
 /plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
 /plugin install bsa-full@bsa-marketplace
 ```
 
-`/plugin marketplace add <absolute-path>` treats the path as a marketplace root (requires `.claude-plugin/marketplace.json`). Relative paths also work (e.g., `./bsa-plugin-family` if you're in a sibling directory). `file://` URLs are NOT supported — use bare paths.
+`/plugin marketplace add <absolute-path>` treats the path as a marketplace root (requires `.claude-plugin/marketplace.json`, which is committed at the repo root). Relative paths also work (e.g., `./bsa-plugin-family` if you are in a sibling directory). `file://` URLs are NOT supported — use bare paths.
 
 After changing `marketplace.json` or `plugin.json`, run `/plugin marketplace update bsa-marketplace` to refresh Claude Code's catalog.
 
-### Session-only install (quick smoke test)
+### Session-only (quick smoke test)
 
-No marketplace setup required; plugin loads for one session only:
+No marketplace setup required; plugin loads for one Claude Code session only:
 
 ```
 claude --plugin-dir /Users/kkitanin/projects/bsa-plugin-family
 ```
 
-Useful for verifying the plugin loads end-to-end before committing to the full local-marketplace flow.
+Useful for verifying the plugin loads end-to-end without committing to the full local-marketplace flow.
 
 ### What happens under the hood (both install paths)
 
@@ -83,21 +76,14 @@ To reinstall later, re-run the install commands. Your workspace picks up where i
 
 ## Upgrade
 
-**Public marketplace:**
-
-```
-/plugin marketplace add https://github.com/kkitanin/bsa-plugin-family   # already-added is OK, refreshes cache
-/plugin install bsa-full@bsa-marketplace
-```
-
-**Local marketplace:**
+After pulling new commits into the local checkout (or checking out a different tag):
 
 ```
 /plugin marketplace update bsa-marketplace   # re-reads local marketplace.json + plugin.json
 /plugin install bsa-full@bsa-marketplace
 ```
 
-Claude Code checks the marketplace catalog (and, for the public path, GitHub Releases) to determine available versions; pinning to an earlier tag is supported via `@v1.0.0-rc2` on the public marketplace or by checking out the tag locally before `/plugin marketplace update` on the local one.
+To pin to an earlier tag, `git checkout <tag>` in the local repo before running `/plugin marketplace update`. The plugin's `canonPolicyVersion.hash_full` in `.claude-plugin/plugin.json` marks what canon policy state the installed copy corresponds to.
 
 After an upgrade, check the `/bsa-status` output for a `policy_version_drift_warning`: the plugin's `CanonPolicyVersion` may have moved between your last workspace run and the new plugin version. This is advisory in Sprint 3/4 (bumps are expected); Phase 3+ may elevate it to blocking for production runs.
 
@@ -158,7 +144,7 @@ The hook scripts (`./hooks/*.sh`) need the execute bit. If your shell/filesystem
 chmod +x <plugin-install-dir>/hooks/*.sh
 ```
 
-GitHub's archive step preserves file modes; this should only happen with a manual `wget`/`unzip` install flow.
+Git preserves file modes, so a fresh `git clone` of this repo should not need this step. It only shows up when a tarball is unzipped from a filesystem that loses the execute bit.
 
 ## Uninstall with preservation
 
@@ -178,6 +164,6 @@ mv analysis analysis.bak  # never delete outright
 
 ## Support
 
-- Issues: https://github.com/kkitanin/bsa-plugin-family/issues
+- Issue log: this is a solo-maintainer tool, so there is no public issue tracker. Log shakedown findings in `docs/phase_2_5_shakedown.md` §Aggregated findings; everything else goes into your own project notes.
 - Plugin docs: this repo's `README.md`, `CHANGELOG.md`, and per-skill `SKILL.md` files.
 - BSA methodology docs: `docs/`, `skills/bsa-orchestrator/references/`, `governance/immutable_invariants.md`.

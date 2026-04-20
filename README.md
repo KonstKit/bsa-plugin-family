@@ -1,18 +1,16 @@
 # BSA Plugin Family
 
-![CI](https://github.com/kkitanin/bsa-plugin-family/actions/workflows/ci.yml/badge.svg)
-
-Evidence-first BA/SA analytical pipeline packaged as a Claude Code plugin. Anti-hallucination gates, claim-binding traceability, two-key promotion, and artifact-first governance.
+**Local-only, solo-maintainer tool.** Evidence-first BA/SA analytical pipeline packaged as a Claude Code plugin. Anti-hallucination gates, claim-binding traceability, two-key promotion, and artifact-first governance. Not published to any public marketplace; installed from a local checkout.
 
 ## Install
 
 ```
-/plugin marketplace add https://github.com/kkitanin/bsa-plugin-family
-/plugin install bsa-full
+/plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
+/plugin install bsa-full@bsa-marketplace
 /plugin list       # expect bsa-full@1.0.0
 ```
 
-Full install / uninstall / upgrade: [INSTALL.md](INSTALL.md).
+Full install / uninstall / upgrade (including session-only `claude --plugin-dir` path): [INSTALL.md](INSTALL.md).
 
 ## 30-second tour
 
@@ -61,7 +59,6 @@ config/                 Orchestrator routing manifest (request_skill_routes.json
 governance/             Immutable invariants registry
 migrations/             v0.9 → v1.0 migration pack
 docs/                   User + maintainer documentation
-.github/workflows/      CI (per-PR) + release (tag-driven)
 ```
 
 ## Documentation
@@ -75,7 +72,7 @@ docs/                   User + maintainer documentation
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Solo maintainer, AI-assisted workflow. All PRs go through CI + codex review before merge.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Solo maintainer, AI-assisted workflow. All commits run `pytest` + `scripts/fixture_runner.py --all` + `scripts/privacy_scan.py` + `scripts/compute_canon_hash.py` locally, and land through a `codex exec` review round before merge.
 
 Sprint history: [docs/retros/](docs/retros/).
 

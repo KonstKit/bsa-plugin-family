@@ -1,8 +1,7 @@
 {
   "name": "bsa-marketplace",
   "owner": {
-    "name": "Konstantin Kitanin",
-    "email": "cjkitanin689170@gmail.com"
+    "name": "Konstantin Kitanin"
   },
   "plugins": [
     {
@@ -11,8 +10,7 @@
       "description": "Business/Systems Analysis plugin family: 23 skills for evidence-bound claim-layer authoring, anti-hallucination audits, sidecar-assisted diagrams, and H1-H4 handoff packaging. Directly consumed by Claude Code.",
       "version": "1.0.0",
       "author": {
-        "name": "Konstantin Kitanin",
-        "email": "cjkitanin689170@gmail.com"
+        "name": "Konstantin Kitanin"
       },
       "category": "analysis"
     }

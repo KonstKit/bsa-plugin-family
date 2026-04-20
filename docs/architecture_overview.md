@@ -74,7 +74,7 @@ Bump rules:
 - **Minor** — new validation scenario, new skill, new required field in a marker.
 - **Patch** — docs-only, typo fixes, formatting.
 
-The release workflow in `.github/workflows/release.yml` recomputes the hash at tag time and refuses to publish on mismatch.
+The maintainer recomputes the hash manually via `python3 scripts/compute_canon_hash.py` after any POLICY_GLOBS edit and updates `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` in the same commit; the plugin-manifest pytest (`tests/test_plugin_manifest.py::test_manifest_canon_hash_matches_current_script_output`) catches drift on every local `pytest` run.
 
 ## Two promotion gates
 
