@@ -1,0 +1,12 @@
+{
+  "marker_id": "stage3.citation_audit.pass",
+  "stage": "stage3",
+  "verdict": "PASS",
+  "timestamp": "2026-04-17T17:00:00Z",
+  "canon_policy_version": "1.0.0-rc2",
+  "canon_policy_version_hash": "cbba8e53",
+  "kpi_001_weighted_coverage": 0.85,
+  "kpi_001_target": 0.75,
+  "kpi_003_critical_unsupported_claims": 0,
+  "notes": "Weighted coverage 0.85: 3 direct claims all from S-001 (T2, weight 0.85) = 2.55/3 = 0.85. KPI-003 clean; three A51 routes cover all remaining uncertainty."
+}

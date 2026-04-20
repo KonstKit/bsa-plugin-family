@@ -1,0 +1,14 @@
+{
+  "marker_id": "stage1.excerpts.merged",
+  "stage": "stage1",
+  "verdict": "merged",
+  "timestamp": "2026-04-17T14:00:00Z",
+  "canon_policy_version": "1.0.0-rc2",
+  "canon_policy_version_hash": "cbba8e53",
+  "source_count": 2,
+  "excerpt_count": 7,
+  "claim_count": 7,
+  "negative_evidence_count": 2,
+  "a51_count": 3,
+  "notes": "Stage 1 promoted: S-001 (T2 dbt config) + S-002 (T4 interview); 7 excerpts + 7 claims (3 direct/3 inference/1 analyst_judgment per INV-07) + 2 negative-evidence rows + 3 A51 routes."
+}

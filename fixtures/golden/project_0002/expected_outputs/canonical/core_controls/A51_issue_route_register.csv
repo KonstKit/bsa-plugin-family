@@ -1,0 +1,4 @@
+A51Ref,IssueType,Severity,BlockingStatus,RaisedByStage,RelatedSourceID,RelatedClaimID,NextAction,ResolutionStatus
+A51-001,uncertainty,medium,informational,stage1,S-002,C-005,"Validate the 30%-of-dashboard-incidents estimate against an incident-tracker export (minimum 90 days of data) before any SLA commitment or detection-latency target is derived from it.",open
+A51-002,missing_source,medium,soft,stage1,S-002,C-004,"Add a BI-team stakeholder attestation or a BI-team-maintained artifact listing the models BI consumes. Single-source AE attestation is insufficient for promoting 'BI does not own marts' as a non-contested direct claim.",open
+A51-003,decision_needed,high,soft,stage1,,C-006,"Decide on a reference-data custodian assignment (analyst_judgment recommendation in C-007: AE-owned with quarterly rotation to DE). Requires sign-off from DE lead + AE lead + data governance sponsor.",open

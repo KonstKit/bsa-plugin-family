@@ -1,0 +1,16 @@
+{
+  "stage_id": "stage2",
+  "summary_version": "1.0",
+  "context_mode": "discovery_then_bsa",
+  "stakeholder_count": 5,
+  "constraint_count": 5,
+  "dependency_count": 3,
+  "seed_source": "d5_stage2_seed_bundle",
+  "stage1_digest": "sha256:project_0002_stage1_00001",
+  "stage2_seed_digest": "sha256:project_0002_d5seed_00001",
+  "methodology_digest": "sha256:project_0002_methodology_00001",
+  "contract_version": "1.0.0-rc2",
+  "stale_if": "dbt_project.yml changes after 2026-04-15 without a matching C-001/C-002 update; or A51-001/A51-002/A51-003 resolves",
+  "linked_a51_count": 3,
+  "required_headers_present": true
+}

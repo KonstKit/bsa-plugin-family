@@ -48,6 +48,11 @@
       "glob": "docs/retros/*.md",
       "reason": "Sprint retrospectives commit CanonPolicyVersion SHA-256 hex digests (64 chars each) which sometimes contain 10-digit numeric substrings the phone-number heuristic catches. Hashes are public audit trail, not PII.",
       "added_at": "2026-04-20"
+    },
+    {
+      "glob": "fixtures/golden/*/expected_outputs/handoff/handoff_manifest.json",
+      "reason": "Handoff manifest JSON files embed sha256 digests (64-char hex) over the covered packs; digests occasionally contain 10-11 digit numeric substrings the phone heuristic catches. Integrity checksums, not PII.",
+      "added_at": "2026-04-20"
     }
   ]
 }

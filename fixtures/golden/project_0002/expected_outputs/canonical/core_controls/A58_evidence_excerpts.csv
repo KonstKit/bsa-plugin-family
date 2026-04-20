@@ -1,0 +1,8 @@
+ExcerptID,SourceID,Locator,ExcerptText,Notes
+E-001,S-001,"source_001_dbt_project.yml:L14-L21","Staging models are owned by the data-engineering team; they wrap raw events into typed views and add no business logic. stg_events (tags hourly data_eng_owned); stg_users (tags daily data_eng_owned).",Direct config evidence for staging-layer ownership
+E-002,S-001,"source_001_dbt_project.yml:L22-L30","Marts are owned by analytics-engineering; dimensional models combine multiple staging views and apply business rules. fct_user_activity (tags daily ae_owned); dim_user (tags daily ae_owned).",Direct config evidence for marts-layer ownership
+E-003,S-001,"source_001_dbt_project.yml:L32-L36","seeds.analytics_platform.reference_data (+schema ref +quote_columns false).",Reference-data lookup tables materialised into schema ref; no explicit owner tag
+E-004,S-002,"source_002_ae_interview.md:L12","If you want to know who owns which model you kind of have to read the schema prefix — stg_ means data engineering owns it mart_ means we own it.",AE's verbatim statement on ownership convention
+E-005,S-002,"source_002_ae_interview.md:L20","I'd say maybe thirty percent of our dashboard incidents trace back to an upstream change we didn't hear about.",AE's rough estimate on lineage-drift incident rate
+E-006,S-002,"source_002_ae_interview.md:L24","BI team uses the marts but they don't own them.",AE's statement on BI-consumer ownership status
+E-007,S-002,"source_002_ae_interview.md:L28","The other thing is reference data — lookup tables taxonomy. Nobody really owns those.",AE's statement on reference-data custodian absence

@@ -1,0 +1,16 @@
+{
+  "marker_id": "stage8.no_new_claims.pass",
+  "stage": "stage8",
+  "verdict": "PASS",
+  "timestamp": "2026-04-18T15:30:00Z",
+  "canon_policy_version": "1.0.0-rc2",
+  "canon_policy_version_hash": "cbba8e53",
+  "kpi_005_new_claim_leakage_count": 0,
+  "handoff_packets_checked": [
+    "H1",
+    "H2",
+    "H3",
+    "H4"
+  ],
+  "notes": "No-new-claims gate: zero leakage. analyst_judgment row C-007 surfaces in H4 with valid JustificationRationale referencing C-006 + C-003."
+}

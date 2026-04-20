@@ -1,0 +1,3 @@
+SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,Priority,Language,DateOrVersion,Notes
+S-001,config_file,Sanitized dbt project excerpt (analytics_platform),analytics-eng team repo,readable,T2,high,en,2026-04-15,Authored-primary (actively-maintained dbt project config; version 1.0.0 header)
+S-002,interview_transcript,Analytics Engineer Interview Transcript,AE (analytics engineer role),readable,T4,medium,en,2026-04-17,Attestation; contains self-described rough estimates and recollections; interviewee explicitly flags that every factual-looking assertion requires triangulation

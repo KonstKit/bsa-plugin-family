@@ -1,0 +1,3 @@
+NegEvID,RelatedClaimID,Notes
+NE-001,C-004,"Negative evidence: AE interview (S-002) does not corroborate BI ownership despite being asked about the 'BI consumer side'. AE explicitly states BI team 'uses the marts but they don't own them'. Absence of BI ownership is supported, not contradicted, by available evidence."
+NE-002,C-006,"Negative evidence: dbt config (S-001) lacks any owner tag on the seeds.reference_data block despite using ae_owned and data_eng_owned tags on model blocks. The structural absence reinforces the inference that no team has been formally assigned custodianship."

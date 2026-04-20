@@ -1,0 +1,37 @@
+{
+  "pack_id": "project_0002-handoff-1",
+  "pack_version": "1.0.0",
+  "generated_at": "2026-04-18T16:00:00Z",
+  "canon_policy_version": "1.0.0-rc2+hash:cbba8e53",
+  "includes": {
+    "h1_path": "H1_exec_brief.md",
+    "h2_path": "H2_delivery_packet.md",
+    "h3_path": "H3_validation_packet.md",
+    "h4_path": "H4_open_items_packet.md"
+  },
+  "evidence_binding_map_path": "handoff_evidence_binding_map.csv",
+  "no_new_claims_verdict": {
+    "verdict": "PASS",
+    "leakage_count": 0,
+    "analyst_judgment_valid": 1,
+    "analyst_judgment_invalid": 0,
+    "report_path": "handoff_no_new_claims_report.md"
+  },
+  "checksum": {
+    "algorithm": "sha256",
+    "digest": "556138828a314c47bf91a89033e7985a38147405582f2e62488ab9323df8e9d2",
+    "covers": [
+      "H1_exec_brief.md",
+      "H2_delivery_packet.md",
+      "H3_validation_packet.md",
+      "H4_open_items_packet.md",
+      "handoff_evidence_binding_map.csv"
+    ]
+  },
+  "discovery_lineage": {
+    "discovery_run_id": "project_0002-discovery-001",
+    "discovery_canon_policy_version": "1.0.0-rc2+hash:cbba8e53",
+    "merge_log_path": "canonical/merge_logs/discovery_to_main_merge_log.jsonl"
+  },
+  "notes": "Sprint 4.5 US-S45-01 fixture expansion from project_0002 prep shell (Sprint 2 US-S2-03). Discovery mode + structural path + mixed tier. 7 A59 claims (3 direct / 3 inference / 1 analyst_judgment with INV-07-compliant JustificationRationale)."
+}

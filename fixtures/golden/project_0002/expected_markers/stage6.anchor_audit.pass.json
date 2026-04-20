@@ -1,0 +1,17 @@
+{
+  "marker_id": "stage6.anchor_audit.pass",
+  "stage": "stage6",
+  "verdict": "PASS",
+  "timestamp": "2026-04-18T11:00:00Z",
+  "canon_policy_version": "1.0.0-rc2",
+  "canon_policy_version_hash": "cbba8e53",
+  "anchors_audited": 9,
+  "anchors_with_claim_id": 9,
+  "anchors_with_a51ref": 0,
+  "orphan_anchors_count": 0,
+  "duplicate_anchors_count": 0,
+  "class_mismatch_count": 0,
+  "drift_findings_count": 0,
+  "a61_promoted": true,
+  "notes": "Contract-layer anchors promoted."
+}
