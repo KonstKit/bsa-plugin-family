@@ -80,46 +80,135 @@ jobs:
           set -euo pipefail
           ref="${{ github.ref_name }}"
           name="bsa-full-${ref}"
-          # Archive the content a user would install: plugin manifest,
-          # skills, commands, hooks, scripts, minimal docs. Excludes
-          # fixtures (large) + tests (not needed at runtime) + CI.
           mkdir -p dist
+          # Resilient path selection: the archive covers every runtime
+          # asset that is actually tracked at tag time. This lets early
+          # release tags (before US-S4-02 commands/ and US-S4-03 hooks/
+          # and US-S4-04 INSTALL.md have landed) still build a valid
+          # archive, while later tags automatically include the expanded
+          # surface. Fixtures, tests, and CI are always excluded — users
+          # don't need them at runtime.
+          candidates=(
+            .claude-plugin
+            skills
+            commands
+            hooks
+            scripts/compute_canon_hash.py
+            scripts/validate_marker_chain.py
+            LICENSE
+            README.md
+            CHANGELOG.md
+            INSTALL.md
+          )
+          tracked=()
+          for c in "${candidates[@]}"; do
+            if git ls-files --error-unmatch -- "$c" > /dev/null 2>&1; then
+              tracked+=("$c")
+            else
+              echo "::notice::skipping '$c' — not tracked at ${ref} (expected for pre-US-S4-{02,03,04} tags)"
+            fi
+          done
+          if [ "${#tracked[@]}" -eq 0 ]; then
+            echo "::error::no tracked paths to archive"
+            exit 1
+          fi
           git archive --format=tar.gz \
             --prefix="${name}/" \
             --output="dist/${name}.tar.gz" \
             HEAD \
-            .claude-plugin/ \
-            skills/ \
-            commands/ \
-            hooks/ \
-            scripts/compute_canon_hash.py \
-            scripts/validate_marker_chain.py \
-            LICENSE \
-            README.md \
-            CHANGELOG.md \
-            INSTALL.md
+            "${tracked[@]}"
           (cd dist && sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256")
+          digest=$(cut -d' ' -f1 < "dist/${name}.tar.gz.sha256")
           echo "archive_path=dist/${name}.tar.gz" >> "$GITHUB_OUTPUT"
           echo "checksum_path=dist/${name}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
           echo "archive_name=${name}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "archive_sha256=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract CHANGELOG entry for this tag
+        id: changelog
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF_NAME}"
+          out="release_notes_body.md"
+          # Look for a section in CHANGELOG.md whose heading matches
+          # this tag (tolerant of 'v' prefix + optional brackets).
+          # Fallback to a minimal body when CHANGELOG.md is absent or
+          # has no matching section — early pre-release tags may not
+          # have a dedicated section yet.
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::notice::CHANGELOG.md not found; using fallback body"
+            {
+              echo "BSA Plugin Family release ${ref}."
+              echo
+              echo "CHANGELOG.md is not committed at this tag; see repo history for change detail."
+            } > "$out"
+          else
+            python3 - <<'PY' > "$out"
+          import os, pathlib, re, sys
+          ref = os.environ["GITHUB_REF_NAME"]
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          bare = ref[1:] if ref.startswith("v") else ref
+          patterns = [
+              rf"^##\s+\[?v?{re.escape(bare)}\]?",
+              rf"^##\s+\[?{re.escape(ref)}\]?",
+          ]
+          lines = text.splitlines()
+          start = None
+          for i, ln in enumerate(lines):
+              if any(re.match(p, ln) for p in patterns):
+                  start = i
+                  break
+          if start is None:
+              print(f"BSA Plugin Family release {ref}.")
+              print()
+              print(f"No CHANGELOG.md section found matching {ref}; see repo history for change detail.")
+              sys.exit(0)
+          body = [lines[start]]
+          for ln in lines[start + 1:]:
+              if ln.startswith("## "):
+                  break
+              body.append(ln)
+          print("\n".join(body).rstrip())
+          PY
+          fi
+          echo "body_path=${out}" >> "$GITHUB_OUTPUT"
+          echo "--- release notes preview ---"
+          cat "$out"
+          echo "--- end preview ---"
+
+      - name: Assemble release body
+        id: release-body
+        run: |
+          set -euo pipefail
+          {
+            cat release_notes_body.md
+            echo
+            echo "---"
+            echo
+            echo "**CanonPolicyVersion:** \`${{ steps.verify-hash.outputs.hash_prefix }}\` (full \`${{ steps.verify-hash.outputs.hash_full }}\`)"
+            echo
+            echo "**Archive checksum (sha256):** \`${{ steps.archive.outputs.archive_sha256 }}\`"
+            echo
+            echo "## Install"
+            echo
+            echo '```'
+            echo "/plugin marketplace add https://github.com/${{ github.repository }}"
+            echo "/plugin install bsa-full"
+            echo '```'
+            if git ls-files --error-unmatch -- INSTALL.md > /dev/null 2>&1; then
+              echo
+              echo "See [INSTALL.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/INSTALL.md) for uninstall + troubleshooting guidance."
+            fi
+          } > release_body.md
+          echo "body_path=release_body.md" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
-          body: |
-            BSA Plugin Family release ${{ github.ref_name }}.
-
-            CanonPolicyVersion: ${{ steps.verify-hash.outputs.hash_prefix }} (full: ${{ steps.verify-hash.outputs.hash_full }})
-
-            Install from this repo:
-            ```
-            /plugin marketplace add https://github.com/${{ github.repository }}
-            /plugin install bsa-full
-            ```
-
-            See `CHANGELOG.md` for per-release notes.
-            See `INSTALL.md` for full install + uninstall guidance.
+          body_path: ${{ steps.release-body.outputs.body_path }}
           files: |
             ${{ steps.archive.outputs.archive_path }}
             ${{ steps.archive.outputs.checksum_path }}

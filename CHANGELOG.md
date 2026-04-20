@@ -4,6 +4,31 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.0.0-rc1] — 2026-04-20
+
+Sprint 3 close + Sprint 4 plugin-manifest kickoff. First release candidate carrying the `canonPolicyVersion` hash form (semver + SHA-256 prefix) per US-S3-04.
+
+### Added
+- **US-S3-01** — sidecar self-description. Integration Contract sections in `skills/c4-plantuml-from-context/SKILL.md` and `skills/camunda-bpmn-from-context/SKILL.md`; `references/integration-contract.md` + `references/anchor_manifest.schema.json` (JSON Schema 2020-12, full macro taxonomy) on both sidecars. Doc-driven superset tests guarantee future reference-doc additions don't escape schema coverage.
+- **US-S3-02** — discovery → main merge/dedup contract. `skills/bsa-orchestrator/references/discovery_to_main_merge.md` with disjoint ClaimID namespaces (`D-C-*` vs `C-*`), source identity-tuple dedup, excerpt `(SourceID, Locator)` dedup, A58 carry-forward with `Provenance=discovery-promoted` column, A59 `DiscoveryLineage` column, 8-event merge log. `merge_log.schema.json` enforces event-specific required fields via `allOf`/`if`/`then`. Four new `SCN-ORCH-001-C-MERGE-A..D` scenarios.
+- **US-S3-03** — ReliabilityTier operationalization. `skills/bsa-evidence-intake/references/reliability_tier_spec.md` with 5 tiers (T1 empirical 1.00 / T2 authored-primary 0.85 / T3 authored-secondary 0.65 / T4 attestation 0.45 / T5 reported 0.20), 2-of-4 independence rule, tier-delta conflict resolution (≥ 2 higher-wins + `SupersededBy` / ≤ 1 contested + auto-A51 `cross_tier_contradiction` / anecdotal never overrides), `ClaimStrength` formula with optional decay schedule. KPI-001 rewritten as weighted coverage (target bumped from 0.90 unweighted to 0.75 weighted). `bsa-citation-auditor` gets four `EpistemicInsufficiency` sub-types. Reference implementation in `tests/test_tier_conflict_scenarios.py` (12 cases).
+- **US-S3-04** — drift detection + CanonPolicyVersion hash. `skills/bsa-anchor-auditor/references/anchor-audit-contract.md` gains three drift sub-types (`semantic_rename_no_pivot`, `semantic_change_no_claim`, `class_change_no_pivot`) with detection heuristics + report JSON + A51 hard-block gate. `scripts/compute_canon_hash.py` outputs SHA-256 over 59 policy files with `--full` per-file breakdown and `--diff-breakdown` 5-category breakdown. `contract-versioning.md` documents `<semver>+hash:<sha256>` form + bump rules + drift-detection semantics. Every fixture marker carries `canon_policy_version_hash`.
+- **US-S3-05** — marker chain validator. `scripts/validate_marker_chain.py` enforces prefix/gap/duplicate/timestamp-monotonicity/version-hash-consistency across main-cycle and discovery chains. Three previously-missing project_0001 middle-stage markers (stage5/6/7) added. CI wires it as a blocking step.
+- **US-S3-06** — prompt-injection adversarial fixture. `fixtures/golden/adversarial_prompt_injection_001/` with three injection vectors (ignore-previous-instructions, delimiter-escape, tool-use injection), full canonical A50/A58/A59/A60/A51 showing T5 + `anecdotal=true` sources + CLASSIFY claims + A51 `boundary_risk` routes + hand-authored `prompt_injection_audit_report.md`.
+- **US-S4-01** — plugin manifest + release workflow. `.claude-plugin/plugin.json` (name=`bsa-full`, version=`1.0.0-rc1`, MIT, author block, 10 keywords, custom `canonPolicyVersion` with semver+hash_prefix+hash_full+compute metadata). `.github/workflows/release.yml` with 7 hard gates (canon-hash match, version-tag match, pytest, fixture runner, marker chain, resilient archive, checksum). `tests/test_plugin_manifest.py` (9 cases) locks manifest shape + drift guard.
+
+### Changed
+- KPI-001 formula and target (US-S3-03). Fixture `project_0001` source S-001 promoted T3 → T2; A59 direct claims `ClaimStrength` 0.65 → 0.85; H3 scorecard updated to 0.85 with new per-tier breakdown section.
+- Orchestrator promotion sequence now has 9 steps (was 8) with explicit merge-step insertion; pre-merge checklist renamed from "Merge Checklist" to "Pre-merge Preconditions".
+- `scripts/privacy_whitelist.json` — 2 new entries for the plugin author email (intentional public contact) and `docs/retros/*.md` (hash-digest false positives from the phone heuristic).
+
+### Fixed
+- `governance/immutable_invariants.md` — Sprint 3 retroactive wording cleanup. INV-01 statement, INV-03 override policy, INV-05 heading, INV-05 body now use claim-semantics vocabulary instead of legacy `fact`/`factual` phrasing. No semantic change; vocabulary alignment only.
+- `skills/bsa-citation-auditor/SKILL.md` + `skills/bsa-claim-binder/SKILL.md` — corrected relative cross-ref paths to `reliability_tier_spec.md` (was `../../bsa-evidence-intake/...` which resolved one directory too high; now `../bsa-evidence-intake/...`).
+
+### Canon policy version
+- `1.0.0-rc1+hash:cbba8e53b0312aeec2744e17d018583fcd96bba613a6b39be58ab702cb44fcb0` at Sprint 4 US-S4-01 commit point. The `ac039430` prefix recorded in Sprint 3 retro + fixture markers reflects the Sprint 3 exit state; the move to `cbba8e53` captures the retroactive `governance/` sweep that landed as chore follow-ups between Sprint 3 close and Sprint 4 US-S4-01.
+
 ## [Unreleased]
 
 ### Added
