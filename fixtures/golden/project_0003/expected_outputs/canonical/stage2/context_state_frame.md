@@ -33,8 +33,7 @@ Constraints + dependencies in `constraints_dependencies_route.md`. Key constrain
 
 ## Dependencies
 
-- Sponsor decision on canonical legal-review interpretation (A51-002 closure).
-- Policy-text update to S-001 once the sponsor decides (dependency on governance process).
+- Sponsor decision on canonical legal-review interpretation (A51-002 closure), including the downstream policy-text update to S-001 that the sponsor owns as part of the same decision.
 - Ops-team attestation or artifact to close A51-001.
 - Documentary confirmation of the 2023 GC-rollback incident for A51-003.
 
