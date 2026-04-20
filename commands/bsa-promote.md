@@ -78,6 +78,6 @@ On failure: per-precondition diagnostic + guidance ("stage3.citation_audit.pass 
 
 ## Safety
 
-- The `PreToolUse:Bash` hook (see `.claude-plugin/hooks/hooks.json`) intercepts every `/bsa-promote` invocation and verifies required markers BEFORE Claude actually runs the command logic. A missing marker yields a hook-level block with message naming the missing marker.
-- Canonical writes are additionally protected by the `PreToolUse:Write` hook: only the orchestrator is allowed to write to `analysis/canonical/*` paths. Manual edits by Claude or other tools are blocked at the hook level.
+- The `PreToolUse:Bash` hook (`hooks/hooks.json` + `hooks/pre_bash_promote.sh`) intercepts every `/bsa-promote` invocation and verifies required markers BEFORE Claude actually runs the command logic. A missing marker yields a hook-level block with a message naming the missing marker.
+- Canonical writes are additionally protected by the `PreToolUse:Write` hook (`hooks/pre_write_canonical.sh`): only the orchestrator is allowed to write to `analysis/canonical/*` paths. Manual edits by Claude or other tools are blocked at the hook level.
 - `--dry-run` is always safe to run, even from inside a hook-blocked context.

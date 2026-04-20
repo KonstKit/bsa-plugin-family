@@ -27,7 +27,7 @@ Delegate to `bsa-orchestrator`:
 2. Create runtime layout:
    - `analysis/canonical/core_controls/` (A48, A50, A51, A58, A59, A60, A61)
    - `analysis/canonical/stage1..stage8/` (empty dirs ready for promotion)
-   - `analysis/proposals/stage1..stage8_/`
+   - `analysis/proposals/stage1..stage8/`
    - `analysis/runtime/ready/` (marker zone)
    - `analysis/runtime/locks/`
    - `analysis/runtime/reentry/`

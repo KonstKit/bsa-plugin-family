@@ -78,24 +78,30 @@ After an upgrade, check the `/bsa-status` output for a `policy_version_drift_war
 The `PreToolUse:Bash` hook reads `A48_run_context_card.md.CurrentStage` to determine which markers are required. If you ran the stage's audit but `A48` still reports an earlier `CurrentStage`, the hook looks for the wrong marker set.
 
 - Check `analysis/canonical/core_controls/A48_run_context_card.md` — the `CurrentStage` value must match the stage you're promoting.
-- If `A48` drifted from reality, update it manually (with `BSA_WRITER=bsa-orchestrator` temporarily exported) and re-run.
+- If `A48` drifted from reality, do NOT edit it by hand. Run `/bsa-stage <stage>` + `/bsa-audit <kind>` + `/bsa-promote` for the matching stage so the orchestrator rewrites `A48.CurrentStage` as part of a promotion. Manual edits are a maintenance procedure (see next section) and should not be a routine troubleshooting step.
 
-### "Canonical writes are blocked but I need to hand-edit"
+### "Canonical writes are blocked but I need to hand-edit — maintenance procedure"
 
-The `PreToolUse:Write` hook enforces INV-02 (single-writer canonical). Only `bsa-orchestrator` may write to `analysis/canonical/`. If you need to hand-edit (e.g., during a migration):
+The `PreToolUse:Write` hook enforces INV-02 (single-writer canonical). Only `bsa-orchestrator` may write to `analysis/canonical/`. There are rare cases where a maintainer must edit canonical state by hand — recovering from a corrupted A48 row, applying a migration that the orchestrator cannot drive, backfilling a `Provenance` column on a pre-Sprint-3 workspace. The override procedure is deliberately formal to keep the audit trail intact:
 
-```
-BSA_WRITER=bsa-orchestrator <your edit command>
-```
+1. **Check whether a scripted migration already exists** under `migrations/`. If yes, prefer the scripted path — the migration script emits a log entry automatically.
+2. **Open an `A51` row** with `IssueType=decision_needed`, `BlockingStatus=soft`, `RaisedByStage=maintenance`, `NextAction` describing the planned edit + rationale + expected rollback procedure. The A51 entry is the approval record.
+3. **Attach sponsor sign-off** in the A51 row's `ResolutionStatus` field (e.g., `approved-by: <sponsor-name>` with a date).
+4. **Create a matching migration log** at `migrations/manual_canonical_edits/<YYYY-MM-DD>_<short_slug>.md` documenting the before/after diff, the A51Ref, the sponsor, and the expected canon-hash impact.
+5. **Perform the edit** with the override only after steps 1-4 are in place:
+   ```
+   BSA_WRITER=bsa-orchestrator <your edit command>
+   ```
+6. **Run `/bsa-status`** afterwards to confirm the marker chain + canon hash + A51 set are consistent. The drift detection (see `skills/bsa-anchor-auditor/references/anchor-audit-contract.md`) will flag the change on the next anchor audit; the matching A51 row is how you mark it as "known and approved".
 
-Document every hand-edit in a migration log at `migrations/<version>/manual_canonical_edits_log.md`. Canon-policy drift detection will flag the change on the next run.
+Skipping any of steps 1-6 leaves the maintenance edit invisible to downstream auditors, which is a governance failure. The `BSA_WRITER` env-var override is the TECHNICAL gate; the A51 + migration log is the PROCEDURAL gate. Both must hold.
 
 ### "`plantuml` or `xmllint` not found — should I worry?"
 
 No. These are optional sidecar dependencies. The plugin reports their absence as an informational notice and skips the sidecar view generation:
 
 - Without `plantuml`: `analysis/views/c4/*.puml` files are still emitted, but `.png` / `.svg` rendering is skipped.
-- Without `xmllint`: BPMN XML semantic validation is skipped, but structural validation via the Python `semantic_validate_bpmn.py` still runs.
+- Without `xmllint`: well-formedness / schema validation of the emitted `.bpmn` XML is skipped. Structural checks inside the skill (`skills/camunda-bpmn-from-context/scripts/semantic_validate_bpmn.py`) still run; only the extra `xmllint --noout` pass is missing.
 
 Install via your system package manager if you want the full sidecar experience (`apt install plantuml libxml2-utils` on Debian/Ubuntu; `brew install plantuml libxml2` on macOS).
 

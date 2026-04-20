@@ -65,10 +65,12 @@ case "${current_stage}" in
     required=("stage3.citation_audit.pass.json")
     ;;
   stage4)
-    # Stage 4 has no explicit audit marker before promotion in Sprint-3
-    # run profiles; stage4.ready is a presence-only signal that the
-    # producer ran. Require it.
-    required=("stage4.ready.json")
+    # Stage 4 has no explicit audit marker in the documented
+    # run-profile-gates.md / merge-and-reentry-policy.md marker set.
+    # The orchestrator's own precondition check still runs; this hook
+    # just does not gate on a specific marker. Allow the Bash call
+    # through.
+    exit 0
     ;;
   stage5)
     required=("stage5.anchor_audit.pass.json")
@@ -83,7 +85,10 @@ case "${current_stage}" in
     required=("stage8.no_new_claims.pass.json")
     ;;
   handoff)
-    required=("stage8.no_new_claims.pass.json" "handoff.ready.json")
+    # merge-and-reentry-policy.md names stage8.no_new_claims.pass as the
+    # only required marker for handoff (the stage8 gate IS the handoff
+    # gate under single-writer single-marker semantics).
+    required=("stage8.no_new_claims.pass.json")
     ;;
   d1)
     required=("discovery.d1.ready.json")
