@@ -1,6 +1,6 @@
 {
   "name": "bsa-full",
-  "version": "1.0.0-rc1",
+  "version": "1.0.0-rc2",
   "description": "Business/Systems Analysis plugin family: 23 skills for evidence-bound claim-layer authoring, anti-hallucination audits, sidecar-assisted diagrams, and H1-H4 handoff packaging. Directly consumed by Claude Code.",
   "author": {
     "name": "Konstantin Kitanin",
@@ -22,7 +22,7 @@
     "c4-plantuml"
   ],
   "canonPolicyVersion": {
-    "semver": "1.0.0-rc1",
+    "semver": "1.0.0-rc2",
     "hash_prefix": "cbba8e53",
     "hash_full": "cbba8e53b0312aeec2744e17d018583fcd96bba613a6b39be58ab702cb44fcb0",
     "computed_by": "scripts/compute_canon_hash.py",

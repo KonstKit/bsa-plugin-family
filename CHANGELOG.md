@@ -4,6 +4,26 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.0.0-rc2] — 2026-04-20
+
+Sprint 4 plugin MVP close. All four US-S4-* stories delivered; Sprint 4.5 (fixture/docs pass + v1.0.0 final tag) remains.
+
+### Added
+- **US-S4-01 AC-0** — `docs/plugin_api_spike.md`: 7-question authoritative spike against `code.claude.com/docs/en/plugins-reference`. 6 concrete design decisions recorded up front.
+- **US-S4-01 AC-1..AC-4** — `.claude-plugin/plugin.json` (version `1.0.0-rc2`, custom `canonPolicyVersion` block with hash `cbba8e53…`). `.github/workflows/release.yml` with 7 hard gates (canon-hash + version↔tag + pytest + fixtures + marker chain + tracked-only archive + sha256 checksum + CHANGELOG-driven release body). `tests/test_plugin_manifest.py` (9 cases).
+- **US-S4-02** — six slash commands under `commands/` (`bsa-start`, `bsa-status`, `bsa-stage`, `bsa-promote`, `bsa-audit`, `bsa-handoff`). Each documents `--verbose`; `/bsa-promote` supports `--dry-run`; `/bsa-start` supports `--mode=direct` and `--mode=discovery_then_bsa`. `tests/test_plugin_commands.py` (36 parametrized cases).
+- **US-S4-03** — three plugin hooks (SessionStart informational nudge; PreToolUse:Write enforcing INV-02 single-writer on `analysis/canonical/**`; PreToolUse:Bash enforcing marker-gate preconditions on `/bsa-promote`). Shell scripts + `hooks.json` + `tests/test_plugin_hooks.py` (14 cases covering every failure branch + `--dry-run` bypass + discovery-stage markers).
+- **US-S4-04** — `INSTALL.md`: install/uninstall/upgrade flow + 7 troubleshooting scenarios + formal 6-step `BSA_WRITER` maintenance procedure (scripted-migration-first; open A51 decision_needed; sponsor sign-off; migration log; BSA_WRITER override; `/bsa-status` verification).
+
+### Changed
+- `CHANGELOG.md` — new `[v1.0.0-rc2]` section above `[v1.0.0-rc1]`.
+
+### Fixed
+- Round-1 review defects: `commands/bsa-promote.md` hook-path cross-ref (`.claude-plugin/hooks/hooks.json` → `hooks/hooks.json`), `commands/bsa-start.md` trailing-underscore typo, `INSTALL.md` `semantic_validate_bpmn.py` path (now cites `skills/camunda-bpmn-from-context/scripts/semantic_validate_bpmn.py`), `hooks/pre_bash_promote.sh` stage4 + handoff marker set reconciled with `merge-and-reentry-policy.md`.
+
+### Canon policy version
+- Stays at `cbba8e53b0312aeec2744e17d018583fcd96bba613a6b39be58ab702cb44fcb0` at Sprint 4 close — no POLICY_GLOBS file changed between `v1.0.0-rc1` and `v1.0.0-rc2`. The Sprint-3-retroactive `governance/immutable_invariants.md` sweep that moved the hash from `ac039430` to `cbba8e53` landed at Sprint 4 kickoff (`fcde0dc` + `fc8616b`); everything else in Sprint 4 was packaging work outside POLICY_GLOBS.
+
 ## [v1.0.0-rc1] — 2026-04-20
 
 Sprint 3 close + Sprint 4 plugin-manifest kickoff. First release candidate carrying the `canonPolicyVersion` hash form (semver + SHA-256 prefix) per US-S3-04.
