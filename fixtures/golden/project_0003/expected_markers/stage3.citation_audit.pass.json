@@ -1,0 +1,12 @@
+{
+  "marker_id": "stage3.citation_audit.pass",
+  "stage": "stage3",
+  "verdict": "PASS",
+  "timestamp": "2026-04-19T12:00:00Z",
+  "canon_policy_version": "1.0.0-rc2",
+  "canon_policy_version_hash": "cbba8e53",
+  "kpi_001_weighted_coverage": 0.85,
+  "kpi_001_target": 0.75,
+  "kpi_003_critical_unsupported_claims": 0,
+  "notes": "Weighted coverage 0.85: 4 direct claims all from S-001 (T2, weight 0.85) = 3.40/4 = 0.85. KPI-003 clean; 3 A51 routes cover all remaining uncertainty including the hard-blocked A51-002 contradiction. Contested inference claims C-005/C-006 contribute 0 to weighted coverage per tier-delta <=1 rule but are excluded from KPI-001's direct-claim denominator."
+}

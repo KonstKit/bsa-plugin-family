@@ -1,0 +1,26 @@
+{
+  "fixture_id": "project_0003",
+  "expected_verdicts": {
+    "stage1_intake": "merged",
+    "stage2_context_state": "PASS",
+    "stage3_citation_audit": "PASS",
+    "stage5_anchor_audit": "PASS",
+    "stage6_anchor_audit": "PASS",
+    "stage7_skeptical_review": "PASS",
+    "stage8_no_new_claims": "PASS"
+  },
+  "_comment": "project_0003 exercises the process-path + discovery_then_bsa + multi-stakeholder-conflict scenario. Seven claims: 4 direct (all S-001 T2), 2 contested inference (C-005 from S-002 T4 + C-006 from S-003 T4, same-tier contradiction routed to A51-002 with BlockingStatus=hard per reliability_tier_spec.md tier-delta <=1 rule), 1 analyst_judgment (C-007) with JustificationRationale referencing C-002/C-003/C-004/C-005/C-006 per INV-07. Contested claims contribute 0 to ClaimStrength so KPI-001 denominator uses only the 4 direct claims; all critical claims either T2-supported OR A51-routed so KPI-003 is clean. Stage 7 emits 4 informational findings (one per A51-routed claim: C-004 -> A51-001, C-005 -> A51-002, C-006 -> A51-002, C-007 -> A51-002); zero open EpistemicInsufficiency because the critical-on-T4-only claims are already A51-hard-routed. H1 Recommended Next Steps + H4 Decisions Required surface C-007 analyst_judgment with inline [AJ:C-007] marker; stage 8 leakage is 0.",
+  "expected_findings": {
+    "evidence_binding": 0,
+    "claim_type_closed": 0,
+    "a51_missing_field": 0,
+    "excerpt_not_found": 0,
+    "judgment_missing_justification": 0,
+    "judgment_missing_upstream_claim": 0
+  },
+  "kpi_targets": {
+    "kpi_001_weighted_coverage": {"target": 0.75, "expected_actual": 0.85, "verdict": "PASS"},
+    "kpi_003_critical_unsupported_claims": {"target": 0, "expected_actual": 0, "verdict": "PASS"},
+    "kpi_005_new_claim_leakage": {"target": 0, "expected_actual": 0, "verdict": "PASS"}
+  }
+}

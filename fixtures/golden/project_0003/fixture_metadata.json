@@ -1,0 +1,17 @@
+{
+  "fixture_id": "project_0003",
+  "schema_version": 1,
+  "captured_at": "2026-04-20T00:00:00Z",
+  "authoring_mode": "synthetic_representative",
+  "_authoring_mode_comment": "Authored from scratch in Sprint 4.5 US-S45-01 Part B (no prep-shell ancestor). NOT a live-pipeline capture; hand-authored to exercise the multi-stakeholder contradiction scenario (two T4 sources at tier-delta 0) alongside the project_0001 (process + direct) and project_0002 (structural + discovery + mixed-tier) siblings.",
+  "canon_policy_version": "1.0.0-rc2",
+  "plugin_version": "1.0.0-rc2",
+  "model_used": "n/a (synthetic fixture)",
+  "model_version_hash": "n/a (synthetic fixture)",
+  "_model_fields_comment": "Model fields stay placeholder until a later sprint captures a live-pipeline run against this scenario. The synthetic-representative shape is enough to exercise every fixture_runner invariant (INV-01, INV-07, tier-delta contested rule, locator range, marker chain, stage 2 shape) and to anchor the CI regression suite.",
+  "scenario_tags": [
+    "discovery-mode",
+    "process-path",
+    "multi-stakeholder-conflict"
+  ]
+}

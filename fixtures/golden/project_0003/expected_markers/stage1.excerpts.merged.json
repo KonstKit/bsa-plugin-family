@@ -1,0 +1,14 @@
+{
+  "marker_id": "stage1.excerpts.merged",
+  "stage": "stage1",
+  "verdict": "merged",
+  "timestamp": "2026-04-19T09:00:00Z",
+  "canon_policy_version": "1.0.0-rc2",
+  "canon_policy_version_hash": "cbba8e53",
+  "source_count": 3,
+  "excerpt_count": 8,
+  "claim_count": 7,
+  "negative_evidence_count": 4,
+  "a51_count": 3,
+  "notes": "Stage 1 promoted: S-001 (T2 policy) + S-002/S-003 (two T4 interviews contradicting at tier-delta 0); 8 excerpts + 7 claims (4 direct/2 contested inference/1 analyst_judgment per INV-07) + 4 negative-evidence rows + 3 A51 routes including A51-002 contradiction (BlockingStatus=hard)."
+}

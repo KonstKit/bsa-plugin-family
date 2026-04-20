@@ -1,0 +1,4 @@
+SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,Priority,Language,DateOrVersion,Notes
+S-001,policy_document,Procurement Policy Excerpt v4.2,finance governance office,readable,T2,high,en,2026-01-15,Authored-primary; current-state policy with the 50k threshold + non-standard-clause review mandate
+S-002,interview_transcript,Finance PM Interview,finance PM,readable,T4,medium,en,2026-04-17,Attestation; asserts legal is advisory on contract terms
+S-003,interview_transcript,Legal PM Interview,legal PM,readable,T4,medium,en,2026-04-18,Attestation; directly contradicts S-002 on legal's gating authority (cites 2023 incident as informal precedent)

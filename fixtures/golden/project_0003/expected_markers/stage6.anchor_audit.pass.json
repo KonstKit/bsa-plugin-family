@@ -1,0 +1,17 @@
+{
+  "marker_id": "stage6.anchor_audit.pass",
+  "stage": "stage6",
+  "verdict": "PASS",
+  "timestamp": "2026-04-19T16:00:00Z",
+  "canon_policy_version": "1.0.0-rc2",
+  "canon_policy_version_hash": "cbba8e53",
+  "anchors_audited": 8,
+  "anchors_with_claim_id": 8,
+  "anchors_with_a51ref": 2,
+  "orphan_anchors_count": 0,
+  "duplicate_anchors_count": 0,
+  "class_mismatch_count": 0,
+  "drift_findings_count": 0,
+  "a61_promoted": true,
+  "notes": "Contract-layer anchors promoted: 5 backbone + 3 policy anchors (50k-threshold rule, non-standard-clause review, ops-consult gap). Two anchors carry A51Ref (non-standard-clause review -> A51-002; ops-consult -> A51-001) reflecting contract-level uncertainty routed via A51."
+}

@@ -1,0 +1,16 @@
+{
+  "marker_id": "stage5.anchor_audit.pass",
+  "stage": "stage5",
+  "verdict": "PASS",
+  "timestamp": "2026-04-19T14:00:00Z",
+  "canon_policy_version": "1.0.0-rc2",
+  "canon_policy_version_hash": "cbba8e53",
+  "anchors_audited": 5,
+  "anchors_with_claim_id": 5,
+  "anchors_with_a51ref": 0,
+  "orphan_anchors_count": 0,
+  "duplicate_anchors_count": 0,
+  "class_mismatch_count": 0,
+  "drift_findings_count": 0,
+  "notes": "Process-path backbone anchors: finance_vp + legal_pm + ops_lead + procurement_sponsor actors + contract_management_system boundary; all bind to direct or inference ClaimIDs."
+}

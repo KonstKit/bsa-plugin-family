@@ -1,0 +1,37 @@
+{
+  "pack_id": "project_0003-handoff-1",
+  "pack_version": "1.0.0",
+  "generated_at": "2026-04-20T11:00:00Z",
+  "canon_policy_version": "1.0.0-rc2+hash:cbba8e53",
+  "includes": {
+    "h1_path": "H1_exec_brief.md",
+    "h2_path": "H2_delivery_packet.md",
+    "h3_path": "H3_validation_packet.md",
+    "h4_path": "H4_open_items_packet.md"
+  },
+  "evidence_binding_map_path": "handoff_evidence_binding_map.csv",
+  "no_new_claims_verdict": {
+    "verdict": "PASS",
+    "leakage_count": 0,
+    "analyst_judgment_valid": 1,
+    "analyst_judgment_invalid": 0,
+    "report_path": "handoff_no_new_claims_report.md"
+  },
+  "checksum": {
+    "algorithm": "sha256",
+    "digest": "ac61192fdffee7e53a47804e4be841dd22b71e7422734860abb55702c0f86bcb",
+    "covers": [
+      "H1_exec_brief.md",
+      "H2_delivery_packet.md",
+      "H3_validation_packet.md",
+      "H4_open_items_packet.md",
+      "handoff_evidence_binding_map.csv"
+    ]
+  },
+  "discovery_lineage": {
+    "discovery_run_id": "project_0003-discovery-001",
+    "discovery_canon_policy_version": "1.0.0-rc2+hash:cbba8e53",
+    "merge_log_path": "canonical/merge_logs/discovery_to_main_merge_log.jsonl"
+  },
+  "notes": "Sprint 4.5 US-S45-01 Part B: process-path + discovery_then_bsa + multi-stakeholder conflict fixture authored from scratch. 7 A59 claims (4 direct / 2 contested inference at tier-delta 0 / 1 analyst_judgment with INV-07-compliant JustificationRationale); one hard-blocker A51-002 surfaced explicitly in H1 Recommended Next Steps + H4 Decisions Required with sponsor-gated next action."
+}

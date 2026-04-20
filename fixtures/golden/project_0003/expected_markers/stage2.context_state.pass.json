@@ -1,0 +1,20 @@
+{
+  "marker_id": "stage2.context_state.pass",
+  "stage": "stage2",
+  "verdict": "PASS",
+  "timestamp": "2026-04-19T10:30:00Z",
+  "canon_policy_version": "1.0.0-rc2",
+  "canon_policy_version_hash": "cbba8e53",
+  "owner_skill": "bsa-context-framer",
+  "required_headers_present": true,
+  "scn_checked": [
+    "SCN-STAGE2-001-A",
+    "SCN-STAGE2-001-B",
+    "SCN-STAGE2-001-C"
+  ],
+  "stakeholder_count": 6,
+  "constraint_count": 5,
+  "dependency_count": 3,
+  "linked_a51_count": 3,
+  "notes": "Stage 2 artifacts shape-validated; 3 A51 routes linked; analyst_judgment row C-007 references upstream C-002 + C-003 + C-004 + C-005 + C-006."
+}
