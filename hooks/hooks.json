@@ -1,0 +1,49 @@
+{
+  "_comment": "BSA plugin hooks (US-S4-03). Three hooks enforce pipeline invariants at the Claude Code event layer before any per-skill logic runs. See skills/bsa-orchestrator/references/ for the invariants each hook protects.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session_start.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "_comment": "Single-writer canonical enforcement (INV-02). Blocks any Write or Edit targeting analysis/canonical/* unless the caller identifies as bsa-orchestrator via the BSA_WRITER env var. Hook exit 0 allows, non-zero blocks with the script's stderr surfaced to Claude.",
+        "matcher": "Write|Edit",
+        "matchers": [
+          {
+            "type": "path",
+            "pattern": "analysis/canonical/**"
+          }
+        ],
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre_write_canonical.sh"
+          }
+        ]
+      },
+      {
+        "_comment": "Marker-gate enforcement on /bsa-promote (two-key promotion). Intercepts Bash calls whose command string invokes bsa-promote and verifies required markers exist BEFORE the orchestrator's own precondition check. Belt-and-suspenders with the command-level check in commands/bsa-promote.md.",
+        "matcher": "Bash",
+        "matchers": [
+          {
+            "type": "command",
+            "pattern": "bsa[- ]promote"
+          }
+        ],
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre_bash_promote.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
