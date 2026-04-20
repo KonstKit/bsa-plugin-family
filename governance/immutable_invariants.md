@@ -8,7 +8,7 @@ Governance anchor for future Phase 7 self-improvement loop.
 ## Invariants
 
 ### INV-01: Evidence-binding
-**Statement:** Every positive factual claim promoted into canonical surfaces (`A59_claim_register.csv` and derivatives) MUST carry `SourceID + ExcerptID` linking to an entry in `A58_evidence_excerpts.csv`, OR an explicit `A51Ref` routing the claim through the shared uncertainty ledger.
+**Statement:** Every positive `direct` or `inference` claim promoted into canonical surfaces (`A59_claim_register.csv` and derivatives) MUST carry `SourceID + ExcerptID` linking to an entry in `A58_evidence_excerpts.csv`, OR an explicit `A51Ref` routing the claim through the shared uncertainty ledger.
 
 **Rationale:** Anti-hallucination guarantee. Claims without traceable evidence are fabrications or uncontrolled inference. This is the foundational property of the entire BSA pipeline — weakening it collapses the system's value proposition.
 
@@ -46,7 +46,7 @@ Governance anchor for future Phase 7 self-improvement loop.
 - Runtime marker: `stage8.no_new_claims.pass.json`
 - Handoff no-new-claims gate before package promotion
 
-**Override policy:** `none` for positive factual claims. `ClaimType=analyst_judgment` with `justification_rationale` (see INV-07) is the legitimate channel for recommendations/judgments in H1/H4 — NOT an override of INV-03, but a distinct allowed category.
+**Override policy:** `none` for positive `direct`/`inference` claims. `ClaimType=analyst_judgment` with `justification_rationale` (see INV-07) is the legitimate channel for recommendations/judgments in H1/H4 — NOT an override of INV-03, but a distinct allowed category.
 
 ---
 
@@ -66,8 +66,8 @@ Governance anchor for future Phase 7 self-improvement loop.
 
 ---
 
-### INV-05: A51 is not a fact source
-**Statement:** The shared `A51_issue_route_register.csv` tracks unresolved items, contradictions, decisions needed, and boundary risks. It MUST NOT be used as a source of positive factual claims. A claim with `A51Ref` but no upstream `ClaimID` is a guarded hypothesis, not a fact.
+### INV-05: A51 is not a claim source
+**Statement:** The shared `A51_issue_route_register.csv` tracks unresolved items, contradictions, decisions needed, and boundary risks. It MUST NOT be used as a source of positive claims. A claim with `A51Ref` but no upstream `ClaimID` is a guarded hypothesis, not a canonical claim.
 
 **Rationale:** Prevents A51 from becoming a backdoor for hallucinated content. A51 is negative space (what we don't know), not a container for unsupported assertions.
 
@@ -131,6 +131,15 @@ Attempted L1 auto-patch that touches a derived rule whose upstream is an invaria
 ---
 
 ## Change log
+
+### 2026-04-20 — Sprint 3 retroactive semantic-rename sweep
+Wording-only cleanup. The Sprint 2 US-S2-02 part 3/3 audit (`docs/sem_audit_rename.md`) was scoped to `skills/` only; this file retained legacy "fact"/"factual" phrasing that contradicts the canonical claim-semantics vocabulary. Applied:
+- INV-01 statement: "Every positive factual claim" → "Every positive `direct` or `inference` claim" (explicit ClaimType replaces narrow disambiguator on the foundational evidence-binding rule).
+- INV-03 override policy: "`none` for positive factual claims" → "`none` for positive `direct`/`inference` claims" (parallel with INV-01; preserves the explicit contrast against `ClaimType=analyst_judgment` in the next sentence).
+- INV-05 heading: "A51 is not a fact source" → "A51 is not a claim source" (matches the Sprint 2 phrasing already in `skills/bsa-orchestrator/references/shared-control-surface-contracts.md`).
+- INV-05 body: "source of positive factual claims" → "source of positive claims"; "guarded hypothesis, not a fact" → "guarded hypothesis, not a canonical claim".
+
+No semantic change; no `CanonPolicyVersion` bump. See `docs/sem_audit_rename.md` Sprint 3 retroactive findings table.
 
 ### 2026-04-19 — Initial version (US-S0-05)
 Seven invariants defined. INV-07 (ClaimType enum with `analyst_judgment`) added based on plan rev2 critical review — blocks Phase 3 story-writer hallucination risk without explicit judgment category. Sprint 1 US-S1-01 AC-8/AC-9 operationalize this invariant in A59 schema.

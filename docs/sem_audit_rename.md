@@ -42,6 +42,8 @@ Every skill under `skills/` that participates in claim-layer production, auditin
 
 Out of scope for Sprint 2: sidecars (`c4-plantuml-from-context`, `camunda-bpmn-from-context`, `inot-prompt-builder`) — they don't participate in claim semantics.
 
+**Sprint 3 retroactive:** `governance/immutable_invariants.md` was excluded from the Sprint 2 sweep but holds the canonical invariant text that downstream skills cite. It was swept in Sprint 3 (4 hits, all rewrites — see Sprint 3 retroactive findings sub-section below and the matching change-log entry in `governance/immutable_invariants.md`).
+
 ## Audit protocol
 
 1. **Grep sweep** — run from repo root:
@@ -91,14 +93,29 @@ Initial run of the grep sweep produced 16 hits across 9 files. After classificat
 ### No separate "skeptical-reviewer / citation-auditor / validation-readiness" findings
 Those three skills (primary US-S2-02 AC-7 audit targets) contain **zero** legacy-compat violations. Both SKILL.md files and their references consistently use "claim" throughout. `bsa-validation-readiness` was already updated in US-S2-02 part 1/3. The claim here is empirically verified by the grep sweep + classification above.
 
+## Sprint 3 retroactive findings (governance)
+
+Grep sweep run against `governance/` after Sprint 2 closed surfaced 4 hits in `governance/immutable_invariants.md` that the Sprint 2 scope had excluded. All four classified as rewrites (no accepts).
+
+| # | File | Line (pre-fix) | Legacy phrase | Classification | Rewrite |
+|---|---|---|---|---|---|
+| G1 | `governance/immutable_invariants.md` | 11 (INV-01 statement) | "Every positive factual claim promoted into canonical surfaces" | rewrite-to-claim | "Every positive `direct` or `inference` claim promoted into canonical surfaces" |
+| G2 | `governance/immutable_invariants.md` | 49 (INV-03 override policy) | "`none` for positive factual claims" | rewrite-to-claim | "`none` for positive `direct`/`inference` claims" |
+| G3 | `governance/immutable_invariants.md` | 69 (INV-05 heading) | "INV-05: A51 is not a fact source" | rewrite-to-claim | "INV-05: A51 is not a claim source" |
+| G4 | `governance/immutable_invariants.md` | 70 (INV-05 body, two phrases) | "source of positive factual claims" / "guarded hypothesis, not a fact" | rewrite-to-claim / rewrite-to-evidence-bound | "source of positive claims" / "guarded hypothesis, not a canonical claim" |
+
+**Summary:** 4 rewrites applied; 0 accepts. Wording-only cleanup — no semantic change to any invariant, no `CanonPolicyVersion` bump. INV-01 and INV-03 use explicit ClaimType naming (`direct`/`inference`) rather than the narrow-disambiguator `factual` shorthand because the foundational invariant text is the canonical scoping source that skill docs cite. INV-05 body uses bare "claim source" matching the Sprint 2 phrasing already in `skills/bsa-orchestrator/references/shared-control-surface-contracts.md` line 47. See change-log entry `2026-04-20` in `governance/immutable_invariants.md`.
+
+Cross-ref check: only `skills/bsa-orchestrator/references/discovery_to_main_merge.md:157` references INV-05 by name; it already paraphrases as "A51 is not a positive-claim source", so no breakage from the heading rename.
+
 ## Ongoing governance
 
-Any future PR that edits any skill under `skills/` MUST:
+Any future PR that edits any skill under `skills/` or any file under `governance/` MUST:
 
 1. Rerun the grep sweep on the files it touches.
 2. For every hit, declare the classification (accept-legacy-compat / accept-narrow-disambiguator / rewrite-to-*) in the PR description.
 3. Apply rewrites in the same PR — no "will address later" deferrals for `rewrite-to-*` findings.
-4. Update this checklist's "Sprint 2 findings" table with any new hits discovered.
+4. Update this checklist's findings table (Sprint 2 for skills, Sprint 3 retroactive for governance, or a new sub-section if the scope expands again) with any new hits discovered.
 
 Any deviation from the above requires explicit approval + major `CanonPolicyVersion` bump (see `governance/immutable_invariants.md` change control).
 
