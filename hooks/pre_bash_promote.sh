@@ -41,13 +41,39 @@ EOF
   exit 1
 fi
 
-# Extract current stage from A48 (CurrentStage field).
-current_stage="$(grep -E '^-\s+`?CurrentStage`?:' "${A48_PATH}" | head -1 | sed 's/.*`CurrentStage`: *//; s/.*CurrentStage: *//' | tr -d '[:space:]')"
+# Extract current stage from A48. Delegates to the schema-aware Python
+# parser (governance/schemas/loader.py) which understands all three
+# A48 markdown shapes (bullet-backtick, bullet-bold, table). The
+# previous in-bash grep only matched bullet-backtick and silently
+# failed under set -o pipefail on the table-format A48 used by the
+# golden fixtures (Sprint 5 F2 fix; see tests/test_plugin_hooks.py
+# round-2 cases).
+PLUGIN_REPO="${BSA_PLUGIN_REPO:-${CLAUDE_PLUGIN_ROOT:-}}"
+if [ -z "${PLUGIN_REPO}" ]; then
+  # Fallback: derive from this script's path (hooks/ is one level under repo root).
+  PLUGIN_REPO="$(cd "$(dirname "$0")/.." && pwd)"
+fi
 
-if [ -z "${current_stage}" ]; then
+# Disable pipefail just for the extraction so a clean missing-field
+# diagnostic can be emitted instead of silent exit-1.
+set +o pipefail
+current_stage="$(cd "${PLUGIN_REPO}" && python3 -m governance.schemas.loader a48-field "${A48_PATH}" CurrentStage 2>/dev/null)"
+extract_rc=$?
+set -o pipefail
+
+if [ ${extract_rc} -ne 0 ] || [ -z "${current_stage}" ]; then
   cat >&2 <<EOF
-[bsa-full / pre_bash_promote] BLOCKED: A48 does not declare CurrentStage.
-Check the A48 file at: ${A48_PATH}
+[bsa-full / pre_bash_promote] BLOCKED: A48 does not declare CurrentStage (or A48 is malformed).
+
+A48 path: ${A48_PATH}
+
+The schema-aware parser at \`governance/schemas/loader.py a48-field\`
+could not extract a non-empty CurrentStage value. Supported A48
+shapes: Markdown table (\`| Field | Value |\`), bullet with backticks
+(\`- \\\`Field\\\`: value\`), or bullet with bold (\`- **Field**: value\`).
+
+Run \`python3 -m governance.schemas.loader a48-field ${A48_PATH} CurrentStage\`
+from ${PLUGIN_REPO} for the parser's own diagnostic.
 EOF
   exit 1
 fi

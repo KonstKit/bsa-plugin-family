@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a48.schema.json",
+  "title": "A48 Run Context Card (extracted)",
+  "description": "Schema for the parsed/normalized representation of A48_run_context_card.md. The on-disk file is markdown — either a Markdown table (| Field | Value |) or a bullet list (- `Field`: Value). Both formats normalize to the same dict shape, defined here. Parser: governance.schemas.loader.parse_a48(path). Enforcement points: hooks/pre_bash_promote.sh (CurrentStage extraction) and any future write-time A48 validator.",
+  "type": "object",
+  "required": [
+    "RunID",
+    "Mode",
+    "CurrentStage",
+    "CanonPolicyVersion"
+  ],
+  "properties": {
+    "RunID": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier for this engagement run. Free-form but must be non-empty."
+    },
+    "RequestType": {
+      "type": "string",
+      "description": "Optional human-readable label for the engagement variant (e.g., 'bsa_pack_direct_mixed_sources')."
+    },
+    "Mode": {
+      "type": "string",
+      "enum": ["direct", "discovery_then_bsa"],
+      "description": "Which top-level workflow this run uses. Set by /bsa-start --mode flag."
+    },
+    "CurrentStage": {
+      "type": "string",
+      "enum": [
+        "stage1",
+        "stage2",
+        "stage3",
+        "stage4",
+        "stage5",
+        "stage6",
+        "stage7",
+        "stage8",
+        "handoff",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "discovery.complete"
+      ],
+      "description": "Where the workspace is in the pipeline right now. Updated by orchestrator after each stage promotion. `discovery.complete` is the terminal discovery state after D5 + D-Exit; main cycle starts when stage1.ready is also emitted."
+    },
+    "SelectedPath": {
+      "type": "string",
+      "description": "Optional path-family routing label (e.g., 'process', 'structural', 'mixed'). Used for path-aware skill behavior."
+    },
+    "CanonPolicyVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:-[A-Za-z0-9.-]+)?(?:\\+[A-Za-z0-9.:-]+)?$",
+      "description": "Same shape as marker.canon_policy_version: bare semver or semver+hash."
+    },
+    "ProblemStatement": {
+      "type": "string",
+      "description": "Free-form one-paragraph problem framing."
+    },
+    "InScope": {
+      "type": "string",
+      "description": "Free-form scope statement. May be a single string or a bullet list collapsed into a string by the parser."
+    },
+    "OutOfScope": {
+      "type": "string",
+      "description": "Free-form anti-scope statement. Same format conventions as InScope."
+    },
+    "EntryCondition": {
+      "type": "string",
+      "description": "Free-form precondition statement for stage activation."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-supported-source-formats": {
+    "_comment": "The on-disk A48 may use either of these markdown shapes; parser normalizes both.",
+    "enum": ["bullet", "table"]
+  }
+}

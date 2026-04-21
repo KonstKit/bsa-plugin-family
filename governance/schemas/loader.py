@@ -13,14 +13,23 @@ Public API:
     end_state_markers()         -> set[str]                    (handoff.ready, pipeline.complete)
     bridge_markers()            -> set[str]                    (bsa.stage1.entry.enabled)
     decision_markers()          -> set[str]                    (discovery.go/pivot/more_research/no_go)
+    parse_a48(path)             -> dict                        (markdown → normalized dict)
 
 Stdlib-only at import time. ``jsonschema`` is imported lazily by
 callers that actually validate (loader itself never validates).
+
+CLI for shell hooks:
+    python3 -m governance.schemas.loader a48-field <path> <field>
+        Print the value of <field> from the A48 markdown at <path>.
+        Exit 0 on success, 2 on parse/missing-field error.
+        Used by hooks/pre_bash_promote.sh in lieu of fragile grep.
 """
 
 from __future__ import annotations
 
 import json
+import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -101,3 +110,183 @@ def decision_markers() -> set[str]:
     """Discovery-exit decision markers. Exactly one emitted at D-Exit."""
     schema = load_schema("marker")
     return set(schema.get("x-bsa-decision-markers", {}).get("enum", []))
+
+
+# ---- A48 parser -------------------------------------------------------
+
+# Bullet-line shapes recognised by the A48 parser. Each pattern captures
+# (field_name, value). Both backtick-delimited and bold-delimited field
+# names are supported; the value runs to end-of-line.
+_A48_BULLET_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # - `Field`: value
+    re.compile(r"^-\s+`([A-Za-z][A-Za-z0-9_]*)`\s*:\s*(.*?)\s*$"),
+    # - **Field**: value
+    re.compile(r"^-\s+\*\*([A-Za-z][A-Za-z0-9_]*)\*\*\s*:\s*(.*?)\s*$"),
+    # - Field: value (bare, last-resort)
+    re.compile(r"^-\s+([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*?)\s*$"),
+)
+
+# Table-row shape: | Field | Value |
+_A48_TABLE_ROW = re.compile(r"^\|\s*([A-Za-z][A-Za-z0-9_]*)\s*\|\s*(.*?)\s*\|\s*$")
+# Table separator row to skip: |---|---|
+_A48_TABLE_SEPARATOR = re.compile(r"^\|[\s|:-]+\|\s*$")
+# Table header row to skip: | Field | Value |
+_A48_TABLE_HEADER = re.compile(r"^\|\s*Field\s*\|\s*Value\s*\|\s*$", re.IGNORECASE)
+
+# Backtick-stripping for values like `direct` → direct
+_BACKTICK_WRAP = re.compile(r"^`(.+?)`$")
+
+
+def _strip_value_decoration(value: str) -> str:
+    """Normalize a single-line A48 value: strip surrounding backticks/whitespace."""
+    value = value.strip()
+    match = _BACKTICK_WRAP.match(value)
+    if match:
+        value = match.group(1)
+    return value
+
+
+def parse_a48(path: Path) -> dict[str, str]:
+    """Parse an A48 Run Context Card markdown file into a normalized dict.
+
+    Supports three on-disk shapes:
+      - Bullet with backticks:    ``- `Field`: value``
+      - Bullet with bold:         ``- **Field**: value``
+      - Markdown table:           ``| Field | Value |``
+
+    Multi-line values (nested bullets after a label) are joined with
+    ``"; "``. Returns an empty dict only if the file has no recognisable
+    fields at all (caller must decide whether to treat as error).
+
+    Stdlib-only.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"A48 not found: {path}")
+    text = path.read_text(encoding="utf-8")
+    fields: dict[str, str] = {}
+
+    # First pass: try table rows.
+    in_table = False
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if not line.startswith("|"):
+            in_table = False
+            continue
+        if _A48_TABLE_HEADER.match(line):
+            in_table = True
+            continue
+        if _A48_TABLE_SEPARATOR.match(line):
+            continue
+        if in_table:
+            m = _A48_TABLE_ROW.match(line)
+            if m:
+                field, value = m.group(1), _strip_value_decoration(m.group(2))
+                fields.setdefault(field, value)
+
+    # Second pass: bullet shapes (also captures multi-line nested children).
+    pending_field: str | None = None
+    pending_children: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        # Top-level bullet?
+        if line.startswith("- "):
+            # Flush previous nested-children buffer.
+            if pending_field and pending_children:
+                joined = "; ".join(pending_children)
+                # If the field already has a value (single-line on the
+                # bullet itself), append children; else use children as
+                # the value.
+                existing = fields.get(pending_field, "")
+                if existing:
+                    fields[pending_field] = (
+                        f"{existing}; {joined}" if joined else existing
+                    )
+                else:
+                    fields[pending_field] = joined
+            pending_field = None
+            pending_children = []
+            for pattern in _A48_BULLET_PATTERNS:
+                m = pattern.match(line)
+                if m:
+                    field, value = m.group(1), _strip_value_decoration(m.group(2))
+                    fields.setdefault(field, value)
+                    if not value:
+                        # Empty after the colon → expect nested children.
+                        pending_field = field
+                    break
+        elif pending_field and line.lstrip().startswith("- "):
+            # Nested child bullet.
+            child = line.lstrip()[2:].strip()
+            child = _strip_value_decoration(child)
+            if child:
+                pending_children.append(child)
+        elif pending_field and not line.strip():
+            # Blank line ends a nested-children block.
+            if pending_children:
+                joined = "; ".join(pending_children)
+                existing = fields.get(pending_field, "")
+                if existing:
+                    fields[pending_field] = (
+                        f"{existing}; {joined}" if joined else existing
+                    )
+                else:
+                    fields[pending_field] = joined
+            pending_field = None
+            pending_children = []
+
+    # Final flush.
+    if pending_field and pending_children:
+        joined = "; ".join(pending_children)
+        existing = fields.get(pending_field, "")
+        if existing:
+            fields[pending_field] = f"{existing}; {joined}" if joined else existing
+        else:
+            fields[pending_field] = joined
+
+    return fields
+
+
+# ---- CLI for shell hooks ----------------------------------------------
+
+
+def _cli_a48_field(argv: list[str]) -> int:
+    """``python3 -m governance.schemas.loader a48-field <path> <field>``"""
+    if len(argv) != 2:
+        sys.stderr.write("usage: a48-field <path> <field>\n")
+        return 2
+    path_str, field = argv
+    try:
+        fields = parse_a48(Path(path_str))
+    except FileNotFoundError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
+    if field not in fields:
+        sys.stderr.write(
+            f"A48 at {path_str} does not declare field '{field}'. "
+            f"Found: {sorted(fields.keys())}\n"
+        )
+        return 2
+    value = fields[field]
+    if not value:
+        sys.stderr.write(
+            f"A48 at {path_str} declares '{field}' but value is empty.\n"
+        )
+        return 2
+    print(value)
+    return 0
+
+
+def _main(argv: list[str]) -> int:
+    if not argv:
+        sys.stderr.write("usage: python3 -m governance.schemas.loader <subcommand> [args...]\n")
+        sys.stderr.write("subcommands: a48-field\n")
+        return 2
+    sub, *rest = argv
+    if sub == "a48-field":
+        return _cli_a48_field(rest)
+    sys.stderr.write(f"unknown subcommand: {sub}\n")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(_main(sys.argv[1:]))

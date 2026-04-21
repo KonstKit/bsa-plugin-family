@@ -200,5 +200,128 @@ def test_pre_bash_promote_blocks_unknown_stage(tmp_path: Path) -> None:
     assert "unknown CurrentStage" in result.stderr
 
 
+# ---- F2 regression: A48 in TABLE format (Sprint 5) --------------------
+# The original hook used a bullet-only grep that silently failed under
+# `set -o pipefail` on table-format A48 — exit 1 with no diagnostic.
+# All committed golden fixtures use table format, so the hook would
+# silently block /bsa-promote on the project's own canonical samples.
+# See P1 finding #2 in the Sprint 5 review; F2 fix delegates parsing
+# to governance.schemas.loader.parse_a48 which handles both shapes.
+
+
+def _init_workspace_table_a48(
+    tmp_path: Path, current_stage: str, mode: str = "direct"
+) -> Path:
+    """Same as _init_workspace but writes A48 in Markdown TABLE format."""
+    canonical = tmp_path / "analysis" / "canonical" / "core_controls"
+    canonical.mkdir(parents=True)
+    (canonical / "A48_run_context_card.md").write_text(
+        "# A48 Run Context Card\n\n"
+        "| Field | Value |\n"
+        "|---|---|\n"
+        "| RunID | test-run |\n"
+        f"| Mode | {mode} |\n"
+        f"| CurrentStage | {current_stage} |\n"
+        "| CanonPolicyVersion | 1.0.0-rc1+hash:test |\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "analysis" / "runtime" / "ready").mkdir(parents=True)
+    (tmp_path / "analysis" / "discovery" / "runtime" / "ready").mkdir(parents=True)
+    return tmp_path
+
+
+def _init_workspace_bullet_bold_a48(
+    tmp_path: Path, current_stage: str, mode: str = "direct"
+) -> Path:
+    """Same as _init_workspace but writes A48 in BULLET-BOLD format
+    (the shape used by the Sysco engagement A48)."""
+    canonical = tmp_path / "analysis" / "canonical" / "core_controls"
+    canonical.mkdir(parents=True)
+    (canonical / "A48_run_context_card.md").write_text(
+        "# A48 Run Context Card\n\n"
+        "- **RunID**: test-run\n"
+        f"- **Mode**: {mode}\n"
+        f"- **CurrentStage**: {current_stage}\n"
+        "- **CanonPolicyVersion**: 1.0.0-rc1+hash:test\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "analysis" / "runtime" / "ready").mkdir(parents=True)
+    (tmp_path / "analysis" / "discovery" / "runtime" / "ready").mkdir(parents=True)
+    return tmp_path
+
+
+def test_pre_bash_promote_handles_table_format_a48_missing_marker(
+    tmp_path: Path,
+) -> None:
+    """Hook MUST emit the missing-marker BLOCKED diagnostic on table A48.
+
+    Pre-F2 behaviour: silent exit 1 (no stdout, no stderr).
+    Post-F2 behaviour: same diagnostic as bullet format.
+    """
+    ws = _init_workspace_table_a48(tmp_path, "stage3")
+    result = _run(PRE_BASH, cwd=ws)
+    assert result.returncode == 1
+    assert "stage3.citation_audit.pass.json" in result.stderr, (
+        "Hook silently failed on table-format A48 (P1 #2 regression).\n"
+        f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+    )
+    assert "missing required marker" in result.stderr
+
+
+def test_pre_bash_promote_handles_table_format_a48_marker_present(
+    tmp_path: Path,
+) -> None:
+    ws = _init_workspace_table_a48(tmp_path, "stage5")
+    _touch_marker(ws, "stage5.anchor_audit.pass.json")
+    result = _run(PRE_BASH, cwd=ws)
+    assert result.returncode == 0, (
+        f"Hook blocked despite marker present.\n"
+        f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+    )
+
+
+def test_pre_bash_promote_handles_bullet_bold_a48(tmp_path: Path) -> None:
+    """Sysco-style A48 (bold field labels) must work too."""
+    ws = _init_workspace_bullet_bold_a48(tmp_path, "stage7")
+    result = _run(PRE_BASH, cwd=ws)
+    assert result.returncode == 1
+    assert "stage7.skeptical_review.pass.json" in result.stderr
+    _touch_marker(ws, "stage7.skeptical_review.pass.json")
+    result2 = _run(PRE_BASH, cwd=ws)
+    assert result2.returncode == 0
+
+
+def test_pre_bash_promote_table_a48_with_real_fixture_path(tmp_path: Path) -> None:
+    """End-to-end: copy the actual project_0001 fixture A48 and verify
+    the hook can read its CurrentStage. This is the file path the
+    plugin's own canonical state would land at in a real engagement."""
+    import shutil
+
+    src = (
+        REPO_ROOT
+        / "fixtures"
+        / "golden"
+        / "project_0001"
+        / "expected_outputs"
+        / "canonical"
+        / "core_controls"
+        / "A48_run_context_card.md"
+    )
+    dst_dir = tmp_path / "analysis" / "canonical" / "core_controls"
+    dst_dir.mkdir(parents=True)
+    shutil.copy(src, dst_dir / "A48_run_context_card.md")
+    (tmp_path / "analysis" / "runtime" / "ready").mkdir(parents=True)
+    (tmp_path / "analysis" / "discovery" / "runtime" / "ready").mkdir(parents=True)
+    # Real fixture has CurrentStage=stage1 → required marker is
+    # stage1.excerpts.merged.json. Without it, hook should block with
+    # the proper diagnostic — NOT silently exit 1 like before F2.
+    result = _run(PRE_BASH, cwd=tmp_path)
+    assert result.returncode == 1
+    assert "stage1.excerpts.merged.json" in result.stderr, (
+        "Hook regressed against real fixture A48.\n"
+        f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+    )
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
