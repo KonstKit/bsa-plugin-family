@@ -66,27 +66,27 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-MAIN_CYCLE_SEQUENCE: tuple[str, ...] = (
-    "stage1.excerpts.merged",
-    "stage2.context_state.pass",
-    "stage3.citation_audit.pass",
-    "stage5.anchor_audit.pass",
-    "stage6.anchor_audit.pass",
-    "stage7.skeptical_review.pass",
-    "stage8.no_new_claims.pass",
-)
+# F1 (Sprint 5): single source of truth for marker alphabet + audit-pass
+# sequences is governance/schemas/marker.schema.json, accessed via the
+# loader below. The script's previous private MAIN_CYCLE_SEQUENCE /
+# DISCOVERY_SEQUENCE tuples drifted from the documented schema (they
+# only knew the seven audit-pass markers and rejected stage*.ready,
+# handoff.ready, pipeline.complete, and bsa.stage1.entry.enabled even
+# though all of those are valid markers per runtime-marker-schema.md).
+# Adding a new marker now requires editing the schema only — never this
+# file.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from governance.schemas import loader as _schema_loader  # noqa: E402
 
-DISCOVERY_SEQUENCE: tuple[str, ...] = (
-    "discovery.d1.ready",
-    "discovery.d2.claims.merged",
-    "discovery.d2.research_quality.pass",
-    "discovery.d3.prioritization.pass",
-    "discovery.d4.constraint_audit.pass",
-    "discovery.d5.citation_audit.pass",
-    "discovery.d5.no_solution_leakage.pass",
-    "discovery.exit.pass",
-    "discovery.go",
-)
+MAIN_CYCLE_SEQUENCE: tuple[str, ...] = _schema_loader.audit_pass_sequence("main")
+DISCOVERY_SEQUENCE: tuple[str, ...] = _schema_loader.audit_pass_sequence("discovery")
+_MARKER_ALPHABET: frozenset[str] = frozenset(_schema_loader.marker_id_alphabet())
+_BRIDGE_MARKERS: frozenset[str] = frozenset(_schema_loader.bridge_markers())
+_END_STATE_MARKERS: frozenset[str] = frozenset(_schema_loader.end_state_markers())
+_READY_MARKERS: frozenset[str] = frozenset(_schema_loader.ready_markers())
+_DECISION_MARKERS: frozenset[str] = frozenset(_schema_loader.decision_markers())
 
 REQUIRED_FIELDS: tuple[str, ...] = (
     "marker_id",
@@ -152,12 +152,19 @@ def _validate_required_fields(markers: list[dict], report: Report) -> None:
 
 
 def _split_chains(markers: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Partition markers into (main_chain, discovery_chain) by marker_id prefix."""
+    """Partition markers into (main_chain, discovery_chain).
+
+    Routing rules:
+      - discovery.* (including discovery.go/pivot/more_research/no_go) → discovery
+      - bsa.stage1.entry.enabled (bridge) → discovery (it is the discovery-exit
+        side-effect that unlocks main cycle entry).
+      - everything else (stage1..stage8 + handoff.* + pipeline.*) → main
+    """
     main: list[dict] = []
     discovery: list[dict] = []
     for m in markers:
         mid = m.get("marker_id", "")
-        if mid.startswith("discovery.") or mid in {"discovery.go", "bsa.stage1.entry.enabled"}:
+        if mid.startswith("discovery.") or mid in _BRIDGE_MARKERS:
             discovery.append(m)
         else:
             main.append(m)
@@ -194,17 +201,35 @@ def _validate_chain(
                 f"{chain_label}: marker_id '{mid}' appears {len(rows)} times ({fnames})",
             )
 
-    # Determine which sequence positions are filled.
-    # Reject any marker whose marker_id is not in sequence at all.
+    # Two-tier check (F1 fix, Sprint 5):
+    #   1. Marker must be in the overall marker_id alphabet (schema-defined).
+    #      Anything outside the alphabet is a hard failure — that is the
+    #      class of drift the schema exists to catch (e.g. legacy
+    #      camelCase markers, no_new_facts naming, ad-hoc synthetic IDs).
+    #   2. Whether the marker is in the GATING sequence is a separate
+    #      question. Stage-ready markers (stage1.ready, ...), end-state
+    #      markers (handoff.ready, pipeline.complete), bridge marker
+    #      (bsa.stage1.entry.enabled), and the non-go decision markers
+    #      (discovery.pivot/more_research/no_go) are all valid markers
+    #      that should NOT be flagged as chain errors merely because
+    #      they are not part of the audit-pass gating chain.
     seq_positions: dict[str, int] = {mid: i for i, mid in enumerate(sequence)}
     present_positions: list[int] = []
     for m in markers:
         mid = m.get("marker_id", "")
-        if mid not in seq_positions:
+        if mid not in _MARKER_ALPHABET:
+            # Not in any documented alphabet — hard reject.
             report.add(
                 "chain-unknown-marker",
-                f"{chain_label}: marker_id '{mid}' is not in the mandatory sequence",
+                f"{chain_label}: marker_id '{mid}' is not in the documented alphabet "
+                f"(governance/schemas/marker.schema.json). Ad-hoc, drifted, or legacy IDs are rejected.",
             )
+            continue
+        if mid not in seq_positions:
+            # In alphabet but not part of the gating sequence (ready /
+            # end-state / bridge / non-go decision). Accept silently —
+            # these markers are informational for chain-completeness
+            # purposes and do not occupy a position in the prefix check.
             continue
         present_positions.append(seq_positions[mid])
     if not present_positions:
