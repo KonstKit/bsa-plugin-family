@@ -327,6 +327,116 @@ def _apply_claim_type_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     return violations
 
 
+def _apply_measurability_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
+    """Apply A62-style ``x-bsa-measurability-rules`` extension against a row.
+
+    v1.0.3 polish — C2 pattern applied to A62 NFR register (Phase 3).
+
+    The per-row JSON Schema catches NFRCategory enum violations and
+    empty-string guards on TestabilityNotes, but cannot express INV-09:
+    measurable NFR categories (performance / availability / scalability)
+    MUST either carry a concrete Metric + Target pair OR be routed
+    through A51 as an explicit decision_needed. Without executable
+    enforcement, an LLM can emit
+
+        NFR-PERF-001,performance,"Fast please.",C-042,quantitative,,,"load test",level-1,,
+
+    where Metric and Target are blank and no A51Ref guards the gap —
+    the NFR is aspirational, not a requirement.
+
+    Returns one message per violation. Empty list means no cross-field
+    issue for this row.
+    """
+    ext = schema.get("x-bsa-measurability-rules", {})
+    if not ext:
+        return []
+    required_categories = ext.get(
+        "quantitative_categories_requiring_metric_and_target", []
+    )
+    if not required_categories:
+        return []
+    category = (row.get("NFRCategory") or "").strip()
+    if category not in required_categories:
+        return []
+    metric = (row.get("Metric") or "").strip()
+    target = (row.get("Target") or "").strip()
+    a51_ref = (row.get("A51Ref") or "").strip()
+    # Valid shapes: (Metric AND Target both filled) OR A51Ref filled
+    # (explicit decision_needed for the gap).
+    if metric and target:
+        return []
+    if a51_ref:
+        return []
+    return [
+        f"line {row_idx} NFRCategory={category!r}: requires non-empty Metric AND Target, "
+        f"OR non-empty A51Ref routing the measurability gap. "
+        f"Got Metric={metric!r}, Target={target!r}, A51Ref={a51_ref!r}. "
+        f"(x-bsa-measurability-rules → "
+        f"quantitative_categories_requiring_metric_and_target={required_categories})"
+    ]
+
+
+def _apply_provenance_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
+    """Apply A70-style ``x-bsa-provenance-rules`` extension against a row.
+
+    v1.0.3 polish — C2 pattern applied to A70 story register (Phase 3).
+
+    Rule shape: ``at_least_one_of_non_empty`` list names fields that
+    must have at least one non-empty value among them. For A70, this
+    is INV-08 (story provenance): SourceClaimIDs OR RelatedNFRIDs
+    must be non-empty so every story traces back to a claim or NFR.
+    Without executable enforcement, an LLM can emit stories authored
+    from thin air with both provenance fields empty.
+
+    Generic: any schema declaring ``x-bsa-provenance-rules`` with an
+    ``at_least_one_of_non_empty`` list gets the same treatment.
+    """
+    ext = schema.get("x-bsa-provenance-rules", {})
+    if not ext:
+        return []
+    any_of = ext.get("at_least_one_of_non_empty", [])
+    if not any_of:
+        return []
+    filled = [f for f in any_of if (row.get(f) or "").strip()]
+    if filled:
+        return []
+    return [
+        f"line {row_idx}: all of {any_of} are empty — "
+        f"at least one must be non-empty "
+        f"(x-bsa-provenance-rules → at_least_one_of_non_empty)"
+    ]
+
+
+def _apply_invest_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
+    """Apply A70-style ``x-bsa-invest-rules`` extension against a row.
+
+    v1.0.3 polish — C2 pattern applied to A70 story register (Phase 3).
+
+    Rule shape: ``requires_a51_when_status_not_pass`` bool. When set,
+    any row whose ``INVESTStatus`` is not exactly ``pass`` MUST carry
+    a non-empty ``A51Ref`` so the deferred-INVEST decision / action is
+    tracked in the register rather than silently stuck. Documentary
+    pre-v1.0.3; executable now.
+
+    If ``INVESTStatus`` is empty or not in the enum (malformed row),
+    JSON Schema catches that upstream; this handler bails silently.
+    """
+    ext = schema.get("x-bsa-invest-rules", {})
+    if not ext or not ext.get("requires_a51_when_status_not_pass"):
+        return []
+    status = (row.get("INVESTStatus") or "").strip()
+    if not status or status == "pass":
+        return []  # pass or missing — other handlers / JSON Schema cover the empty case
+    a51_ref = (row.get("A51Ref") or "").strip()
+    if a51_ref:
+        return []
+    return [
+        f"line {row_idx} INVESTStatus={status!r}: A51Ref is empty — "
+        f"INVEST-deferred rows MUST co-populate A51Ref so the decision path is tracked "
+        f"(x-bsa-invest-rules → requires_a51_when_status_not_pass)"
+    ]
+
+
 def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
     """Build a CSV-row validator for the named schema.
 
@@ -369,10 +479,20 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
                 for err in sorted(validator.iter_errors(row), key=lambda e: list(e.absolute_path)):
                     field = ".".join(str(p) for p in err.absolute_path) or "<row>"
                     violations.append(f"line {row_idx} {field}: {err.message}")
-                # Cross-field: x-bsa-claim-type-rules (A59 today;
-                # trivially extended to future schemas that declare the
-                # same extension shape).
+                # Cross-field extension rules. Each helper no-ops
+                # when the schema doesn't declare its extension, so
+                # this pass is schema-agnostic: new schemas that adopt
+                # an existing extension shape get enforcement for free.
+                #   x-bsa-claim-type-rules (A59): INV-01 + INV-07
+                #   x-bsa-measurability-rules (A62, v1.0.3): INV-09 seed
+                #   x-bsa-provenance-rules (A70, v1.0.3): INV-08 seed
+                #   x-bsa-invest-rules (A70, v1.0.3): INVEST-A51 coupling
+                # All four follow the C2 pattern: read extension,
+                # apply per-row, emit line-numbered message on failure.
                 violations.extend(_apply_claim_type_rules(row, schema, row_idx))
+                violations.extend(_apply_measurability_rules(row, schema, row_idx))
+                violations.extend(_apply_provenance_rules(row, schema, row_idx))
+                violations.extend(_apply_invest_rules(row, schema, row_idx))
         except csv.Error as exc:
             violations.append(f"CSV parse error: {exc}")
         return violations

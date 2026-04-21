@@ -852,6 +852,264 @@ def test_marker_stem_uses_normalized_path() -> None:
     assert not ok, "Normalized-stem mismatch was not caught"
 
 
+# ---- 9. v1.0.3 polish — C2 pattern applied to A62/A70 extension rules
+# The Sprint-6+7 retroactive review flagged three HIGH findings where
+# schema extensions declared rules in plain text but no executable code
+# enforced them. This group is the regression guard for the fix:
+#   - A62 x-bsa-measurability-rules (NFR INV-09 seed)
+#   - A70 x-bsa-provenance-rules (story INV-08 seed)
+#   - A70 x-bsa-invest-rules (INVEST-A51 coupling)
+# Each test replays a Codex-indicated bypass shape.
+
+
+_A62_HEADER = (
+    "NFRID,NFRCategory,Statement,SourceClaimIDs,MeasurabilityType,"
+    "Metric,Target,TestabilityNotes,Criticality,A51Ref,Notes\n"
+)
+_A70_HEADER = (
+    "StoryID,Title,Persona,StoryText,AcceptanceCriteria,SourceClaimIDs,"
+    "RelatedNFRIDs,Priority,EstimationHint,INVESTStatus,A51Ref,Notes\n"
+)
+
+
+# A62 measurability rules ---------------------------------------------
+
+
+def test_a62_performance_without_metric_or_a51_rejected() -> None:
+    """INV-09: performance NFR MUST have Metric+Target OR A51Ref."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A62_HEADER
+        + 'NFR-001,performance,"Fast please.",C-042,quantitative,,,"load test",level-1,,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A62_nfr_register.csv", content
+    )
+    assert not ok, (
+        "Performance NFR without Metric/Target AND without A51Ref must be "
+        "rejected (v1.0.3 INV-09 regression)."
+    )
+    err_text = " ".join(msgs)
+    assert "NFRCategory" in err_text or "performance" in err_text
+    assert "x-bsa-measurability-rules" in err_text
+
+
+def test_a62_availability_without_metric_target_rejected() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A62_HEADER
+        + 'NFR-001,availability,"Up always.",C-042,quantitative,,,"check",level-1,,\n'
+    )
+    ok, _msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A62_nfr_register.csv", content
+    )
+    assert not ok
+
+
+def test_a62_scalability_without_metric_target_rejected() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A62_HEADER
+        + 'NFR-001,scalability,"Scale up.",C-042,quantitative,,,"bench",level-1,,\n'
+    )
+    ok, _msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A62_nfr_register.csv", content
+    )
+    assert not ok
+
+
+def test_a62_performance_with_metric_and_target_accepted() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A62_HEADER
+        + 'NFR-001,performance,"p95 < 500ms.",C-042,quantitative,'
+          '"p95 latency ms","< 500","k6 load test",level-1,,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A62_nfr_register.csv", content
+    )
+    assert ok, f"Valid performance NFR rejected: {msgs}"
+
+
+def test_a62_performance_with_a51ref_alternative_accepted() -> None:
+    """Explicit measurability gap routed via A51: legitimate path."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A62_HEADER
+        + 'NFR-001,performance,"Fast, target tbd.",C-042,quantitative,,,'
+          '"decide target with PO",level-2,A51-DEC-007,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A62_nfr_register.csv", content
+    )
+    assert ok, f"A51-routed performance gap should pass: {msgs}"
+
+
+def test_a62_qualitative_categories_unaffected_by_measurability_rule() -> None:
+    """usability/compliance/security don't require Metric+Target by INV-09."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    for category in ("usability", "compliance", "security", "maintainability",
+                     "observability", "portability"):
+        content = (
+            _A62_HEADER
+            + f'NFR-001,{category},"Good experience.",C-042,qualitative,,,'
+              '"quarterly audit",level-2,,\n'
+        )
+        ok, msgs = validate_canonical_write(
+            "analysis/canonical/core_controls/A62_nfr_register.csv", content
+        )
+        assert ok, f"{category} NFR falsely rejected by measurability rule: {msgs}"
+
+
+# A70 provenance rules (INV-08) ---------------------------------------
+
+
+def test_a70_story_without_any_provenance_rejected() -> None:
+    """INV-08: story MUST have at least one of SourceClaimIDs / RelatedNFRIDs non-empty."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A70_HEADER
+        + 'STORY-001,"Orphan","Agent",'
+          '"As a Agent, I want a feature, so that it works.","it works",'
+          ',,level-2,m,pass,,\n'  # both SourceClaimIDs and RelatedNFRIDs empty
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A70_story_register.csv", content
+    )
+    assert not ok, (
+        "Story with no claim AND no NFR provenance must be rejected (INV-08 regression)."
+    )
+    err_text = " ".join(msgs)
+    assert "SourceClaimIDs" in err_text or "RelatedNFRIDs" in err_text
+    assert "x-bsa-provenance-rules" in err_text
+
+
+def test_a70_story_with_claim_only_accepted() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A70_HEADER
+        + 'STORY-001,"Claim-rooted","Agent",'
+          '"As a Agent, I want X, so that Y.","X happens",'
+          'C-042,,level-2,m,pass,,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A70_story_register.csv", content
+    )
+    assert ok, msgs
+
+
+def test_a70_story_with_nfr_only_accepted() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A70_HEADER
+        + 'STORY-001,"NFR-rooted","Agent",'
+          '"As a Agent, I want fast response, so that UX.",'
+          '"response < 500ms",'
+          ',NFR-PERF-001,level-1,m,pass,,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A70_story_register.csv", content
+    )
+    assert ok, msgs
+
+
+# A70 invest rules ----------------------------------------------------
+
+
+def test_a70_non_pass_invest_without_a51_rejected() -> None:
+    """INVESTStatus != 'pass' requires non-empty A51Ref."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    for status in (
+        "needs-splitting",
+        "needs-estimation",
+        "needs-testable-acceptance",
+        "needs-negotiation",
+        "escalate",
+    ):
+        content = (
+            _A70_HEADER
+            + f'STORY-001,"Deferred story","Agent",'
+              '"As a Agent, I want X, so that Y.","X happens",'
+              f'C-042,,level-2,m,{status},,\n'  # A51Ref empty
+        )
+        ok, msgs = validate_canonical_write(
+            "analysis/canonical/core_controls/A70_story_register.csv", content
+        )
+        assert not ok, (
+            f"INVESTStatus={status!r} without A51Ref must be rejected "
+            f"(v1.0.3 INVEST-A51 coupling regression)."
+        )
+        err_text = " ".join(msgs)
+        assert status in err_text
+        assert "x-bsa-invest-rules" in err_text
+
+
+def test_a70_non_pass_invest_with_a51_accepted() -> None:
+    """The escape hatch: INVEST-deferred rows with A51Ref are legitimate."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    for status in ("needs-splitting", "needs-estimation", "escalate"):
+        content = (
+            _A70_HEADER
+            + f'STORY-001,"Deferred story","Agent",'
+              '"As a Agent, I want X, so that Y.","X happens",'
+              f'C-042,,level-2,m,{status},A51-DEC-042,\n'
+        )
+        ok, msgs = validate_canonical_write(
+            "analysis/canonical/core_controls/A70_story_register.csv", content
+        )
+        assert ok, f"INVESTStatus={status!r} + A51Ref should pass: {msgs}"
+
+
+def test_a70_pass_invest_without_a51_accepted() -> None:
+    """INVESTStatus=pass does NOT require A51Ref."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A70_HEADER
+        + 'STORY-001,"Clean story","Agent",'
+          '"As a Agent, I want X, so that Y.","X happens",'
+          'C-042,,level-2,m,pass,,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A70_story_register.csv", content
+    )
+    assert ok, msgs
+
+
+# Multi-rule interaction ----------------------------------------------
+
+
+def test_a70_row_can_trip_both_provenance_and_invest_rules() -> None:
+    """Orphan + deferred — both violations surface with line number."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A70_HEADER
+        + 'STORY-001,"Orphan deferred","Agent",'
+          '"As a Agent, I want X, so that Y.","X happens",'
+          ',,level-2,m,escalate,,\n'  # provenance empty + INVEST=escalate, A51Ref empty
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A70_story_register.csv", content
+    )
+    assert not ok
+    err_text = " ".join(msgs)
+    # Both rules fire independently.
+    assert "provenance-rules" in err_text
+    assert "invest-rules" in err_text
+
+
 def test_marker_sysco_attack_replay_fully_blocked() -> None:
     """The Sysco-engagement attack shape, now with H-sec-4 enforcement.
 
