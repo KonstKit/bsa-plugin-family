@@ -4,6 +4,68 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.0.2] — 2026-04-21
+
+**Security hotfix** — retroactive Codex review of the Sprint-5 F5 work surfaced three CRITICAL findings + one HIGH that rendered the v1.0.1 "contract-enforcement hardening" claim misleading in production. All four now closed. v1.0.1 users should upgrade.
+
+**Tag target**: commit `8d3c7e7` (last of the four must-fix commits).
+**Canon policy version**: `1.0.2+hash:65a577fd...` — unchanged from v1.0.1 because no POLICY_GLOBS file was touched.
+
+### Why this hotfix exists
+
+Sprint 5 shipped F5 without the code-review / security-analyst rounds every prior sprint had used (2-3 rounds per US was the established pattern). Retroactive review, run after Sprint 6+7 had already built on top of F5, produced:
+
+- Sprint 5 code review: REQUEST CHANGES + 2 high-risk findings.
+- F5 security review: CRITICAL + 3 critical-severity findings.
+- Sprint 6+7 code review: REQUEST CHANGES + 3 high-risk findings.
+
+The three CRITICALs plus the most-exploitable HIGH became the v1.0.2 must-fix set. Sprint 6-7 commits were rolled back to `archive/sprint-6-7-pre-f5-fix` pending re-base on a clean v1.0.2 foundation.
+
+### Fixed
+
+- **C1 — hooks.json matcher coverage** (`743a496`) — Pre-fix, the PreToolUse:Write matcher covered only `analysis/canonical/**`. Marker writes to `analysis/runtime/ready/**` and `analysis/discovery/runtime/ready/**`, plus `analysis/discovery/canonical/**` writes, bypassed F5 entirely. The entire Sysco-engagement marker-drift class (camelCase marker_id, legacy `no_new_facts` filename) landed unmolested on v1.0.1. Matcher list now covers all four protected-path classes; stderr diagnostics generalized accordingly. 2 new data-level assertion tests would have caught the original miss.
+
+- **C2 — A59 cross-field rules executable** (`e5418f4`) — Pre-fix, `x-bsa-claim-type-rules` in `a59.schema.json` declared INV-01 + INV-07 rules in plain text, but `_make_csv_validator()` ignored the extension. Bypasses: `ClaimType=direct` with empty `ExcerptID` + empty `A51Ref` passed (INV-01); `analyst_judgment` with empty `JustificationRationale` passed (INV-07). New helper `_apply_claim_type_rules()` reads the extension and applies per-row cross-field checks after JSON Schema. 9 regression tests.
+
+- **C3 — `BSA_PLUGIN_REPO` env-injection lockdown** (`ab6a8f8`) — Pre-fix, both hooks resolved `PLUGIN_REPO` from `${BSA_PLUGIN_REPO:-${CLAUDE_PLUGIN_ROOT:-<script-derived>}}`. Attacker-controlled `BSA_PLUGIN_REPO=/evil` pointed at a permissive `governance.schemas.write_validator`; all hook subprocess validation redirected. Round-1 attempt gated the override on a paired flag (`BSA_PLUGIN_REPO_ALLOW_TEST_OVERRIDE=1`); Codex correctly rejected — any attacker injecting one env var can inject two. Round-2 removed the override entirely. Priority now: script realpath → `CLAUDE_PLUGIN_ROOT` fallback. 2 paired-injection regression tests.
+
+- **H-sec-4 — marker filename↔marker_id + FormatChecker + path normalization** (`8d3c7e7`) — Pre-fix, marker validation was syntactic only. `timestamp: "not-a-date"` passed (FormatChecker not enabled); filename↔payload binding unenforced (file named `stage8.no_new_claims.pass.json` could carry `marker_id=stage1.ready` and still satisfy `pre_bash_promote.sh`'s filename-presence check); marker_id↔stage/verdict bindings unenforced. All three closed. Round-2 Codex review caught a residual `..`-traversal bypass of the dispatcher regex itself; fixed with `posixpath.normpath()` in `_dispatch()` + `validate_canonical_write()`. 14 regression tests across two rounds.
+
+### Added (tests only)
+
+27 regression tests total — each is a direct replay of a Codex-flagged attack path:
+  - 2 data-level hook-config assertions (C1 protected-path coverage).
+  - 9 A59 cross-field coverage tests (C2).
+  - 2 env-injection attack replays (C3).
+  - 14 marker-binding tests (H-sec-4: timestamp, filename binding, stage/verdict binding, traversal normalization, Sysco attack replay).
+
+### Deferred
+
+The following findings from the same review cycle are acknowledged but not fixed in v1.0.2:
+
+- **H-sec-1** — `BSA_WRITER` forgeable via ambient env (architectural; v2.0 signed-token work).
+- **H-sec-2** — Case-insensitive FS dispatch bypass + discovery-path dispatch gaps (separate hardening pass).
+- **H-sec-3** — Fail-open extraction on empty stdin / parse errors (backward-compat with tests; tighten in v1.1.0).
+- **Sprint-6+7 high findings** on Phase-3 artifacts (INVEST-A51 executable, NFR measurability executable, no-new-stories tokenization). Applied to artifacts rolled back to `archive/sprint-6-7-pre-f5-fix`; re-evaluated when Sprint 6-7 is cherry-picked on top of v1.0.2.
+- Medium / low findings (CSV header order, Edit-`replace_all` integration test, doc inconsistencies) — polish pass in v1.0.3 / v1.1.0.
+
+### Canon policy
+
+- **Unchanged** at `65a577fd6dea35474d349e312d6890690625aff11414b3e19848dfbdfc00a93b`. None of the v1.0.2 fixes touched a POLICY_GLOBS file — schema files (`governance/schemas/*.json`) are outside POLICY_GLOBS; hooks / validators / tests are too. Only `runtime-marker-schema.md` would have shifted the hash, and that doc was already correct at v1.0.1.
+
+### Verification
+
+- `python3 -m pytest -q`: 912 passed.
+- Each must-fix commit passed an independent Codex code-review or security-analyst review. Two commits required a second round after the first surfaced an escape hatch (C3 paired-flag → removed; H-sec-4 `..`-traversal → `posixpath.normpath` in dispatcher).
+- Codex review outputs retained in the session transcript as `/tmp/codex_out_*_{c1_cr,c2_cr,c3_sec,c3b_sec,hs4_sec,hs4b_sec}.txt`.
+
+### Bookkeeping
+
+- v1.0.1 tag remains at `8d4692a` (not re-tagged). Users installed from v1.0.1 should upgrade.
+- Manifest `version` field stays at `1.0.0` through v1.0.2 — SemVer bump to `1.1.0` accompanies the Phase-3 feature release at Sprint 9 close.
+- Sprint 5 retro (`docs/retros/sprint_5.md`) describes what v1.0.1 shipped. Hotfix retro (`docs/retros/sprint_5_v1_0_2_hotfix.md`) describes what v1.0.2 added on top.
+- Sprint 6-7 commits are preserved in branch `archive/sprint-6-7-pre-f5-fix` (commits `f8d508b..a4e7682`). Cherry-pick on top of v1.0.2 is the next release-bookkeeping step before Sprint 8 work resumes.
+
 ## [v1.0.1] — 2026-04-21
 
 Sprint 5 close — **contract-enforcement hardening release**. Schema-as-source-of-truth for canonical artifacts, plus write-time mechanical enforcement via the PreToolUse:Write hook. Closes three reviewer P-level findings (P1 marker-validator alphabet drift, P1 promote-hook A48 parse failure, P2 privacy-scan letter-only secrets). Also closes the entire Sysco-engagement drift class identified during the Phase 2.5 trial run.
