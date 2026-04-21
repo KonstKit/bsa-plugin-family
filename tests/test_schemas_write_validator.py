@@ -409,3 +409,184 @@ def test_apply_edit_noop_raises() -> None:
 
     with pytest.raises(EditError, match="identical"):
         apply_edit("hello", "hello", "hello")
+
+
+# ---- 7. v1.0.2 C2: A59 x-bsa-claim-type-rules cross-field enforcement
+# Pre-C2 the x-bsa-claim-type-rules extension was documentation-only;
+# per-row JSON Schema caught ClaimType enum violations but ignored the
+# cross-field rules INV-01 + INV-07 declare. Codex retroactive security
+# review flagged this as CRITICAL because:
+#   - ClaimType=direct with empty ExcerptID AND empty A51Ref passed F5
+#     → unsupported canonical claim lands at write time (INV-01 bypass)
+#   - ClaimType=analyst_judgment with empty JustificationRationale passed
+#     → untraceable recommendation lands at write time (INV-07 bypass)
+# These tests are the regression guard for both paths.
+
+
+_A59_HEADER = (
+    "ClaimID,SourceID,ExcerptID,ClaimType,Statement,JustificationRationale,"
+    "A51Ref,ClaimStrength,Criticality,Notes\n"
+)
+
+
+def test_a59_direct_with_empty_excerpt_and_empty_a51_rejected() -> None:
+    """INV-01: direct claim without ExcerptID or A51Ref is evidence-less."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A59_HEADER
+        + 'C-001,S-001,,direct,"unsupported statement",,,"0.85",level-2,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A59_claim_register.csv", content
+    )
+    assert not ok, (
+        f"C2 regression: ClaimType=direct with empty ExcerptID AND empty A51Ref "
+        f"must be blocked per INV-01.\nActual messages: {msgs}"
+    )
+    err_text = " ".join(msgs)
+    assert "ExcerptID" in err_text
+    assert "A51Ref" in err_text
+    assert "x-bsa-claim-type-rules" in err_text
+
+
+def test_a59_direct_with_a51ref_alternative_accepted() -> None:
+    """INV-01: direct claim guarded by A51Ref is legitimate (unresolved hypothesis)."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A59_HEADER
+        + 'C-001,S-001,,direct,"guarded hypothesis",,A51-DEC-007,"0.0",level-2,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A59_claim_register.csv", content
+    )
+    assert ok, f"direct + A51Ref should pass: {msgs}"
+
+
+def test_a59_direct_with_excerpt_id_accepted() -> None:
+    """INV-01 default path: direct claim with proper evidence."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A59_HEADER
+        + 'C-001,S-001,E-001,direct,"supported statement",,,"0.85",level-2,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A59_claim_register.csv", content
+    )
+    assert ok, f"direct + ExcerptID should pass: {msgs}"
+
+
+def test_a59_inference_with_empty_excerpt_and_empty_a51_rejected() -> None:
+    """INV-01 applies to inference same as direct."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A59_HEADER
+        + 'C-001,S-001,,inference,"drift inference",,,"0.45",level-2,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A59_claim_register.csv", content
+    )
+    assert not ok
+    err_text = " ".join(msgs)
+    assert "inference" in err_text
+
+
+def test_a59_analyst_judgment_with_empty_rationale_rejected() -> None:
+    """INV-07: analyst_judgment MUST carry JustificationRationale."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A59_HEADER
+        + 'C-001,,,analyst_judgment,"ungrounded recommendation",,,,level-2,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A59_claim_register.csv", content
+    )
+    assert not ok, (
+        f"C2 regression: analyst_judgment without JustificationRationale "
+        f"must be blocked per INV-07.\nActual messages: {msgs}"
+    )
+    err_text = " ".join(msgs)
+    assert "analyst_judgment" in err_text
+    assert "JustificationRationale" in err_text
+
+
+def test_a59_analyst_judgment_with_rationale_accepted() -> None:
+    """INV-07 default path: analyst_judgment with proper rationale passes."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A59_HEADER
+        + 'C-001,,,analyst_judgment,"recommendation",'
+          '"Derived from C-007 and C-009 via the prioritization-matrix axis weights",'
+          ',,level-2,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A59_claim_register.csv", content
+    )
+    assert ok, f"analyst_judgment + JustificationRationale should pass: {msgs}"
+
+
+def test_a59_analyst_judgment_a51ref_does_NOT_substitute_for_rationale() -> None:
+    """INV-07 is strict: A51Ref is the INV-01 alternative for direct/inference
+    only. analyst_judgment always needs JustificationRationale."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A59_HEADER
+        + 'C-001,,,analyst_judgment,"ungrounded recommendation",,A51-DEC-042,,level-2,\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A59_claim_register.csv", content
+    )
+    assert not ok, (
+        f"A51Ref must NOT substitute for JustificationRationale on "
+        f"analyst_judgment rows (INV-07 scope).\nActual: {msgs}"
+    )
+
+
+def test_a59_mixed_valid_and_invalid_rows_surface_only_invalid() -> None:
+    """Multi-row input: valid rows silent, invalid rows surface with line numbers."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        _A59_HEADER
+        + 'C-001,S-001,E-001,direct,"supported",,,"0.85",level-2,\n'  # valid
+        + 'C-002,S-002,,direct,"unsupported",,,"0.85",level-2,\n'  # INVALID (line 3)
+        + 'C-003,,,analyst_judgment,"grounded","upstream from C-001",,,level-2,\n'  # valid
+        + 'C-004,,,analyst_judgment,"ungrounded",,,,level-2,\n'  # INVALID (line 5)
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/canonical/core_controls/A59_claim_register.csv", content
+    )
+    assert not ok
+    # Both bad rows should be flagged with their line numbers.
+    err_text = " ".join(msgs)
+    assert "line 3" in err_text
+    assert "line 5" in err_text
+    # Good rows should not have cross-field violations surfaced.
+    assert "line 2" not in err_text
+    assert "line 4" not in err_text
+
+
+def test_a59_claim_type_rules_schema_extension_structure() -> None:
+    """Pin the shape of x-bsa-claim-type-rules so future schema edits
+    don't silently remove the executable enforcement hook."""
+    from governance.schemas import loader
+
+    schema = loader.load_schema("a59")
+    rules = schema.get("x-bsa-claim-type-rules", {})
+    # All three INV-07 claim types must be declared.
+    assert set(rules.keys()) >= {"direct", "inference", "analyst_judgment"}
+    # direct + inference require ExcerptID non-empty with A51Ref fallback.
+    for ct in ("direct", "inference"):
+        rule = rules[ct]
+        assert "ExcerptID" in rule["requires_non_empty"]
+        assert rule.get("or_a51ref_set") is True
+    # analyst_judgment requires JustificationRationale; no A51Ref fallback.
+    aj = rules["analyst_judgment"]
+    assert "JustificationRationale" in aj["requires_non_empty"]
+    assert aj.get("or_a51ref_set", False) is False

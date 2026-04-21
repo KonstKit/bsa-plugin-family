@@ -169,8 +169,66 @@ def _parse_a48_string(text: str) -> dict[str, str]:
     return fields
 
 
+def _apply_claim_type_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
+    """Apply A59-style ``x-bsa-claim-type-rules`` extension against a row.
+
+    The per-row JSON Schema catches shape-level violations (unknown
+    ClaimType enum value, malformed field patterns) but cannot express
+    the cross-field rules INV-01 + INV-07 declare:
+
+    * ``ClaimType=direct``    → ExcerptID non-empty OR A51Ref non-empty.
+    * ``ClaimType=inference`` → same rule as direct (INV-01 scope).
+    * ``ClaimType=analyst_judgment`` → JustificationRationale non-empty
+      (A51Ref irrelevant here; INV-07 carries the provenance instead).
+
+    Returns one message per violation. Empty-list means no cross-field
+    issue for this row.
+
+    Scope: Sprint-5 v1.0.2 C2 fix. The rule reader is generic enough
+    to apply to any schema that declares ``x-bsa-claim-type-rules``
+    with the same shape (``ClaimType`` keys → dict with
+    ``requires_non_empty`` list + optional ``or_a51ref_set`` bool).
+    """
+    rules = schema.get("x-bsa-claim-type-rules", {})
+    if not rules:
+        return []
+    claim_type = (row.get("ClaimType") or "").strip()
+    rule = rules.get(claim_type)
+    if not isinstance(rule, dict):
+        # Unknown ClaimType value — JSON Schema already flags it; no
+        # duplicate violation here.
+        return []
+    requires = rule.get("requires_non_empty", [])
+    or_a51 = bool(rule.get("or_a51ref_set", False))
+    a51_ref = (row.get("A51Ref") or "").strip()
+    violations: list[str] = []
+    for field in requires:
+        if (row.get(field) or "").strip():
+            continue
+        if or_a51 and a51_ref:
+            continue  # A51Ref alternative satisfies the OR branch.
+        reason = f"{field} is empty"
+        if or_a51:
+            reason += " AND A51Ref is empty"
+        violations.append(
+            f"line {row_idx} ClaimType={claim_type!r}: {reason} "
+            f"(x-bsa-claim-type-rules → requires_non_empty={requires}"
+            + (f", or_a51ref_set=true" if or_a51 else "")
+            + ")"
+        )
+    return violations
+
+
 def _make_csv_validator(schema_name: str) -> Callable[[str], list[str]]:
-    """Build a CSV-row validator for the named schema."""
+    """Build a CSV-row validator for the named schema.
+
+    Validation order per row:
+      1. Column-set sanity (set equality against x-bsa-csv-columns-order).
+      2. JSON Schema shape check (every field matches pattern/enum/etc.).
+      3. Cross-field x-bsa-*-rules (v1.0.2 C2): currently
+         x-bsa-claim-type-rules for A59 (INV-01 + INV-07 executable
+         enforcement). Documentary-only invariants become mechanical.
+    """
 
     def _validate(content: str) -> list[str]:
         import jsonschema  # lazy
@@ -198,6 +256,10 @@ def _make_csv_validator(schema_name: str) -> Callable[[str], list[str]]:
                 for err in sorted(validator.iter_errors(row), key=lambda e: list(e.absolute_path)):
                     field = ".".join(str(p) for p in err.absolute_path) or "<row>"
                     violations.append(f"line {row_idx} {field}: {err.message}")
+                # Cross-field: x-bsa-claim-type-rules (A59 today;
+                # trivially extended to future schemas that declare the
+                # same extension shape).
+                violations.extend(_apply_claim_type_rules(row, schema, row_idx))
         except csv.Error as exc:
             violations.append(f"CSV parse error: {exc}")
         return violations
