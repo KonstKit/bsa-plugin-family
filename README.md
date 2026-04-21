@@ -30,9 +30,9 @@ Each `/bsa-stage N` invocation runs the stage's full worker chain (worker + any 
 
 ## Status
 
-**v1.0.0** — first public release (Phase 0-2 MVP close, Sprint 4.5 US-S45-03).
+**v1.0.3** — security-hotfix line continuing from v1.0.0. v1.0.0 shipped Phase 0-2 MVP (Sprint 4.5 close). v1.0.1 closed 3 reviewer-P-level findings (marker validator alphabet, promote-hook A48 parse, privacy-scan letter-only secrets). v1.0.2 closed 3 CRITICAL + 1 HIGH security findings from retroactive F5 review (hook matcher coverage, A59 cross-field executable rules, env-injection lockdown, marker filename↔payload binding). v1.0.3 applies the same C2 enforcement pattern to A62 + A70 extension rules (NFR measurability, story provenance, INVEST-A51 coupling).
 
-23 skills • 6 slash-commands • 3 safety hooks • 3 golden fixtures + 1 adversarial • 302 unit tests • evidence-bound claim layer (INV-01) • closed `ClaimType` enum (INV-07) • tier-aware weighted coverage (KPI-001) • two-key promotion • no-new-claims gate.
+28 skills (23 Phase-0-2 + 5 Phase-3 scaffolds — only 2 Phase-3 skills implemented end-to-end; 3 are SKILL.md scaffolds awaiting Sprint 8 / Sprint 9) • 6 slash-commands + 1 Phase-3 composite (/bsa-dev-handoff) • 3 safety hooks • 3 golden fixtures + 1 adversarial • 991 unit tests as of v1.0.3 (the exact count grows with each release; the invariant is "all pass", not a number) • evidence-bound claim layer (INV-01) • closed `ClaimType` enum (INV-07) • tier-aware weighted coverage (KPI-001) • two-key promotion • no-new-claims gate.
 
 Phase 2.5 external shakedown (2-4 weeks of real-project usage) is the gate before Phase 3 dev-handoff extension begins. See [docs/faq.md](docs/faq.md) "Is this ready for production use?" for the boundaries.
 
@@ -51,9 +51,9 @@ Governance invariants: evidence-binding, single-writer canonical, no-new-claims,
 .claude-plugin/         Plugin manifest (plugin.json with canonPolicyVersion)
 commands/               6 slash commands (/bsa-start, /bsa-status, /bsa-stage, /bsa-promote, /bsa-audit, /bsa-handoff)
 hooks/                  3 safety hooks (SessionStart, PreToolUse:Write, PreToolUse:Bash)
-skills/                 23 worker/auditor/sidecar skills (bsa-*, d0-*, sidecars, inot-prompt-builder)
+skills/                 28 worker/auditor/sidecar/scaffold skills (bsa-*, d0-*, sidecars, inot-prompt-builder)
 scripts/                Validators, fixture runners, canon-hash computer, migration tools
-tests/                  302 unit tests
+tests/                  ~990 unit tests (grows with each release; exact count in the latest sprint retro)
 fixtures/golden/        3 regression fixtures + 1 adversarial prompt-injection fixture
 config/                 Orchestrator routing manifest (request_skill_routes.json)
 governance/             Immutable invariants registry

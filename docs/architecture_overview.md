@@ -67,7 +67,7 @@ Every pipeline transition emits a marker under `analysis/runtime/ready/` (main c
 
 `scripts/compute_canon_hash.py` hashes a fixed set of governance-defining files (SKILL.md frontmatter, references with invariants, KPI definitions, reliability tier spec, validation scenario manifest, immutable invariants). The result lives in `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` and is attached to every runtime marker as `canon_policy_version_hash`.
 
-`CanonPolicyVersion = <semver>+hash:<sha256-prefix>`, e.g., `1.0.0-rc2+hash:cbba8e53` on HEAD; once US-S45-03 bumps the manifest semver, the CanonPolicyVersion will read `1.0.0+hash:cbba8e53`.
+`CanonPolicyVersion = <semver>+hash:<sha256-prefix>`, e.g., `1.0.0+hash:0d4d1de4` on the v1.0.3 HEAD (after the Phase-3 scaffolds landed POLICY_GLOBS adds). The manifest semver stays at `1.0.0` through the v1.0.x patch line; it bumps to `1.1.0` at the next feature release (Sprint 9 close). The hash moves whenever any file in `compute_canon_hash.py::POLICY_GLOBS` changes.
 
 Bump rules:
 - **Major** — immutable invariant touched (new invariant, weakening, or changed semantics).

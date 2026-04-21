@@ -21,7 +21,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
 ### Pre-commit checklist
 
-- `pytest tests/` — 302 tests must pass.
+- `pytest tests/` — full test suite must pass (992 tests as of v1.0.3; the exact count grows with each release — the invariant is "all pass", not a hardcoded number).
 - `python3 scripts/fixture_runner.py --all` — 4 fixtures must pass.
 - `python3 scripts/privacy_scan.py` — 0 blockers.
 - `python3 scripts/compute_canon_hash.py` — output must match `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` (the `test_manifest_canon_hash_matches_current_script_output` pytest case also enforces this).
