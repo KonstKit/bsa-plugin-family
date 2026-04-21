@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a51.schema.json",
+  "title": "A51 Issue Route Register row",
+  "description": "Schema for one row of analysis/canonical/core_controls/A51_issue_route_register.csv (and the discovery mirror). Columns are documented in skills/bsa-orchestrator/references/shared-control-surface-contracts.md (A51 Minimal Columns). Validation flow: governance.schemas.loader.iter_a51_rows(path) → list[dict]; each row dict is validated against this schema.",
+  "type": "object",
+  "required": [
+    "A51Ref",
+    "IssueType",
+    "Severity",
+    "BlockingStatus",
+    "RaisedByStage",
+    "NextAction",
+    "ResolutionStatus"
+  ],
+  "properties": {
+    "A51Ref": {
+      "type": "string",
+      "pattern": "^A51-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Stable identifier. Two recognized shapes: A51-NNN (numeric, simple register) or A51-XXX-NNN (category prefix like INJ, MISS, CNTR, BIN, BOUND followed by numeric)."
+    },
+    "IssueType": {
+      "type": "string",
+      "enum": [
+        "uncertainty",
+        "contradiction",
+        "missing_source",
+        "decision_needed",
+        "boundary_risk"
+      ],
+      "description": "Closed enum per shared-control-surface-contracts.md. Adding a value requires editing that doc + this schema together."
+    },
+    "Severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Standard 3-tier severity. Used by run-profile-gates to decide whether the issue blocks promotion."
+    },
+    "BlockingStatus": {
+      "type": "string",
+      "enum": ["hard", "soft", "informational"],
+      "description": "hard = blocks promotion until resolved or routed; soft = warning only; informational = annotation, no gating."
+    },
+    "RaisedByStage": {
+      "type": "string",
+      "enum": [
+        "stage1",
+        "stage2",
+        "stage3",
+        "stage4",
+        "stage5",
+        "stage6",
+        "stage7",
+        "stage8",
+        "handoff",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "discovery.exit",
+        "discovery.complete"
+      ],
+      "description": "Pipeline stage that emitted this route. Same enum as A48.CurrentStage."
+    },
+    "RelatedSourceID": {
+      "type": "string",
+      "description": "Optional cross-reference into A50_source_register.csv. Empty string is allowed (no linked source). Multiple sources may be joined by ';' or '/' inside a single cell.",
+      "default": ""
+    },
+    "RelatedClaimID": {
+      "type": "string",
+      "description": "Optional cross-reference into A59_claim_register.csv. Empty string is allowed. Multiple claims may be joined by ';' or '/' inside a single cell.",
+      "default": ""
+    },
+    "NextAction": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Free-form description of what needs to happen to resolve this. Required even for soft/informational items so the operator always knows the recommended next step."
+    },
+    "ResolutionStatus": {
+      "type": "string",
+      "enum": [
+        "open",
+        "resolved",
+        "resolved_by_remediation",
+        "superseded",
+        "wontfix"
+      ],
+      "description": "Lifecycle state. open = active; resolved = closed by upstream change; resolved_by_remediation = closed by in-workspace fix (e.g., source re-extracted, contradiction reconciled); superseded = replaced by another A51Ref; wontfix = accepted, no action planned. F6 (Sprint 5) will add a reconciliation auditor that flags rows still 'open' here while marker payloads / handoff packets refer to them as remediated."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for A51 CSV. Producers should write columns in this order for stability; consumers tolerate any order via DictReader. The loader's iter_a51_rows enforces order on read for diff cleanliness.",
+    "order": [
+      "A51Ref",
+      "IssueType",
+      "Severity",
+      "BlockingStatus",
+      "RaisedByStage",
+      "RelatedSourceID",
+      "RelatedClaimID",
+      "NextAction",
+      "ResolutionStatus"
+    ]
+  }
+}

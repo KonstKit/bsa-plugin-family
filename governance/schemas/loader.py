@@ -14,6 +14,13 @@ Public API:
     bridge_markers()            -> set[str]                    (bsa.stage1.entry.enabled)
     decision_markers()          -> set[str]                    (discovery.go/pivot/more_research/no_go)
     parse_a48(path)             -> dict                        (markdown → normalized dict)
+    iter_csv_rows(path, ...)    -> Iterator[dict]              (generic CSV row reader)
+    iter_a50_rows(path)         -> Iterator[dict]              (A50 source register rows)
+    iter_a51_rows(path)         -> Iterator[dict]              (A51 issue route register rows)
+    iter_a58_rows(path)         -> Iterator[dict]              (A58 evidence excerpts rows)
+    iter_a59_rows(path)         -> Iterator[dict]              (A59 claim register rows)
+    iter_a60_rows(path)         -> Iterator[dict]              (A60 negative evidence rows)
+    tier_to_claim_strength(t)   -> float                       (T1..T5 → ClaimStrength)
 
 Stdlib-only at import time. ``jsonschema`` is imported lazily by
 callers that actually validate (loader itself never validates).
@@ -27,11 +34,12 @@ CLI for shell hooks:
 
 from __future__ import annotations
 
+import csv
 import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 SCHEMAS_DIR = Path(__file__).parent
 
@@ -244,6 +252,94 @@ def parse_a48(path: Path) -> dict[str, str]:
             fields[pending_field] = joined
 
     return fields
+
+
+# ---- CSV row helpers --------------------------------------------------
+
+
+def iter_csv_rows(path: Path, expected_columns: list[str] | None = None) -> Iterator[dict[str, str]]:
+    """Yield each CSV row as a dict (column name → cell value).
+
+    If ``expected_columns`` is provided, raises ValueError when the
+    file's actual column set differs (set comparison, order-insensitive).
+
+    Stdlib-only. Uses csv.DictReader which handles quoted commas,
+    embedded newlines, and CRLF line endings correctly.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"CSV not found: {path}")
+    with path.open("r", encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        if expected_columns is not None:
+            actual = set(reader.fieldnames or [])
+            expected_set = set(expected_columns)
+            if actual != expected_set:
+                missing = expected_set - actual
+                extra = actual - expected_set
+                msg_parts = []
+                if missing:
+                    msg_parts.append(f"missing columns: {sorted(missing)}")
+                if extra:
+                    msg_parts.append(f"unexpected columns: {sorted(extra)}")
+                raise ValueError(
+                    f"CSV {path} column mismatch — {'; '.join(msg_parts)}"
+                )
+        for row in reader:
+            yield row
+
+
+def iter_a51_rows(path: Path) -> Iterator[dict[str, str]]:
+    """Yield A51 issue-route-register rows as validated dicts.
+
+    Convenience wrapper around iter_csv_rows that also asserts the
+    canonical A51 column set is present.
+    """
+    return _iter_canonical_csv("a51", path)
+
+
+def iter_a50_rows(path: Path) -> Iterator[dict[str, str]]:
+    """Yield A50 source-register rows."""
+    return _iter_canonical_csv("a50", path)
+
+
+def iter_a58_rows(path: Path) -> Iterator[dict[str, str]]:
+    """Yield A58 evidence-excerpt rows."""
+    return _iter_canonical_csv("a58", path)
+
+
+def iter_a59_rows(path: Path) -> Iterator[dict[str, str]]:
+    """Yield A59 claim-register rows."""
+    return _iter_canonical_csv("a59", path)
+
+
+def iter_a60_rows(path: Path) -> Iterator[dict[str, str]]:
+    """Yield A60 negative-evidence-register rows."""
+    return _iter_canonical_csv("a60", path)
+
+
+def _iter_canonical_csv(schema_name: str, path: Path) -> Iterator[dict[str, str]]:
+    """Shared body for the iter_aNN_rows family.
+
+    Reads ``x-bsa-csv-columns-order.order`` from the named schema and
+    delegates to ``iter_csv_rows`` for the column-set assertion.
+    """
+    schema = load_schema(schema_name)
+    expected = schema["x-bsa-csv-columns-order"]["order"]
+    yield from iter_csv_rows(path, expected_columns=expected)
+
+
+def tier_to_claim_strength(tier: str) -> float:
+    """Look up the canonical ClaimStrength for a ReliabilityTier (T1..T5).
+
+    Returns the float from a50.schema.json's x-bsa-tier-claim-strength
+    extension. Raises KeyError on unknown tier.
+    """
+    mapping = load_schema("a50").get("x-bsa-tier-claim-strength", {})
+    if tier not in mapping:
+        raise KeyError(
+            f"Unknown ReliabilityTier {tier!r}. Known: {sorted(k for k in mapping if not k.startswith('_'))}"
+        )
+    return float(mapping[tier])
 
 
 # ---- CLI for shell hooks ----------------------------------------------

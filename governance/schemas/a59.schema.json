@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a59.schema.json",
+  "title": "A59 Claim Register row",
+  "description": "Schema for one row of analysis/canonical/core_controls/A59_claim_register.csv. The claim register is the foundational evidence-bound layer — every promoted positive claim of ClaimType=direct or inference MUST carry SourceID+ExcerptID per INV-01, OR an explicit A51Ref. ClaimType=analyst_judgment is exempt from evidence-binding but MUST carry a JustificationRationale referencing >= 1 upstream ClaimID per INV-07. Producer: bsa-claim-binder. Consumers: every downstream stage skill plus the auditors. This schema is the first line of defense against the Sysco-style ClaimType drift (legacy values like policy_statement / factual_state / process_step / decision_pending).",
+  "type": "object",
+  "required": [
+    "ClaimID",
+    "SourceID",
+    "ExcerptID",
+    "ClaimType",
+    "Statement",
+    "JustificationRationale",
+    "A51Ref",
+    "ClaimStrength",
+    "Criticality",
+    "Notes"
+  ],
+  "properties": {
+    "ClaimID": {
+      "type": "string",
+      "pattern": "^C-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Stable identifier C-NNN, or C-XXX-NNN with category prefix matching upstream sources/excerpts (e.g., C-INJ-001 for claims about injection-related content)."
+    },
+    "SourceID": {
+      "type": "string",
+      "pattern": "^(?:S-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]S-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Foreign key into A50. May be empty for ClaimType=analyst_judgment (which uses JustificationRationale) or for A51-only claims. Multiple sources joined by ';' or '/'. Accepts category-prefixed IDs (S-INJ-001)."
+    },
+    "ExcerptID": {
+      "type": "string",
+      "pattern": "^(?:E-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]E-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Foreign key into A58. Required (per INV-01) for ClaimType=direct or inference unless A51Ref is set; may be empty for analyst_judgment or A51-routed. Accepts category-prefixed IDs."
+    },
+    "ClaimType": {
+      "type": "string",
+      "enum": ["direct", "inference", "analyst_judgment"],
+      "description": "Closed enum per INV-07. NEVER one of the legacy strings (policy_statement / factual_state / process_step / decision_pending) — those are the Sysco drift class and the schema explicitly rejects them. direct = quotes/reproduces source; inference = derived via recorded reasoning; analyst_judgment = recommendation/risk-assessment requiring JustificationRationale."
+    },
+    "Statement": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The claim text. Free-form but non-empty."
+    },
+    "JustificationRationale": {
+      "type": "string",
+      "description": "Reasoning chain. REQUIRED non-empty when ClaimType=analyst_judgment (per INV-07: must reference >= 1 upstream ClaimID). MAY be empty for direct/inference. Cross-field constraint enforced via x-bsa-claim-type-rules below — jsonschema can express this with allOf+if/then but we keep it as documented x- extension to remain schema-Draft-2020-12 portable."
+    },
+    "A51Ref": {
+      "type": "string",
+      "pattern": "^(?:A51-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]A51-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Optional cross-reference into A51. When set + ExcerptID empty, denotes a claim guarded under A51 (unresolved/contradicted/decision-needed)."
+    },
+    "ClaimStrength": {
+      "type": "string",
+      "pattern": "^$|^(?:0\\.[0-9]{1,2}|1\\.0{1,2})$",
+      "description": "Numeric in 0.0..1.00 (string-encoded for CSV) OR empty string. Derives from upstream A50.ReliabilityTier per A50.x-bsa-tier-claim-strength: T1=1.00 / T2=0.85 / T3=0.65 / T4=0.45 / T5=0.20. ClaimStrength=0.0 is the contradiction-routed value (tier-delta = 0 between disagreeing sources). Empty string is the canonical value for ClaimType=analyst_judgment, which derives validity from JustificationRationale rather than from source-tier mapping. The cross-field rule 'direct/inference MUST have non-empty ClaimStrength' is enforced by the downstream claim-binder + citation-auditor (where it has access to the upstream A50 tier for cross-checking)."
+    },
+    "Criticality": {
+      "type": "string",
+      "enum": ["level-1", "level-2", "level-3"],
+      "description": "level-1 = critical (blocks downstream); level-2 = important; level-3 = informational. Used by handoff-packager to prioritize H1/H4 content."
+    },
+    "Notes": {
+      "type": "string",
+      "description": "Free-form notes. Empty string allowed."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for diff stability.",
+    "order": [
+      "ClaimID",
+      "SourceID",
+      "ExcerptID",
+      "ClaimType",
+      "Statement",
+      "JustificationRationale",
+      "A51Ref",
+      "ClaimStrength",
+      "Criticality",
+      "Notes"
+    ]
+  },
+  "x-bsa-claim-type-rules": {
+    "_comment": "Cross-field validation rules enforced by validators (not by jsonschema directly because the rules need access to upstream files for full enforcement). Validators: bsa-claim-binder, bsa-citation-auditor, F5 write-time hook.",
+    "direct": {
+      "requires_non_empty": ["ExcerptID"],
+      "or_a51ref_set": true,
+      "rationale": "INV-01: every positive direct/inference claim needs SourceID+ExcerptID OR A51Ref"
+    },
+    "inference": {
+      "requires_non_empty": ["ExcerptID"],
+      "or_a51ref_set": true,
+      "rationale": "INV-01: same scope as direct"
+    },
+    "analyst_judgment": {
+      "requires_non_empty": ["JustificationRationale"],
+      "rationale": "INV-07: analyst_judgment exempt from evidence-binding but MUST carry JustificationRationale referencing >= 1 upstream ClaimID"
+    }
+  },
+  "x-bsa-banned-claim-type-values": {
+    "_comment": "Values observed in the Sysco-engagement A59 that the rename forbids. Listed here as documentation; the enum constraint above already rejects them, this is a hint for error messages and for potential migration tooling.",
+    "values": [
+      "policy_statement",
+      "factual_state",
+      "process_step",
+      "decision_pending",
+      "boundary_statement"
+    ]
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a50.schema.json",
+  "title": "A50 Source Register row",
+  "description": "Schema for one row of analysis/canonical/core_controls/A50_source_register.csv. Documented in skills/bsa-orchestrator/references/shared-control-surface-contracts.md (A50 Minimal Columns). Reliability tiers per skills/bsa-evidence-intake/references/reliability_tier_spec.md.",
+  "type": "object",
+  "required": [
+    "SourceID",
+    "SourceType",
+    "Title",
+    "Origin",
+    "AccessStatus",
+    "ReliabilityTier",
+    "Priority",
+    "Language",
+    "DateOrVersion",
+    "Notes"
+  ],
+  "properties": {
+    "SourceID": {
+      "type": "string",
+      "pattern": "^S-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Stable identifier. Two recognized shapes: S-NNN (numeric, simple register) or S-XXX-NNN (category prefix like INJ for injection-related sources). Engagements with >999 sources of one category extend to NNNN."
+    },
+    "SourceType": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]+$",
+      "description": "Source classification. Open vocabulary (lowercase_with_underscore). Common values: document, policy_document, interview_transcript, process_note, config_file, code, screenshot, ticket, dashboard."
+    },
+    "Title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable title or filename."
+    },
+    "Origin": {
+      "type": "string",
+      "description": "Provenance: file path, URL, or stakeholder attribution. May be empty for in-memory/transient sources but typically required."
+    },
+    "AccessStatus": {
+      "type": "string",
+      "enum": ["readable", "unreadable", "denied", "expired", "missing"],
+      "description": "Whether the source content is currently accessible. Anything other than 'readable' triggers an A51 missing_source route per workflow-contract."
+    },
+    "ReliabilityTier": {
+      "type": "string",
+      "enum": ["T1", "T2", "T3", "T4", "T5"],
+      "description": "Epistemic-proximity tier per reliability_tier_spec.md: T1 empirical / T2 authored-primary / T3 authored-secondary / T4 attestation / T5 reported. ClaimStrength derives from this (T1=1.00, T2=0.85, T3=0.65, T4=0.45, T5=0.20)."
+    },
+    "Priority": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Triage priority for evidence-intake processing order."
+    },
+    "Language": {
+      "type": "string",
+      "pattern": "^[a-z]{2}(?:-[A-Z]{2})?$",
+      "description": "BCP-47-ish language tag (en, en-US, ru, es-MX, ...). Lowercase primary, optional uppercase region."
+    },
+    "DateOrVersion": {
+      "type": "string",
+      "description": "ISO date (YYYY-MM-DD), semver, commit hash, or 'unknown'. Free-form."
+    },
+    "Notes": {
+      "type": "string",
+      "description": "Free-form notes. Empty string allowed."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for diff stability.",
+    "order": [
+      "SourceID",
+      "SourceType",
+      "Title",
+      "Origin",
+      "AccessStatus",
+      "ReliabilityTier",
+      "Priority",
+      "Language",
+      "DateOrVersion",
+      "Notes"
+    ]
+  },
+  "x-bsa-tier-claim-strength": {
+    "_comment": "ReliabilityTier → ClaimStrength mapping per reliability_tier_spec.md. Used by A59 schema validation to verify upstream tier consistency.",
+    "T1": 1.00,
+    "T2": 0.85,
+    "T3": 0.65,
+    "T4": 0.45,
+    "T5": 0.20
+  }
+}

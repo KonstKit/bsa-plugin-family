@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a60.schema.json",
+  "title": "A60 Negative Evidence Register row",
+  "description": "Schema for one row of analysis/canonical/core_controls/A60_negative_evidence_register.csv. Negative evidence captures what is explicitly NOT supported by the corpus — absence of expected statements, refutations, gaps that map back to claims. Used by bsa-skeptical-reviewer + bsa-no-new-claims-auditor to surface unsupported assertions.",
+  "type": "object",
+  "required": [
+    "NegEvID",
+    "SourceID",
+    "ExcerptRef",
+    "RelatedClaimID",
+    "NegativeFinding",
+    "A51Ref",
+    "Notes"
+  ],
+  "properties": {
+    "NegEvID": {
+      "type": "string",
+      "pattern": "^NE?-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Stable identifier. Two recognized prefixes: N-NNN (terse) or NE-NNN (longer 'negative evidence' marker). Both are valid; choose one and stay consistent within an engagement. Category-prefix variants accepted (N-INJ-001, NE-INJ-001)."
+    },
+    "SourceID": {
+      "type": "string",
+      "pattern": "^(?:S-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]S-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Foreign key into A50. May be empty for global negative findings (no specific source). Accepts category-prefixed IDs."
+    },
+    "ExcerptRef": {
+      "type": "string",
+      "description": "Optional locator reference. Free-form (may point to A58 ExcerptID, page number, or 'absent')."
+    },
+    "RelatedClaimID": {
+      "type": "string",
+      "pattern": "^(?:C-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]C-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Optional cross-reference into A59. When set, this negative evidence relates to a specific claim (e.g., contradiction or absence of expected support). Accepts category-prefixed IDs."
+    },
+    "NegativeFinding": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Description of what is absent or refuted. Required non-empty."
+    },
+    "A51Ref": {
+      "type": "string",
+      "pattern": "^(?:A51-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]A51-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Optional cross-reference into A51 when the negative finding warrants tracking as an issue route."
+    },
+    "Notes": {
+      "type": "string",
+      "description": "Free-form. Empty string allowed."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for diff stability.",
+    "order": [
+      "NegEvID",
+      "SourceID",
+      "ExcerptRef",
+      "RelatedClaimID",
+      "NegativeFinding",
+      "A51Ref",
+      "Notes"
+    ]
+  }
+}

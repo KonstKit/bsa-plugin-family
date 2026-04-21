@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a58.schema.json",
+  "title": "A58 Evidence Excerpts row",
+  "description": "Schema for one row of analysis/canonical/core_controls/A58_evidence_excerpts.csv. An excerpt is a verbatim or near-verbatim text snippet drawn from a registered source (A50.SourceID), used as evidence-binding payload for A59 claims. Producer: bsa-evidence-intake. Consumer: bsa-claim-binder + bsa-citation-auditor.",
+  "type": "object",
+  "required": [
+    "ExcerptID",
+    "SourceID",
+    "Locator",
+    "ExcerptText",
+    "Notes"
+  ],
+  "properties": {
+    "ExcerptID": {
+      "type": "string",
+      "pattern": "^E-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Stable identifier E-NNN, or E-XXX-NNN with category prefix matching the upstream source (e.g., E-INJ-001 for excerpts from S-INJ-001)."
+    },
+    "SourceID": {
+      "type": "string",
+      "pattern": "^S-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Foreign key into A50_source_register.csv. Every excerpt MUST trace back to a registered source — no orphan excerpts. Same prefix conventions as A50.SourceID."
+    },
+    "Locator": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Position within the source: page number, paragraph index, line range, timestamp (HH:MM:SS for transcripts), CSS selector for HTML, JSONPath for JSON, etc. Free-form but never empty — locator-less excerpts cannot be re-verified."
+    },
+    "ExcerptText": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The verbatim or near-verbatim text content of the excerpt. Required non-empty. Length not capped here — large excerpts are valid (a contract clause or process diagram caption may run several hundred chars)."
+    },
+    "Notes": {
+      "type": "string",
+      "description": "Free-form annotation: extraction method, redaction notes, alternative-phrasing markers. Empty string allowed."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for diff stability.",
+    "order": [
+      "ExcerptID",
+      "SourceID",
+      "Locator",
+      "ExcerptText",
+      "Notes"
+    ]
+  }
+}

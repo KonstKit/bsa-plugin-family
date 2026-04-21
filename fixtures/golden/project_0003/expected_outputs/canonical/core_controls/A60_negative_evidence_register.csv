@@ -1,5 +1,5 @@
-NegEvID,RelatedClaimID,Notes
-NE-001,C-005,"Negative evidence: C-006 (S-003 E-007) directly contradicts this claim — legal PM asserts legal review IS a blocking gate and cites the 2023 GC rollback incident. Same tier (T4 vs T4); A51-002 raised."
-NE-002,C-006,"Negative evidence: C-005 (S-002 E-005) directly contradicts this claim — finance PM asserts legal IS advisory, not blocking. Same tier; A51-002 raised."
-NE-003,C-005,"Negative evidence: the written policy (S-001 E-003) explicitly declines to specify whether legal review is blocking or advisory. The policy does NOT support the finance PM's interpretation; the interpretation is an informal practice, not a documented rule."
-NE-004,C-006,"Negative evidence: the 2023 GC rollback incident cited by the legal PM (E-007) is an oral anecdote with no documentary evidence in S-001 or elsewhere in this fixture's source set. Legal's 'since then legal review is blocking' claim rests on this single undocumented incident."
+NegEvID,SourceID,ExcerptRef,RelatedClaimID,NegativeFinding,A51Ref,Notes
+NE-001,S-003,E-007,C-005,"C-006 (S-003 E-007) directly contradicts this claim — legal PM asserts legal review IS a blocking gate and cites the 2023 GC rollback incident. Same tier (T4 vs T4); A51-002 raised.",A51-002,
+NE-002,S-002,E-005,C-006,"C-005 (S-002 E-005) directly contradicts this claim — finance PM asserts legal IS advisory, not blocking. Same tier; A51-002 raised.",A51-002,
+NE-003,S-001,E-003,C-005,"The written policy (S-001 E-003) explicitly declines to specify whether legal review is blocking or advisory. The policy does NOT support the finance PM's interpretation; the interpretation is an informal practice, not a documented rule.",,
+NE-004,S-003,E-007,C-006,"The 2023 GC rollback incident cited by the legal PM (E-007) is an oral anecdote with no documentary evidence in S-001 or elsewhere in this fixture's source set. Legal's 'since then legal review is blocking' claim rests on this single undocumented incident.",,
