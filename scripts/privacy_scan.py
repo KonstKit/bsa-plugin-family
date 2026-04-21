@@ -262,20 +262,73 @@ def luhn_valid(num: str) -> bool:
     return total % 10 == 0
 
 
-def _is_likely_natural_prose(s: str) -> bool:
-    """Decide whether a long high-entropy candidate is likely natural prose.
+# Known token prefixes — strings starting with any of these are
+# unconditionally treated as token candidates (skip the prose check
+# entirely). This is the first line of defense against false negatives:
+# even if a real token happened to be all-letters by accident
+# (truncated capture, custom format), the prefix alone justifies the
+# entropy/length check.
+KNOWN_TOKEN_PREFIXES: tuple[str, ...] = (
+    "ghp_",         # GitHub personal access token
+    "ghs_",         # GitHub server-to-server
+    "ghu_",         # GitHub user-to-server
+    "gho_",         # GitHub OAuth
+    "ghr_",         # GitHub refresh
+    "github_pat_",  # GitHub fine-grained PAT
+    "sk_live_",     # Stripe live secret
+    "sk_test_",     # Stripe test secret
+    "rk_live_",     # Stripe restricted live
+    "pk_live_",     # Stripe live publishable
+    "xox",          # Slack tokens (xoxb-, xoxp-, xoxa-, xoxr-, xoxs-)
+    "AKIA",         # AWS access-key (incl. AKIAI*, ASIA*, etc.)
+    "ASIA",         # AWS STS temporary
+    "AROA",         # AWS role
+    "AIDA",         # AWS user
+    "ya29.",        # Google OAuth2
+    "AIza",         # Google API key
+    "eyJ",          # JWT header (base64-encoded {"alg":"...)
+    "glpat-",       # GitLab PAT
+    "doo_v1_",      # DigitalOcean
+    "shpss_",       # Shopify session secret
+    "shpat_",       # Shopify access token
+)
 
-    Real API keys and secrets almost always contain digits; natural English
-    words, function identifiers, and hyphenated compound words typically do
-    not. We filter by digit presence first, then by vowel density as a
-    defense-in-depth check for all-alphabetic identifiers like
-    'some_long_function_name_without_digits'.
+
+def _is_likely_natural_prose(s: str) -> bool:
+    """Decide whether a long high-entropy candidate is likely natural prose
+    or a programming identifier rather than a secret.
+
+    Two-step decision (F3 fix, Sprint 5):
+
+    1. **Token-prefix gate.** Any string starting with a known
+       secret-like prefix (`ghp_`, `sk_live_`, `eyJ`, `AKIA`, ...) is
+       NOT prose — return False immediately, let the entropy/length
+       check decide.
+    2. **Vowel-ratio heuristic.** Natural English words and
+       camelCase / snake_case identifiers tend to have ~35-45% vowels.
+       Random tokens (base64, hex, base32) have far lower vowel
+       density (typically 10-25%). If the lowercased string falls in
+       the prose-like vowel range, treat as prose.
+
+    The previous implementation used a digit-presence gate
+    (`any(c.isdigit())`), which the docstring claimed was an "entropy +
+    length" heuristic — it was not. Letter-only high-entropy tokens
+    (e.g., truncated captures, vanity-encoded secrets, custom-format
+    tokens) silently fell through with zero entropy check. That false-
+    negative class is closed by this rewrite while preserving the
+    low-false-positive behavior on identifiers/prose.
     """
-    if not any(c.isdigit() for c in s):
-        # No digits at all — prose-like; skip. Real tokens (ghp_..., sk_live_,
-        # xoxb-..., GitHub App JWTs, AWS keys) always contain digits.
-        return True
-    return False
+    if s.startswith(KNOWN_TOKEN_PREFIXES):
+        return False
+    # Vowel-density check (only meaningful for letter-heavy strings).
+    letters = [c for c in s.lower() if c.isalpha()]
+    if not letters:
+        return False
+    vowel_count = sum(1 for c in letters if c in "aeiou")
+    vowel_ratio = vowel_count / len(letters)
+    # English text + camelCase identifiers cluster in 0.30..0.50.
+    # Random base64/hex tokens cluster well below 0.25.
+    return 0.30 <= vowel_ratio <= 0.50
 
 
 def classify_email(match: str) -> tuple[str, str]:

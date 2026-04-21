@@ -405,5 +405,114 @@ def test_scan_baseline_has_no_blockers() -> None:
     assert "Blockers: 0" in result.stdout
 
 
+# ---- F3 regression cases (Sprint 5) -----------------------------------
+# Pre-F3 the prose check was a digit-presence gate masquerading as an
+# "entropy + length" heuristic — any digit-free string of any entropy
+# silently passed. These tests cover the gap (P2 finding from the
+# Sprint 5 review) and pin the new heuristic against natural-text /
+# identifier false-positive regressions.
+
+
+def test_letter_only_high_entropy_token_now_detected(tmp_path: Path) -> None:
+    """The original P2 reproducer: 26-char mixed-case letter-only token,
+    H≈4.70. Pre-F3 silently skipped; post-F3 must surface as api_key_token."""
+    target = tmp_path / "leak.md"
+    target.write_text(
+        'API_KEY = "QwErTyUiOpAsDfGhJkLzXcVbNm"\n',
+        encoding="utf-8",
+    )
+    result = run_scan(tmp_path)
+    report = (tmp_path / "privacy.md").read_text()
+    assert "api_key_token" in report, (
+        "Letter-only high-entropy token slipped through (F3 regression).\n"
+        f"report:\n{report}"
+    )
+
+
+def test_camel_case_identifier_not_flagged(tmp_path: Path) -> None:
+    """False-positive guard: long camelCase identifiers ARE prose-like
+    (high vowel ratio) and must not be flagged. Critical for code corpora."""
+    target = tmp_path / "code.md"
+    target.write_text(
+        "method: getUserAccountBalanceFromTheDatabase()\n"
+        "method: calculateRecommendedDailyAllowanceFor(item)\n",
+        encoding="utf-8",
+    )
+    result = run_scan(tmp_path)
+    report = (tmp_path / "privacy.md").read_text()
+    assert "api_key_token" not in report, (
+        "camelCase identifier mis-flagged as token (F3 false-positive regression).\n"
+        f"report:\n{report}"
+    )
+
+
+def test_snake_case_identifier_not_flagged(tmp_path: Path) -> None:
+    target = tmp_path / "code.md"
+    target.write_text(
+        "var: some_long_function_name_without_digits_here\n"
+        "var: another_clearly_descriptive_function_name\n",
+        encoding="utf-8",
+    )
+    result = run_scan(tmp_path)
+    report = (tmp_path / "privacy.md").read_text()
+    assert "api_key_token" not in report
+
+
+def test_known_token_prefix_caught_even_if_low_entropy_letters(tmp_path: Path) -> None:
+    """Token-prefix gate: a known prefix (ghp_, sk_live_, eyJ, AKIA, ...)
+    forces the candidate through the entropy check regardless of vowel ratio.
+    This guards against an attacker padding letters to evade the heuristic."""
+    target = tmp_path / "leak.md"
+    target.write_text(
+        # Real-looking prefixed tokens, no digits beyond what's in the prefix.
+        "github = ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZAbCdEfGhIj\n"
+        "stripe = sk_live_PqRsTuVwXyZaBcDeFgHiJkLmNoPqRsTuVw\n"
+        "jwt    = eyJabcdefghijklmnopqrstuvwxyzABCDEFGHIJKL\n",
+        encoding="utf-8",
+    )
+    result = run_scan(tmp_path)
+    report = (tmp_path / "privacy.md").read_text()
+    assert "api_key_token" in report
+    # All three prefixes (or their truncations) should appear.
+    truncated = ("ghp_aBcDeFgH", "sk_live_PqRs", "eyJabcdefghi")
+    hit_count = sum(1 for prefix in truncated if prefix in report)
+    assert hit_count >= 2, (
+        f"Only {hit_count}/3 known-prefix tokens caught. Report:\n{report}"
+    )
+
+
+def test_natural_english_prose_not_flagged(tmp_path: Path) -> None:
+    """English text reflowed without spaces must not trigger.
+    Vowel ratio for typical English is 0.35-0.45 → in the prose band."""
+    target = tmp_path / "doc.md"
+    target.write_text(
+        # Long contiguous English-ish identifier (no spaces, no digits).
+        # This is what a code-as-text corpus or a markdown link slug would look like.
+        "slug: thisIsAnEnglishLikeIdentifierThatShouldNotBeAToken\n",
+        encoding="utf-8",
+    )
+    result = run_scan(tmp_path)
+    report = (tmp_path / "privacy.md").read_text()
+    assert "api_key_token" not in report
+
+
+def test_is_likely_natural_prose_helper_directly() -> None:
+    """Direct unit-test of the heuristic without going through scan_file."""
+    from privacy_scan import _is_likely_natural_prose
+
+    # Letter-only high-entropy random-looking → token
+    assert _is_likely_natural_prose("QwErTyUiOpAsDfGhJkLzXcVbNm") is False
+    # English-like identifier → prose
+    assert _is_likely_natural_prose("getUserAccountBalanceFromTheDatabase") is True
+    assert _is_likely_natural_prose("some_long_function_name_without_digits") is True
+    # Token prefixes → not prose (regardless of vowel ratio)
+    assert _is_likely_natural_prose("ghp_anything") is False
+    assert _is_likely_natural_prose("sk_live_test") is False
+    assert _is_likely_natural_prose("eyJsomething") is False
+    assert _is_likely_natural_prose("AKIATEST") is False
+    # All-digits → not prose, not enough alpha to judge
+    assert _is_likely_natural_prose("12345678901234") is False
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
