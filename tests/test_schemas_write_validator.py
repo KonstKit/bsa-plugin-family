@@ -590,3 +590,292 @@ def test_a59_claim_type_rules_schema_extension_structure() -> None:
     aj = rules["analyst_judgment"]
     assert "JustificationRationale" in aj["requires_non_empty"]
     assert aj.get("or_a51ref_set", False) is False
+
+
+# ---- 8. v1.0.2 H-sec-4 — marker filename↔marker_id + FormatChecker ----
+# Pre-H-sec-4 the marker validator ran jsonschema WITHOUT FormatChecker,
+# so `format: date-time` on timestamp was advisory only. A marker with
+# `timestamp: "not-a-date"` silently passed F5. Also, filename↔marker_id
+# binding was not enforced, so a file named
+# `stage8.no_new_claims.pass.json` could contain an unrelated marker
+# payload (e.g., marker_id=`stage1.ready`) and still satisfy
+# pre_bash_promote.sh's filename-presence check. This commit closes
+# both gaps.
+
+
+def _valid_marker(marker_id: str = "stage1.ready", **overrides) -> dict:
+    base = {
+        "marker_id": marker_id,
+        "stage": "stage1",
+        "verdict": "READY",
+        "timestamp": "2026-04-21T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_marker_rejects_malformed_timestamp_post_format_checker() -> None:
+    """H-sec-4.1: `timestamp: "not-a-date"` was silently accepted pre-fix."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    bad = _valid_marker(timestamp="not-a-date")
+    ok, msgs = validate_canonical_write(
+        "analysis/runtime/ready/stage1.ready.json", json.dumps(bad)
+    )
+    assert not ok, f"Malformed timestamp passed (H-sec-4.1 regression): {msgs}"
+    err_text = " ".join(msgs)
+    assert "timestamp" in err_text
+
+
+def test_marker_accepts_valid_iso8601_timestamp() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    for ts in (
+        "2026-04-21T10:00:00Z",
+        "2026-04-21T10:00:00.123Z",
+        "2026-04-21T10:00:00+04:00",
+    ):
+        good = _valid_marker(timestamp=ts)
+        ok, msgs = validate_canonical_write(
+            "analysis/runtime/ready/stage1.ready.json", json.dumps(good)
+        )
+        assert ok, f"Valid ISO-8601 {ts} rejected: {msgs}"
+
+
+def test_marker_rejects_filename_mismatch_marker_id() -> None:
+    """H-sec-4.2: a file named for one marker MUST contain that marker_id."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    # Filename says stage8 promotion, but payload claims stage1 readiness.
+    payload = _valid_marker(
+        marker_id="stage1.ready", stage="stage1", verdict="READY"
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/runtime/ready/stage8.no_new_claims.pass.json",
+        json.dumps(payload),
+    )
+    assert not ok, (
+        "Filename-payload mismatch was not caught (H-sec-4.2 regression). "
+        "This is the exploit path pre_bash_promote.sh was vulnerable to: "
+        "a file named stage8.no_new_claims.pass.json could satisfy the "
+        "marker-presence check while holding an unrelated payload."
+    )
+    err_text = " ".join(msgs)
+    assert "filename-binding" in err_text or "stem" in err_text
+
+
+def test_marker_accepts_filename_matching_marker_id() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    payload = _valid_marker(marker_id="stage1.ready")
+    ok, msgs = validate_canonical_write(
+        "analysis/runtime/ready/stage1.ready.json", json.dumps(payload)
+    )
+    assert ok, f"Matching filename+marker_id rejected: {msgs}"
+
+
+def test_marker_rejects_stage_mismatch_marker_id() -> None:
+    """H-sec-4.3: stage3.citation_audit.pass implies stage=stage3."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    bad = {
+        "marker_id": "stage3.citation_audit.pass",
+        "stage": "stage5",  # mismatch — stage3.* should be stage3
+        "verdict": "PASS",
+        "timestamp": "2026-04-21T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }
+    ok, msgs = validate_canonical_write(
+        "analysis/runtime/ready/stage3.citation_audit.pass.json", json.dumps(bad)
+    )
+    assert not ok
+    err_text = " ".join(msgs)
+    assert "stage" in err_text
+    assert "marker_id" in err_text
+
+
+def test_marker_rejects_verdict_mismatch_marker_id() -> None:
+    """H-sec-4.3: stage3.citation_audit.pass implies verdict=PASS."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    bad = {
+        "marker_id": "stage3.citation_audit.pass",
+        "stage": "stage3",
+        "verdict": "FAIL",  # mismatch — *.pass → PASS
+        "timestamp": "2026-04-21T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }
+    ok, msgs = validate_canonical_write(
+        "analysis/runtime/ready/stage3.citation_audit.pass.json", json.dumps(bad)
+    )
+    assert not ok
+    err_text = " ".join(msgs)
+    assert "verdict" in err_text
+
+
+def test_marker_decision_markers_verdict_enforced() -> None:
+    """discovery.go implies verdict=GO; discovery.pivot → PIVOT; etc."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    # Valid GO decision.
+    good_go = {
+        "marker_id": "discovery.go",
+        "stage": "discovery.exit",
+        "verdict": "GO",
+        "timestamp": "2026-04-21T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }
+    ok, msgs = validate_canonical_write(
+        "analysis/discovery/runtime/ready/discovery.go.json", json.dumps(good_go)
+    )
+    assert ok, msgs
+
+    # Malicious: marker_id=discovery.no_go but verdict=GO would
+    # mis-route downstream consumers.
+    bad_decision = {
+        "marker_id": "discovery.no_go",
+        "stage": "discovery.exit",
+        "verdict": "GO",  # mismatch: no_go should be NO_GO
+        "timestamp": "2026-04-21T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }
+    ok, msgs = validate_canonical_write(
+        "analysis/discovery/runtime/ready/discovery.no_go.json",
+        json.dumps(bad_decision),
+    )
+    assert not ok
+    err_text = " ".join(msgs)
+    assert "verdict" in err_text
+
+
+def test_marker_bridge_marker_bindings() -> None:
+    """bsa.stage1.entry.enabled → stage=discovery.bridge, verdict=READY."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    good = {
+        "marker_id": "bsa.stage1.entry.enabled",
+        "stage": "discovery.bridge",
+        "verdict": "READY",
+        "timestamp": "2026-04-21T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }
+    ok, msgs = validate_canonical_write(
+        "analysis/runtime/ready/bsa.stage1.entry.enabled.json", json.dumps(good)
+    )
+    assert ok, msgs
+
+
+def test_dispatcher_normalizes_dotdot_path_traversal() -> None:
+    """H-sec-4 round-2 regression: `..` segments must not bypass dispatch.
+
+    Pre-fix: `analysis/runtime/ready/../ready/stage8.no_new_claims.pass.json`
+    did NOT match the dispatcher regex (which expected flat paths), so
+    the dispatcher returned None and the write passed unchecked. When
+    the write layer later resolves `..`, the file lands at
+    `analysis/runtime/ready/stage8.no_new_claims.pass.json` — satisfying
+    `pre_bash_promote.sh`'s filename-presence check with arbitrary
+    content. This test locks the normalization that closes the bypass.
+    """
+    from governance.schemas.write_validator import _dispatch, validate_canonical_write
+
+    traversal_path = "analysis/runtime/ready/../ready/stage8.no_new_claims.pass.json"
+    # 1. Dispatcher now resolves the path and returns the marker validator.
+    result = _dispatch(traversal_path)
+    assert result is not None, (
+        "Dispatcher still returns None for `..`-traversal path "
+        "(H-sec-4 round-2 regression)"
+    )
+    schema_name, _fn = result
+    assert schema_name == "marker"
+
+    # 2. End-to-end: a malformed timestamp through a traversal path is
+    # now blocked (pre-fix it would have passed).
+    bad = _valid_marker(
+        marker_id="stage8.no_new_claims.pass",
+        stage="stage8",
+        verdict="PASS",
+        timestamp="not-a-date",
+    )
+    ok, msgs = validate_canonical_write(traversal_path, json.dumps(bad))
+    assert not ok
+    err_text = " ".join(msgs)
+    assert "timestamp" in err_text
+
+
+def test_dispatcher_normalizes_leading_dot_slash() -> None:
+    """`./analysis/...` should normalize to `analysis/...` and dispatch same."""
+    from governance.schemas.write_validator import _dispatch
+
+    result = _dispatch("./analysis/runtime/ready/stage1.ready.json")
+    assert result is not None
+    assert result[0] == "marker"
+
+
+def test_dispatcher_normalizes_duplicate_slashes() -> None:
+    from governance.schemas.write_validator import _dispatch
+
+    result = _dispatch("analysis//runtime//ready//stage1.ready.json")
+    assert result is not None
+    assert result[0] == "marker"
+
+
+def test_dispatcher_normalizes_discovery_traversal() -> None:
+    """Same traversal class on discovery paths."""
+    from governance.schemas.write_validator import _dispatch
+
+    result = _dispatch(
+        "analysis/discovery/canonical/core_controls/../core_controls/A59_claim_register.csv"
+    )
+    assert result is not None
+    assert result[0] == "a59"
+
+
+def test_marker_stem_uses_normalized_path() -> None:
+    """Filename↔marker_id binding must use the normalized stem, not the raw stem."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    # Payload marker_id MATCHES the file that would land after `..` resolution.
+    matching = _valid_marker(marker_id="stage1.ready")
+    ok, msgs = validate_canonical_write(
+        "analysis/runtime/ready/../ready/stage1.ready.json",
+        json.dumps(matching),
+    )
+    assert ok, f"Normalized-stem match rejected: {msgs}"
+
+    # Payload marker_id does NOT match the normalized-stem → rejected.
+    mismatching = _valid_marker(marker_id="stage1.ready")
+    ok, msgs = validate_canonical_write(
+        "analysis/runtime/ready/../ready/stage3.citation_audit.pass.json",
+        json.dumps(mismatching),
+    )
+    assert not ok, "Normalized-stem mismatch was not caught"
+
+
+def test_marker_sysco_attack_replay_fully_blocked() -> None:
+    """The Sysco-engagement attack shape, now with H-sec-4 enforcement.
+
+    Original attack: write `stage8.no_new_claims.pass.json` (which
+    pre_bash_promote.sh trusts for Stage-8 promotion) containing an
+    unrelated payload. Pre-H-sec-4 the per-row schema could pass if
+    the payload was technically a valid marker shape. Now the filename
+    binding catches this immediately."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    # Payload is a perfectly valid stage1.ready marker — but lands
+    # under the stage8 marker filename.
+    attack_payload = _valid_marker(
+        marker_id="stage1.ready",
+        stage="stage1",
+        verdict="READY",
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/runtime/ready/stage8.no_new_claims.pass.json",
+        json.dumps(attack_payload),
+    )
+    assert not ok
+    err_text = " ".join(msgs)
+    # Filename binding catches the mismatch even though the payload
+    # itself is individually well-formed.
+    assert "stage1.ready" in err_text
+    assert "stage8.no_new_claims.pass" in err_text

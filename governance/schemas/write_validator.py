@@ -50,6 +50,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import posixpath
 import re
 import sys
 from pathlib import PurePosixPath
@@ -60,14 +61,85 @@ from . import loader as _loader
 # ---- Path → schema dispatcher ----------------------------------------
 
 # Each entry: (regex against POSIX path, schema name, validator function).
-# The first match wins. Validators take (content_str) and return
-# list[str] of violation messages (empty list = valid).
+# The first match wins. Validators take (path_str, content_str) and
+# return list[str] of violation messages (empty list = valid).
+# Path is included so validators can cross-check filename↔payload
+# bindings (e.g., H-sec-4 marker stem↔marker_id binding); validators
+# that don't need the path simply ignore it.
 
-_DispatcherEntry = tuple[re.Pattern[str], str, Callable[[str], list[str]]]
+_DispatcherEntry = tuple[re.Pattern[str], str, Callable[[str, str], list[str]]]
 
 
-def _validate_marker_json(content: str) -> list[str]:
-    """Parse JSON, validate against marker schema."""
+def _expected_stage_verdict(marker_id: str) -> tuple[str | None, str | None]:
+    """Derive the expected (stage, verdict) pair for a marker_id.
+
+    Returns (None, None) if the marker_id shape isn't recognized
+    (which should never happen when called after the schema enum has
+    already validated marker_id — but we return silently for safety).
+    Returns (stage, None) if stage is determined but verdict is not
+    uniquely fixed by the marker_id (e.g., currently there are no
+    such cases — every recognized marker_id implies a unique verdict).
+
+    Used by the marker validator (H-sec-4) to cross-check the payload.
+    The returned values are matched AGAINST the schema's stage + verdict
+    enums, so unknown stages here still surface as "stage enum violation"
+    via the base JSON Schema check; this function's job is only the
+    marker_id→stage,verdict implication check.
+    """
+    # Exact-match table first (highest-priority; most specific).
+    EXACT: dict[str, tuple[str, str]] = {
+        "stage1.excerpts.merged": ("stage1", "MERGED"),
+        "discovery.d2.claims.merged": ("d2", "MERGED"),
+        "handoff.ready": ("handoff", "READY"),
+        "pipeline.complete": ("pipeline", "PASS"),
+        "bsa.stage1.entry.enabled": ("discovery.bridge", "READY"),
+        "discovery.exit.pass": ("discovery.exit", "PASS"),
+        "discovery.go": ("discovery.exit", "GO"),
+        "discovery.pivot": ("discovery.exit", "PIVOT"),
+        "discovery.more_research": ("discovery.exit", "MORE_RESEARCH"),
+        "discovery.no_go": ("discovery.exit", "NO_GO"),
+    }
+    if marker_id in EXACT:
+        return EXACT[marker_id]
+    # Patterned matches.
+    m = re.match(r"^stage([1-8])\.ready$", marker_id)
+    if m:
+        return f"stage{m.group(1)}", "READY"
+    m = re.match(r"^stage([1-8])\..+\.pass$", marker_id)
+    if m:
+        return f"stage{m.group(1)}", "PASS"
+    m = re.match(r"^discovery\.d([1-5])\.ready$", marker_id)
+    if m:
+        return f"d{m.group(1)}", "READY"
+    m = re.match(r"^discovery\.d([1-5])\..+\.pass$", marker_id)
+    if m:
+        return f"d{m.group(1)}", "PASS"
+    return None, None
+
+
+def _validate_marker_json(path: str, content: str) -> list[str]:
+    """Parse JSON, validate against marker schema + H-sec-4 bindings.
+
+    H-sec-4 (v1.0.2) adds three checks the schema itself can't express:
+
+    1. **FormatChecker** — enable jsonschema FormatChecker so the
+       `format: date-time` on timestamp actually enforces ISO-8601
+       rather than being advisory. Pre-H-sec-4, `timestamp: "not-a-date"`
+       passed validation.
+
+    2. **Filename↔marker_id binding** — the path stem MUST equal
+       `payload.marker_id`. Pre-H-sec-4, a file named
+       `stage8.no_new_claims.pass.json` could contain an unrelated
+       marker payload (e.g., marker_id=`stage1.ready`) and still
+       satisfy pre_bash_promote.sh (which only checks filename
+       presence). Now the content must match the filename.
+
+    3. **marker_id↔(stage, verdict) binding** — each marker_id implies
+       a specific stage + verdict. `stage3.citation_audit.pass` implies
+       stage=stage3, verdict=PASS; `discovery.go` implies
+       stage=discovery.exit, verdict=GO. The derivation table is in
+       `_expected_stage_verdict`. Mismatches flagged.
+    """
     import jsonschema  # lazy
 
     try:
@@ -77,17 +149,53 @@ def _validate_marker_json(content: str) -> list[str]:
     if not isinstance(doc, dict):
         return ["marker file must contain a JSON object at the top level"]
     schema = _loader.load_schema("marker")
-    validator = jsonschema.Draft202012Validator(schema)
-    return [
+    # H-sec-4 part 1: enable FormatChecker so format: date-time is real.
+    format_checker = jsonschema.FormatChecker()
+    validator = jsonschema.Draft202012Validator(schema, format_checker=format_checker)
+    violations = [
         f"{'.'.join(str(p) for p in e.absolute_path) or '<root>'}: {e.message}"
         for e in sorted(validator.iter_errors(doc), key=lambda e: list(e.absolute_path))
     ]
 
+    # H-sec-4 part 2: filename↔marker_id binding. Only meaningful when
+    # marker_id is present and valid (otherwise the schema error above
+    # is the primary diagnostic; no need to layer another message).
+    marker_id = doc.get("marker_id")
+    if isinstance(marker_id, str) and marker_id:
+        path_stem = PurePosixPath(path).stem
+        if path_stem != marker_id:
+            violations.append(
+                f"<filename-binding>: path stem {path_stem!r} does not match "
+                f"payload marker_id {marker_id!r}. A marker file MUST be named "
+                f"after its marker_id so downstream tools (e.g., pre_bash_promote.sh) "
+                f"cannot be fooled by filename-only presence checks."
+            )
+        # H-sec-4 part 3: marker_id↔(stage, verdict) binding.
+        expected_stage, expected_verdict = _expected_stage_verdict(marker_id)
+        actual_stage = doc.get("stage")
+        actual_verdict = doc.get("verdict")
+        if expected_stage and isinstance(actual_stage, str) and actual_stage != expected_stage:
+            violations.append(
+                f"stage: {actual_stage!r} does not match marker_id {marker_id!r} "
+                f"which implies stage={expected_stage!r}"
+            )
+        if expected_verdict and isinstance(actual_verdict, str) and actual_verdict != expected_verdict:
+            violations.append(
+                f"verdict: {actual_verdict!r} does not match marker_id {marker_id!r} "
+                f"which implies verdict={expected_verdict!r}"
+            )
+    return violations
 
-def _validate_a48_markdown(content: str) -> list[str]:
-    """Parse A48 markdown, validate normalized dict against schema."""
+
+def _validate_a48_markdown(path: str, content: str) -> list[str]:
+    """Parse A48 markdown, validate normalized dict against schema.
+
+    Path argument is accepted for uniformity with the dispatcher
+    signature but not used by A48 validation.
+    """
     import jsonschema  # lazy
 
+    del path  # not used for A48 (no path-dependent bindings)
     # parse_a48 takes a Path; emulate by writing to a tmp buffer or
     # parsing inline. We re-implement the parser inline here against
     # the string to avoid filesystem touch — the regex set is the same.
@@ -219,7 +327,7 @@ def _apply_claim_type_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     return violations
 
 
-def _make_csv_validator(schema_name: str) -> Callable[[str], list[str]]:
+def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
     """Build a CSV-row validator for the named schema.
 
     Validation order per row:
@@ -228,10 +336,15 @@ def _make_csv_validator(schema_name: str) -> Callable[[str], list[str]]:
       3. Cross-field x-bsa-*-rules (v1.0.2 C2): currently
          x-bsa-claim-type-rules for A59 (INV-01 + INV-07 executable
          enforcement). Documentary-only invariants become mechanical.
+
+    Path argument is accepted for uniformity with the dispatcher
+    signature but not used by CSV validators (per-row checks are
+    path-independent; future path-aware CSV rules can reuse the slot).
     """
 
-    def _validate(content: str) -> list[str]:
+    def _validate(path: str, content: str) -> list[str]:
         import jsonschema  # lazy
+        del path  # not used for CSV validation in this iteration
 
         schema = _loader.load_schema(schema_name)
         expected = schema["x-bsa-csv-columns-order"]["order"]
@@ -312,9 +425,34 @@ _DISPATCHER: list[_DispatcherEntry] = [
 ]
 
 
-def _dispatch(path: str) -> tuple[str, Callable[[str], list[str]]] | None:
-    """Find the schema name + validator for the given path, or None."""
-    norm = PurePosixPath(path).as_posix()
+def _normalize_path(path: str) -> str:
+    """Canonicalize a path for dispatcher matching.
+
+    Collapses ``..`` / ``.`` segments syntactically (not via filesystem
+    resolution) and returns the POSIX form. Prevents path-traversal
+    bypass of the dispatcher regexes — e.g.,
+    ``analysis/runtime/ready/../ready/stage8.no_new_claims.pass.json``
+    would not match `analysis/(?:discovery/)?runtime/ready/...$` on the
+    raw string, so the dispatcher would return None and the write
+    would pass through unchecked. After normalization the path
+    collapses to ``analysis/runtime/ready/stage8.no_new_claims.pass.json``
+    and is correctly dispatched to the marker validator.
+
+    H-sec-4 round-2 hardening (Codex finding).
+    """
+    # posixpath.normpath handles ../ segments without touching the
+    # filesystem. We pre-normalize backslashes to forward slashes so
+    # Windows-style paths also collapse consistently.
+    return posixpath.normpath(path.replace("\\", "/"))
+
+
+def _dispatch(path: str) -> tuple[str, Callable[[str, str], list[str]]] | None:
+    """Find the schema name + validator for the given path, or None.
+
+    Path is normalized before matching so ``..``-based traversal can't
+    slip past the dispatcher regex.
+    """
+    norm = _normalize_path(path)
     for pattern, schema_name, validator_fn in _DISPATCHER:
         if pattern.search(norm):
             return schema_name, validator_fn
@@ -341,7 +479,12 @@ def validate_canonical_write(path: str, content: str) -> tuple[bool, list[str]]:
     if dispatch is None:
         return True, []
     schema_name, validator_fn = dispatch
-    violations = validator_fn(content)
+    # Pass the normalized path to the validator so filename-binding
+    # checks (e.g., H-sec-4 marker stem↔marker_id) see the collapsed
+    # form — otherwise a `..`-containing path would make the stem
+    # extraction inconsistent with what the dispatcher matched.
+    normalized = _normalize_path(path)
+    violations = validator_fn(normalized, content)
     if violations:
         return False, violations
     return True, [f"matched {schema_name}.schema.json — content valid"]

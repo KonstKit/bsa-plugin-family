@@ -94,7 +94,8 @@
     "timestamp": {
       "type": "string",
       "format": "date-time",
-      "description": "ISO-8601 UTC emission time."
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "ISO-8601 UTC emission time. Pattern enforcement mirrors the `format: date-time` hint because jsonschema's FormatChecker is advisory unless the `jsonschema[format-nongpl]` optional extras are installed (not a documented plugin prereq). H-sec-4 (v1.0.2) added the pattern so malformed timestamps fail regardless of which jsonschema flavor is installed."
     },
     "canon_policy_version": {
       "type": "string",
