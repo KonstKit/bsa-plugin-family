@@ -17,13 +17,13 @@ slash-commands — it READS the workspace state and tells you where
 you are + what to do next. All actual state mutation still goes
 through the orchestrator skill via slash-commands.
 
-Subcommands (this file, v1.0.4 minimal-viable scope):
+Subcommands (this file, v1.0.4 scope):
 
     bsa status        Current stage + markers + A51 open counts + audit outputs.
-
-Future sprints (Phase 2 of the UX pass):
-
     bsa next          Suggest the next slash-command given current state.
+
+Future (separate commits in the same v1.0.4 release):
+
     bsa doctor        Run all validators (marker chain + reconciliation +
                       no-new-stories + privacy) and aggregate findings.
     bsa materials <src-dir>
@@ -299,6 +299,317 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---- Next-step suggester --------------------------------------------
+
+# Per-stage required audit-pass marker set. Mirrors hooks/pre_bash_promote.sh
+# so `bsa next` never suggests a /bsa-promote the hook would then block.
+# Stage 4 has no audit gate per run-profile-gates.md.
+_STAGE_REQUIRED_MARKERS: dict[str, list[str]] = {
+    "stage1": ["stage1.excerpts.merged"],
+    "stage2": ["stage2.context_state.pass"],
+    "stage3": ["stage3.citation_audit.pass"],
+    "stage4": [],
+    "stage5": ["stage5.anchor_audit.pass"],
+    "stage6": ["stage6.anchor_audit.pass"],
+    "stage7": ["stage7.skeptical_review.pass"],
+    "stage8": ["stage8.no_new_claims.pass"],
+    "handoff": ["stage8.no_new_claims.pass"],
+    "d1": ["discovery.d1.ready"],
+    "d2": ["discovery.d2.claims.merged", "discovery.d2.research_quality.pass"],
+    "d3": ["discovery.d3.prioritization.pass"],
+    "d4": ["discovery.d4.constraint_audit.pass"],
+    "d5": ["discovery.d5.citation_audit.pass", "discovery.d5.no_solution_leakage.pass"],
+}
+
+
+def _collect_marker_ids(ws: WorkspaceState) -> set[str]:
+    """Union of all marker_id (or drifted `marker` fallback) values.
+
+    This reads the PAYLOAD. Used for display / debugging only.
+    """
+    ids: set[str] = set()
+    for m in ws.main_markers() + ws.discovery_markers():
+        mid = m.get("marker_id") or m.get("marker")
+        if isinstance(mid, str) and mid:
+            ids.add(mid)
+    return ids
+
+
+def _filenames_in(marker_dir: Path) -> set[str]:
+    """Filename stems in one marker directory. Empty set if missing."""
+    if not marker_dir.is_dir():
+        return set()
+    return {path.stem for path in marker_dir.glob("*.json")}
+
+
+def _collect_marker_filenames(ws: WorkspaceState) -> set[str]:
+    """Union of marker filename stems across BOTH ready zones.
+
+    Retained for display and for branches that legitimately span both
+    zones (e.g., the bridge marker ``bsa.stage1.entry.enabled`` lives
+    in the MAIN zone while the discovery decision markers live in the
+    discovery zone — the ``discovery.complete`` branch reads both).
+    For per-stage promote-eligibility checks use
+    ``_zone_filenames_for_stage(ws, stage)`` instead — it mirrors the
+    hook's stage-specific directory lookup.
+    """
+    return _filenames_in(ws.main_ready) | _filenames_in(ws.discovery_ready)
+
+
+# Stages whose required-marker set lives in the DISCOVERY zone per
+# hooks/pre_bash_promote.sh (stages d1..d5). Every other stage uses
+# the main zone.
+_DISCOVERY_ZONE_STAGES: frozenset[str] = frozenset({"d1", "d2", "d3", "d4", "d5"})
+
+
+def _zone_filenames_for_stage(ws: WorkspaceState, stage: str) -> set[str]:
+    """Return the filename-stems set the hook would inspect for ``stage``.
+
+    Codex-review round-3 fix: a correctly-named marker placed in the
+    wrong zone (e.g., ``discovery.d1.ready.json`` sitting in
+    ``analysis/runtime/ready/`` instead of the discovery mirror) must
+    not satisfy the CLI's presence check — otherwise ``bsa next``
+    green-lights a ``/bsa-promote`` the hook still blocks because the
+    hook opens only the stage-specific directory.
+
+    Main-cycle stages (stage1..stage8, handoff) → main zone only.
+    Discovery stages (d1..d5) → discovery zone only.
+    """
+    if stage in _DISCOVERY_ZONE_STAGES:
+        return _filenames_in(ws.discovery_ready)
+    return _filenames_in(ws.main_ready)
+
+
+def _d1_has_proposal_output(ws: WorkspaceState) -> bool:
+    """True if d1 proposals directory contains actual worker output.
+
+    ``/bsa-start --mode=discovery_then_bsa`` emits
+    ``discovery.d1.ready.json`` at init time; that marker alone doesn't
+    mean the d1 worker (d0-problem-framer) actually ran. The hook's
+    per-stage required-marker table treats the ready marker as
+    sufficient for promote, but the documented workflow says the
+    operator must first run ``/bsa-stage d1 run``. To distinguish the
+    two states without reaching into skill internals, we check whether
+    ``analysis/discovery/proposals/d1/`` has any file beyond
+    ``.gitkeep`` style placeholders.
+    """
+    prop_dir = ws.analysis / "discovery" / "proposals" / "d1"
+    if not prop_dir.is_dir():
+        return False
+    for entry in prop_dir.iterdir():
+        if entry.name.startswith("."):
+            continue  # .gitkeep / hidden files don't count
+        if entry.is_file() or (entry.is_dir() and any(entry.iterdir())):
+            return True
+    return False
+
+
+def _stage_to_slash_arg(stage: str) -> str:
+    """Map A48.CurrentStage → `/bsa-stage <arg>` argument.
+
+    `stage1`..`stage8` → the bare number; `d1`..`d5` → as-is.
+    """
+    if stage.startswith("stage") and stage[5:].isdigit():
+        return stage[5:]
+    return stage
+
+
+def suggest_next(ws: WorkspaceState) -> str:
+    """Return a short, actionable next-step recommendation as plain text.
+
+    Decision tree (read-only; never mutates state):
+
+      1. No analysis/ directory → run /bsa-start.
+      2. A48 unreadable or missing → reinitialize or inspect the file.
+      3. CurrentStage = discovery.complete:
+           - main-cycle markers already emitted → point at the current
+             main-cycle position (state machine re-entered there)
+           - bridge marker present, no main-cycle progress → two-path
+             notice (continue vs deliverable)
+           - no bridge marker → broken state; refer to /bsa-status
+      4. CurrentStage = d1 special case:
+           - if proposals/d1/ empty → /bsa-stage d1 run (ready marker
+             alone doesn't mean the worker ran)
+           - else → /bsa-promote
+      5. CurrentStage has a required-marker list:
+           - any required marker filename missing → run /bsa-stage <stage> run
+           - all required markers present → /bsa-promote (or /bsa-handoff
+             when stage8 markers are already promoted).
+      6. Stage 4 (no audit gate) → /bsa-promote directly.
+      7. CurrentStage = handoff:
+           - stage8.no_new_claims.pass missing → go back to stage8
+           - handoff.ready present → pipeline complete
+           - else → /bsa-handoff
+
+    The required-marker table is shared with hooks/pre_bash_promote.sh
+    so `bsa next` never points at a command the hook would block. The
+    presence check uses FILENAMES on disk (same as the hook), not
+    payload marker_ids, so a misnamed file carrying the expected
+    marker_id doesn't produce a false-positive "ready to promote".
+    """
+    if not ws.is_initialized():
+        return (
+            "No BSA workspace here yet.\n"
+            "Run:\n"
+            "  /bsa-start --mode=direct\n"
+            "    — for scoped engagements with known sources.\n"
+            "  /bsa-start --mode=discovery_then_bsa\n"
+            "    — for fuzzy scope / contradicting stakeholders (runs D1-D5 first)."
+        )
+
+    stage = ws.current_stage()
+    if stage in ("<unknown>", ""):
+        return (
+            "A48 is missing or unreadable — CurrentStage cannot be determined.\n"
+            "  Inspect: analysis/canonical/core_controls/A48_run_context_card.md\n"
+            "  If the file is corrupt, the safest recovery is to reinitialize via /bsa-start\n"
+            "  in a fresh workspace and re-promote from the last good canonical snapshot."
+        )
+
+    # For the ``discovery.complete`` branch below we read BOTH zones
+    # because we need to see the bridge marker (main zone) alongside
+    # any main-cycle progress markers. For all other stages we use
+    # the zone-specific view below at the per-stage checks.
+    present_all_zones = _collect_marker_filenames(ws)
+
+    if stage == "discovery.complete":
+        has_bridge = "bsa.stage1.entry.enabled" in present_all_zones
+        # A main-cycle stage marker means the operator has moved past
+        # the bridge gate, even if A48 hasn't been re-written yet.
+        has_main_progress = any(m.startswith("stage") for m in present_all_zones)
+        if has_main_progress:
+            # Find the furthest main-cycle marker present and suggest
+            # the next step after it.
+            return (
+                "A48.CurrentStage=discovery.complete but main-cycle markers are present.\n"
+                "The orchestrator is likely in the middle of Stage 1-8 but A48 has not\n"
+                "been re-written yet (normal during first-stage promote).\n"
+                "  Run: /bsa-status   (inspect the current marker set)\n"
+                "  Then: /bsa-promote (if stage1.excerpts.merged is present) or\n"
+                "        /bsa-stage 1 run  (if Stage 1 worker has not run yet)."
+            )
+        if has_bridge:
+            return (
+                "Discovery complete; bridge marker emitted but main cycle not started.\n"
+                "Two valid paths:\n"
+                "  (a) Continue to main cycle:\n"
+                "        /bsa-stage 1 run\n"
+                "  (b) Treat as discovery-only deliverable.\n"
+                "      The artifacts under analysis/discovery/canonical/ +\n"
+                "      analysis/canonical/core_controls/ are the deliverable; no\n"
+                "      further command needed. /bsa-handoff refuses until Stage 1\n"
+                "      has been promoted."
+            )
+        # Without bridge and without main-cycle progress, the workspace
+        # is in an inconsistent state — discovery exit was declared but
+        # the bridge-marker emission never happened.
+        return (
+            "A48.CurrentStage=discovery.complete but the bridge marker\n"
+            "(bsa.stage1.entry.enabled) is NOT present. Two possibilities:\n"
+            "  - discovery.exit did not fire with verdict=GO (inspect\n"
+            "    analysis/discovery/runtime/ready/discovery.go.json)\n"
+            "  - the bridge marker was rejected by the write hook; check\n"
+            "    recent Claude Code stderr for a BLOCKED diagnostic.\n"
+            "Safe next step:\n"
+            "  /bsa-status   (shows the full marker set + last-promote verdict)"
+        )
+
+    required = _STAGE_REQUIRED_MARKERS.get(stage)
+    if required is None:
+        return (
+            f"CurrentStage={stage!r} is not a recognized stage identifier.\n"
+            "Valid values: stage1..stage8, handoff, d1..d5, discovery.complete.\n"
+            "Inspect analysis/canonical/core_controls/A48_run_context_card.md."
+        )
+
+    # Zone-aware presence check: the hook's filename-presence gate
+    # only inspects the zone matching the current stage. A correctly-
+    # named marker in the wrong zone would NOT satisfy the hook, so
+    # it doesn't satisfy bsa next either.
+    present_in_zone = _zone_filenames_for_stage(ws, stage)
+
+    # d1 special case: `discovery.d1.ready` is emitted by /bsa-start,
+    # not by the d1 worker. Presence alone does NOT mean the worker ran.
+    # Distinguish init-state from post-worker-state by peeking at
+    # proposals/d1/.
+    if stage == "d1" and not _d1_has_proposal_output(ws):
+        return (
+            "Discovery mode just initialized. `discovery.d1.ready` is emitted\n"
+            "by /bsa-start itself; the d0-problem-framer worker has not run\n"
+            "yet (no output in analysis/discovery/proposals/d1/).\n"
+            "Run:\n"
+            "  /bsa-stage d1 run"
+        )
+
+    # handoff special case before the generic path — we don't want the
+    # missing-marker branch to suggest "/bsa-stage handoff run" (no such
+    # command).
+    if stage == "handoff":
+        if "stage8.no_new_claims.pass" not in present_in_zone:
+            return (
+                "CurrentStage=handoff but stage8.no_new_claims.pass is NOT present.\n"
+                "Stage 8 must promote before handoff. Run:\n"
+                "  /bsa-stage 8 run   (re-runs Stage 8 audit chain if needed)\n"
+                "  /bsa-promote       (promotes Stage 8 canonical)\n"
+                "Then /bsa-handoff."
+            )
+        if "handoff.ready" in present_in_zone:
+            return (
+                "handoff.ready marker present — pipeline complete.\n"
+                "Artifacts: analysis/handoff/H1..H4 + handoff_manifest.json.\n"
+                "Next: paste handoff pack into your delivery channel, or run\n"
+                "/bsa-status for the final workspace summary."
+            )
+        return (
+            "Stage 8 promoted; ready to emit H1-H4:\n"
+            "  /bsa-handoff"
+        )
+
+    if not required:
+        # Stage 4 path — no audit gate.
+        return (
+            f"Stage {stage} has no audit gate. Ready to promote:\n"
+            "  /bsa-promote\n"
+            "(/bsa-promote --dry-run first to preview the planned writes.)"
+        )
+
+    missing = [m for m in required if m not in present_in_zone]
+    if missing:
+        slash_arg = _stage_to_slash_arg(stage)
+        stage_label = f"stage {slash_arg}" if stage.startswith("stage") else f"discovery {stage}"
+        missing_display = ", ".join(missing)
+        return (
+            f"Stage {stage} is in progress. Missing required audit marker(s): {missing_display}.\n"
+            f"Run the stage (emits the marker after its audit chain):\n"
+            f"  /bsa-stage {slash_arg} run\n"
+            f"Or re-run a specific audit if the stage already emitted most markers:\n"
+            f"  /bsa-audit <kind>   (see commands/bsa-audit.md for kinds available at {stage_label})"
+        )
+
+    # All required markers present (and not d1/handoff which were handled above).
+    if stage == "stage8":
+        return (
+            "Stage 8 gating marker present (stage8.no_new_claims.pass). Ready for handoff:\n"
+            "  /bsa-promote      (promotes Stage 8 canonical if not already done)\n"
+            "  /bsa-handoff      (emits H1-H4 packets + manifest)\n"
+            "Run them in that order. /bsa-handoff refuses if stage8 canonical isn't promoted."
+        )
+    return (
+        f"All {stage} audit markers present. Ready to promote:\n"
+        "  /bsa-promote --dry-run    (preview)\n"
+        "  /bsa-promote              (apply)\n"
+        "After promote, A48.CurrentStage advances; re-run `bsa next` for the next step."
+    )
+
+
+def cmd_next(args: argparse.Namespace) -> int:
+    """Print the suggested next slash-command."""
+    root = Path(args.workspace).resolve()
+    ws = WorkspaceState(root)
+    print(suggest_next(ws))
+    return 0
+
+
 # ---- Main dispatcher ------------------------------------------------
 
 
@@ -327,6 +638,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Show current workspace state (stage, markers, A51 counts, audits).",
     )
     p_status.set_defaults(func=cmd_status)
+
+    p_next = subparsers.add_parser(
+        "next",
+        help="Suggest the next slash-command given the current workspace state.",
+    )
+    p_next.set_defaults(func=cmd_next)
 
     args = parser.parse_args(argv)
     return args.func(args)

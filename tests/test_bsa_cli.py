@@ -334,6 +334,427 @@ def test_status_recognizes_promoted_no_new_claims_report(tmp_path: Path) -> None
     assert "no_new_claims        PRESENT" in result.stdout
 
 
+# ---- 9. `bsa next` subcommand ---------------------------------------
+# State-machine suggester. Must:
+#   - match hooks/pre_bash_promote.sh required-marker set so it never
+#     points at a command the hook would block
+#   - degrade gracefully on non-canonical workspaces (unknown stage,
+#     missing A48, discovery.complete state, etc.)
+
+
+def test_next_uninitialized_suggests_bsa_start(tmp_path: Path) -> None:
+    result = _run_cli(["-w", str(tmp_path), "next"])
+    assert result.returncode == 0
+    assert "/bsa-start" in result.stdout
+    # Both modes mentioned.
+    assert "--mode=direct" in result.stdout
+    assert "--mode=discovery_then_bsa" in result.stdout
+
+
+def test_next_stage1_no_markers_suggests_stage_run(tmp_path: Path) -> None:
+    """Default init state — CurrentStage=stage1, no markers yet."""
+    ws = _init_workspace(tmp_path)
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    assert "/bsa-stage 1 run" in result.stdout
+    assert "stage1.excerpts.merged" in result.stdout
+
+
+def test_next_stage1_promoted_suggests_promote(tmp_path: Path) -> None:
+    """Stage1 audit marker present → next action is /bsa-promote."""
+    ws = _init_workspace(tmp_path)
+    _write_marker(ws, "stage1.excerpts.merged.json", {
+        "marker_id": "stage1.excerpts.merged",
+        "stage": "stage1",
+        "verdict": "MERGED",
+        "timestamp": "2026-04-22T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    })
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    assert "/bsa-promote" in result.stdout
+
+
+def test_next_stage4_no_gate_suggests_promote(tmp_path: Path) -> None:
+    """Stage 4 has no audit gate per run-profile-gates.md."""
+    ws = _init_workspace(tmp_path, {
+        "RunID": "x",
+        "Mode": "direct",
+        "CurrentStage": "stage4",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    assert "/bsa-promote" in result.stdout
+    assert "no audit gate" in result.stdout
+
+
+def test_next_d2_missing_one_of_two_required_mentions_both(tmp_path: Path) -> None:
+    """D2 needs both discovery.d2.claims.merged AND
+    discovery.d2.research_quality.pass — missing one should still
+    report the full required list so the operator knows what audits
+    to chase."""
+    ws = _init_workspace(tmp_path, {
+        "RunID": "x",
+        "Mode": "discovery_then_bsa",
+        "CurrentStage": "d2",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    _write_marker(ws, "discovery.d2.claims.merged.json", {
+        "marker_id": "discovery.d2.claims.merged",
+        "stage": "d2",
+        "verdict": "MERGED",
+        "timestamp": "2026-04-22T09:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }, discovery=True)
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    # Missing list mentions only research_quality.pass (claims.merged already present).
+    assert "discovery.d2.research_quality.pass" in result.stdout
+    assert "/bsa-stage d2 run" in result.stdout
+
+
+def test_next_stage8_promoted_suggests_handoff(tmp_path: Path) -> None:
+    ws = _init_workspace(tmp_path, {
+        "RunID": "x",
+        "Mode": "direct",
+        "CurrentStage": "stage8",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    _write_marker(ws, "stage8.no_new_claims.pass.json", {
+        "marker_id": "stage8.no_new_claims.pass",
+        "stage": "stage8",
+        "verdict": "PASS",
+        "timestamp": "2026-04-22T16:00:00Z",
+        "canon_policy_version": "1.0.0",
+    })
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    assert "/bsa-handoff" in result.stdout
+
+
+def test_next_discovery_complete_with_bridge_shows_two_paths(tmp_path: Path) -> None:
+    """The Sysco state: discovery.complete + bsa.stage1.entry.enabled
+    present, no main-cycle stage markers. The Sprint-5 F7 notice says
+    this deserves a two-path suggestion: continue OR treat as
+    deliverable. `bsa next` mirrors that."""
+    ws = _init_workspace(tmp_path, {
+        "RunID": "x",
+        "Mode": "discovery_then_bsa",
+        "CurrentStage": "discovery.complete",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    _write_marker(ws, "bsa.stage1.entry.enabled.json", {
+        "marker_id": "bsa.stage1.entry.enabled",
+        "stage": "discovery.bridge",
+        "verdict": "READY",
+        "timestamp": "2026-04-22T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    })
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    assert "Two valid paths" in result.stdout
+    assert "/bsa-stage 1 run" in result.stdout
+    assert "discovery-only deliverable" in result.stdout
+
+
+def test_next_handoff_ready_reports_pipeline_complete(tmp_path: Path) -> None:
+    ws = _init_workspace(tmp_path, {
+        "RunID": "x",
+        "Mode": "direct",
+        "CurrentStage": "handoff",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    _write_marker(ws, "stage8.no_new_claims.pass.json", {
+        "marker_id": "stage8.no_new_claims.pass",
+        "stage": "stage8",
+        "verdict": "PASS",
+        "timestamp": "2026-04-22T16:00:00Z",
+        "canon_policy_version": "1.0.0",
+    })
+    _write_marker(ws, "handoff.ready.json", {
+        "marker_id": "handoff.ready",
+        "stage": "handoff",
+        "verdict": "READY",
+        "timestamp": "2026-04-22T17:00:00Z",
+        "canon_policy_version": "1.0.0",
+    })
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    assert "pipeline complete" in result.stdout.lower()
+
+
+def test_next_unknown_stage_warns_inspect_a48(tmp_path: Path) -> None:
+    ws = _init_workspace(tmp_path, {
+        "RunID": "x",
+        "Mode": "direct",
+        "CurrentStage": "stageX",  # not a recognized stage
+        "CanonPolicyVersion": "1.0.0",
+    })
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    # Does not crash; advises to inspect A48.
+    assert "A48_run_context_card.md" in result.stdout
+
+
+def test_next_suggestion_matches_pre_bash_promote_required_set(tmp_path: Path) -> None:
+    """CRITICAL invariant: the required-marker table in bsa_cli must
+    match the one in hooks/pre_bash_promote.sh so `bsa next` never
+    points at a /bsa-promote the hook would block. This test extracts
+    the case-pattern list from the hook script and asserts each is in
+    the CLI's _STAGE_REQUIRED_MARKERS table (or explicitly none for
+    stage4 which has no gate).
+    """
+    import re
+    from scripts.bsa_cli import _STAGE_REQUIRED_MARKERS  # type: ignore
+
+    hook_path = REPO_ROOT / "hooks" / "pre_bash_promote.sh"
+    hook_text = hook_path.read_text(encoding="utf-8")
+
+    # Parse the case-pattern block: extract each stage branch up to its
+    # terminating ';;'. Then look for `required=(...)` INSIDE that branch
+    # only. Branches without `required=(...)` (e.g., stage4 which exits
+    # early with no audit gate) map to empty list.
+    branch_pattern = re.compile(
+        r"^\s*(stage[1-8]|handoff|d[1-5])\)\s*$"
+        r"(?P<body>(?:.|\n)*?)"
+        r"^\s*;;\s*$",
+        re.MULTILINE,
+    )
+    required_inside = re.compile(r'required=\(([^)]*)\)')
+    found: dict[str, list[str]] = {}
+    for m in branch_pattern.finditer(hook_text):
+        stage = m.group(1)
+        body = m.group("body")
+        req_match = required_inside.search(body)
+        if req_match:
+            items = re.findall(r'"([^"]+)\.json"', req_match.group(1))
+            found[stage] = items
+        else:
+            # Branch with no required=() — stage4 (no audit gate) today.
+            found[stage] = []
+
+    # Every hook-declared required set must match the CLI table exactly.
+    for stage, hook_required in found.items():
+        cli_required = _STAGE_REQUIRED_MARKERS.get(stage, [])
+        assert sorted(cli_required) == sorted(hook_required), (
+            f"Drift: bsa_cli._STAGE_REQUIRED_MARKERS[{stage!r}]={cli_required!r} "
+            f"but hooks/pre_bash_promote.sh requires {hook_required!r}. "
+            f"A /bsa-promote suggestion on this stage would be blocked by the hook."
+        )
+
+    # Coverage assertion: the parsed set MUST include every stage the
+    # CLI table knows about (protects against hook-reformatting that
+    # silently weakens the regex — a branch dropped from the parse
+    # results would pass the per-stage loop above because the dict
+    # key would just be absent).
+    expected_stages = set(_STAGE_REQUIRED_MARKERS.keys())
+    assert set(found.keys()) == expected_stages, (
+        f"Drift-parser coverage mismatch.\n"
+        f"  Parsed from hook: {sorted(found.keys())}\n"
+        f"  Expected (CLI table keys): {sorted(expected_stages)}\n"
+        f"Either the hook was edited without updating the CLI table, "
+        f"or the hook-parser regex needs a tweak."
+    )
+
+
+# ---- v1.0.4 chunk-2 round-2 regression guards -----------------------
+# Codex review of chunk-2 flagged four state-machine gaps. Each fix has
+# a direct replay test.
+
+
+def test_next_d1_init_state_does_not_suggest_promote(tmp_path: Path) -> None:
+    """`/bsa-start --mode=discovery_then_bsa` emits discovery.d1.ready
+    at init time. Presence of the ready marker alone does NOT mean the
+    d0-problem-framer worker ran. Pre-fix, bsa next said "all markers
+    present → /bsa-promote" which would either (a) hit the hook check
+    (which only looks at the ready marker, so it would PASS → wrong
+    canonical state) or (b) confuse the operator about the workflow.
+    Post-fix, bsa next checks proposals/d1/ emptiness and points at
+    `/bsa-stage d1 run` when the worker hasn't produced output yet."""
+    ws = _init_workspace(tmp_path, {
+        "RunID": "d-init",
+        "Mode": "discovery_then_bsa",
+        "CurrentStage": "d1",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    # Simulate /bsa-start emitting the ready marker:
+    _write_marker(ws, "discovery.d1.ready.json", {
+        "marker_id": "discovery.d1.ready",
+        "stage": "d1",
+        "verdict": "READY",
+        "timestamp": "2026-04-22T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }, discovery=True)
+    # discovery/proposals/d1/ either doesn't exist or is empty.
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    assert "/bsa-stage d1 run" in result.stdout
+    # Must NOT suggest promote at init.
+    assert "/bsa-promote" not in result.stdout
+
+
+def test_next_d1_with_proposal_output_suggests_promote(tmp_path: Path) -> None:
+    """Post-worker-run state: proposals/d1/ has files → ready to promote."""
+    ws = _init_workspace(tmp_path, {
+        "RunID": "d-ready",
+        "Mode": "discovery_then_bsa",
+        "CurrentStage": "d1",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    _write_marker(ws, "discovery.d1.ready.json", {
+        "marker_id": "discovery.d1.ready",
+        "stage": "d1",
+        "verdict": "READY",
+        "timestamp": "2026-04-22T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }, discovery=True)
+    # Simulate d0-problem-framer producing output:
+    prop_dir = ws / "analysis" / "discovery" / "proposals" / "d1"
+    prop_dir.mkdir(parents=True)
+    (prop_dir / "problem_framing.md").write_text("# problem framing\n", encoding="utf-8")
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    assert "/bsa-promote" in result.stdout
+
+
+def test_next_presence_checks_filenames_not_payload_marker_ids(tmp_path: Path) -> None:
+    """Codex review: a misnamed file whose payload carries a recognized
+    marker_id must NOT trigger "ready to promote" — the hook checks
+    filenames, so bsa next must check filenames too.
+    """
+    ws = _init_workspace(tmp_path)
+    # File named "wrong.json" carrying marker_id=stage1.excerpts.merged.
+    # Pre-fix, _collect_marker_ids (payload-based) would include the
+    # payload's marker_id, so suggest_next would green-light /bsa-promote.
+    # Post-fix, _collect_marker_filenames (disk-based) returns {"wrong"},
+    # which is NOT in the required-marker set → suggest stage run.
+    (ws / "analysis" / "runtime" / "ready" / "wrong.json").write_text(
+        json.dumps({
+            "marker_id": "stage1.excerpts.merged",
+            "stage": "stage1",
+            "verdict": "MERGED",
+            "timestamp": "2026-04-22T10:00:00Z",
+            "canon_policy_version": "1.0.0",
+        }),
+        encoding="utf-8",
+    )
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    # Must suggest running stage1 (filename-based gate not satisfied),
+    # NOT /bsa-promote.
+    assert "/bsa-stage 1 run" in result.stdout
+    assert "/bsa-promote" not in result.stdout
+
+
+def test_next_discovery_complete_without_bridge_surfaces_broken_state(tmp_path: Path) -> None:
+    """Codex review: discovery.complete without bridge marker AND
+    without main-cycle progress is a broken state (discovery exit
+    declared but bridge emission failed). Previously this fell into
+    the "main-cycle markers present" message even when no markers
+    were present. Fixed to surface an inspect-and-recover guidance."""
+    ws = _init_workspace(tmp_path, {
+        "RunID": "broken-d",
+        "Mode": "discovery_then_bsa",
+        "CurrentStage": "discovery.complete",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    # NO bridge marker, NO main-cycle markers.
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    # Should advise about the broken bridge state.
+    assert "bridge marker" in result.stdout or "bsa.stage1.entry.enabled" in result.stdout
+    assert "/bsa-status" in result.stdout
+
+
+def test_next_handoff_without_stage8_does_not_suggest_bogus_stage_run(tmp_path: Path) -> None:
+    """Codex review: `CurrentStage=handoff` with stage8.no_new_claims.pass
+    missing previously suggested `/bsa-stage handoff run` — no such
+    command exists. Fixed to point operator back at Stage 8 first."""
+    ws = _init_workspace(tmp_path, {
+        "RunID": "broken-handoff",
+        "Mode": "direct",
+        "CurrentStage": "handoff",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    # No markers at all.
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    # Must NOT suggest "/bsa-stage handoff run".
+    assert "/bsa-stage handoff run" not in result.stdout
+    # Must point at Stage 8 flow.
+    assert "stage 8" in result.stdout.lower() or "stage8" in result.stdout.lower()
+    assert "stage8.no_new_claims.pass" in result.stdout
+
+
+# ---- v1.0.4 chunk-2 round-3 regression guards -----------------------
+# Codex re-review of chunk-2 round-2 flagged that HIGH-2 was only
+# partially closed: _collect_marker_filenames unioned both zones, so a
+# correctly-named marker in the wrong zone could still make bsa next
+# suggest /bsa-promote while the hook blocks it. Fixed by zone-aware
+# _zone_filenames_for_stage(ws, stage). These tests cover both
+# directions of wrong-zone placement.
+
+
+def test_next_main_stage_ignores_marker_in_discovery_zone(tmp_path: Path) -> None:
+    """stage1.excerpts.merged.json placed in analysis/discovery/runtime/ready/
+    (wrong zone) must NOT satisfy the stage1 promote gate. The hook
+    looks only at analysis/runtime/ready/ for main-cycle stages, so
+    bsa next must do the same to avoid a false-positive /bsa-promote."""
+    ws = _init_workspace(tmp_path, {
+        "RunID": "wrong-zone-main",
+        "Mode": "direct",
+        "CurrentStage": "stage1",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    # Put the correctly-NAMED marker in the WRONG zone (discovery).
+    _write_marker(ws, "stage1.excerpts.merged.json", {
+        "marker_id": "stage1.excerpts.merged",
+        "stage": "stage1",
+        "verdict": "MERGED",
+        "timestamp": "2026-04-22T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+    }, discovery=True)
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    # Must suggest running stage1 (main zone empty), NOT /bsa-promote.
+    assert "/bsa-stage 1 run" in result.stdout
+    assert "/bsa-promote" not in result.stdout
+
+
+def test_next_discovery_stage_ignores_marker_in_main_zone(tmp_path: Path) -> None:
+    """discovery.d2.claims.merged.json placed in analysis/runtime/ready/
+    (wrong zone) must NOT satisfy the d2 promote gate. Discovery
+    stages look at the discovery zone only."""
+    ws = _init_workspace(tmp_path, {
+        "RunID": "wrong-zone-discovery",
+        "Mode": "discovery_then_bsa",
+        "CurrentStage": "d2",
+        "CanonPolicyVersion": "1.0.0",
+    })
+    # Put both correctly-NAMED d2 markers in the WRONG zone (main).
+    _write_marker(ws, "discovery.d2.claims.merged.json", {
+        "marker_id": "discovery.d2.claims.merged",
+        "stage": "d2",
+        "verdict": "MERGED",
+        "timestamp": "2026-04-22T09:00:00Z",
+        "canon_policy_version": "1.0.0",
+    })  # main zone
+    _write_marker(ws, "discovery.d2.research_quality.pass.json", {
+        "marker_id": "discovery.d2.research_quality.pass",
+        "stage": "d2",
+        "verdict": "PASS",
+        "timestamp": "2026-04-22T09:30:00Z",
+        "canon_policy_version": "1.0.0",
+    })  # main zone
+    result = _run_cli(["-w", str(ws), "next"])
+    assert result.returncode == 0
+    # Hook looks at discovery zone → empty → d2 promote would be
+    # blocked → bsa next must point at /bsa-stage d2 run.
+    assert "/bsa-stage d2 run" in result.stdout
+    assert "/bsa-promote" not in result.stdout
+
+
 def test_last_marker_uses_emittedat_for_sysco_markers(tmp_path: Path) -> None:
     """Codex review: `last_marker()` only read `timestamp`. Sysco-style
     drifted markers use `emittedAt`. Fixed to accept either."""
