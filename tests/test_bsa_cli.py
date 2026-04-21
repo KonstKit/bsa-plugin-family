@@ -755,6 +755,234 @@ def test_next_discovery_stage_ignores_marker_in_main_zone(tmp_path: Path) -> Non
     assert "/bsa-promote" not in result.stdout
 
 
+# ---- 9. Doctor (chunk 3) --------------------------------------------
+
+
+def test_doctor_uninitialized_workspace_exits_2(tmp_path: Path) -> None:
+    """Doctor refuses to run on a directory that's not a BSA workspace
+    — same 'guard at the door' pattern as `status` and `next`."""
+    result = _run_cli(["-w", str(tmp_path), "doctor"])
+    assert result.returncode == 2
+    assert "not a BSA workspace" in result.stderr
+
+
+def test_doctor_minimal_clean_workspace_returns_zero(tmp_path: Path) -> None:
+    """A minimally-initialized workspace (just A48, empty marker dirs,
+    no A70) should pass all four orchestrated validators + the content
+    walk. Confirms the SKIP branches behave correctly."""
+    ws = _init_workspace(tmp_path)
+    result = _run_cli(["-w", str(ws), "doctor"])
+    assert result.returncode == 0, (
+        f"expected ALL CLEAN; stdout=\n{result.stdout}\nstderr=\n{result.stderr}"
+    )
+    assert "ALL CLEAN" in result.stdout
+    # All five sections present in expected order.
+    for section in (
+        "marker chain (main):",
+        "marker chain (discovery):",
+        "A51 reconciliation:",
+        "no-new-stories:",
+        "privacy scan:",
+        "content validation:",
+    ):
+        assert section in result.stdout, f"missing section: {section}"
+
+
+def test_doctor_no_a70_skips_no_new_stories(tmp_path: Path) -> None:
+    """no-new-stories is a Phase-3 auditor — it has no signal until
+    A70 exists. Doctor must SKIP rather than FAIL on pre-Phase-3
+    workspaces."""
+    ws = _init_workspace(tmp_path)
+    result = _run_cli(["-w", str(ws), "doctor"])
+    assert "no-new-stories: SKIP" in result.stdout
+    # Even with the SKIP, overall result is clean.
+    assert result.returncode == 0
+
+
+def test_doctor_flags_a51_reconciliation_drift(tmp_path: Path) -> None:
+    """Manufacture an A51 reconciliation finding: marker says A51-001
+    is resolved, but A51 register has it as `open`. validate_a51_
+    reconciliation should fire; doctor must surface it as a FAIL
+    section and exit 1."""
+    ws = _init_workspace(tmp_path)
+    _write_a51(ws, [
+        {"A51Ref": "A51-001", "IssueType": "uncertainty", "Severity": "high",
+         "BlockingStatus": "hard", "RaisedByStage": "stage1",
+         "NextAction": "x", "ResolutionStatus": "open"},
+    ])
+    # A marker that claims A51-001 is resolved — disagrees with the register.
+    _write_marker(ws, "stage3.citation_audit.pass.json", {
+        "marker_id": "stage3.citation_audit.pass",
+        "stage": "stage3",
+        "verdict": "PASS",
+        "timestamp": "2026-04-22T10:00:00Z",
+        "canon_policy_version": "1.0.0",
+        "notes": "A51-001 resolved during stage3 review",
+    })
+    result = _run_cli(["-w", str(ws), "doctor"])
+    assert result.returncode == 1
+    assert "A51 reconciliation: FAIL" in result.stdout
+    assert "A51-001" in result.stdout
+
+
+def test_doctor_flags_malformed_canonical_marker(tmp_path: Path) -> None:
+    """A marker missing required fields trips marker_chain (which is
+    schema-only) and the content walk (which dispatches into the F5
+    write-validator). Doctor surfaces both."""
+    ws = _init_workspace(tmp_path)
+    # Missing required `marker_id`, `stage`, `verdict`,
+    # `canon_policy_version` — both validators should object.
+    (ws / "analysis" / "runtime" / "ready" / "stage1.ready.json").write_text(
+        json.dumps({"timestamp": "2026-04-22T10:00:00Z"}), encoding="utf-8"
+    )
+    result = _run_cli(["-w", str(ws), "doctor"])
+    assert result.returncode == 1
+    assert "marker chain (main): FAIL" in result.stdout
+    # Content walk should also flag this file by relative path.
+    assert "content validation: FAIL" in result.stdout
+    assert "stage1.ready.json" in result.stdout
+
+
+def test_doctor_does_not_corrupt_plugin_privacy_audit_md(tmp_path: Path) -> None:
+    """Regression for chunk-3 internal bug: privacy_scan.py defaults
+    `--output` to `<plugin-repo>/docs/privacy_audit.md`. Doctor against
+    an EXTERNAL workspace must NOT write into the plugin repo's own
+    audit file. Doctor must pass `--output <tmp>` to keep the plugin
+    repo untouched."""
+    ws = _init_workspace(tmp_path)
+    plugin_audit = REPO_ROOT / "docs" / "privacy_audit.md"
+    if not plugin_audit.is_file():
+        pytest.skip("plugin docs/privacy_audit.md missing — bootstrap state")
+    before = plugin_audit.read_text(encoding="utf-8")
+    result = _run_cli(["-w", str(ws), "doctor"])
+    assert result.returncode == 0, result.stderr
+    after = plugin_audit.read_text(encoding="utf-8")
+    assert before == after, (
+        "doctor mutated <plugin-repo>/docs/privacy_audit.md when run "
+        "against an external workspace — privacy_scan --output must be "
+        "redirected to a temp file"
+    )
+
+
+def test_doctor_workspace_flag_must_precede_subcommand(tmp_path: Path) -> None:
+    """Argparse-shape regression: `--workspace` lives on the TOP-level
+    parser (per chunks 1+2 design), so it must appear BEFORE the
+    `doctor` subcommand. Document and pin this so we don't silently
+    move it to subcommand-level later (which would break invocations
+    in the help text + bash wrapper docs)."""
+    ws = _init_workspace(tmp_path)
+    # Wrong order — flag AFTER subcommand — should fail with arg error.
+    wrong = _run_cli(["doctor", "-w", str(ws)])
+    assert wrong.returncode != 0
+    assert "unrecognized arguments" in wrong.stderr or "error" in wrong.stderr.lower()
+    # Correct order — flag BEFORE subcommand — succeeds.
+    right = _run_cli(["-w", str(ws), "doctor"])
+    assert right.returncode == 0, right.stderr
+
+
+def test_doctor_privacy_scan_actually_scans_analysis_tree(tmp_path: Path) -> None:
+    """Codex round-1 HIGH: `privacy_scan.py` has `analysis` in
+    DEFAULT_SKIP_DIR_NAMES, so running with `--root <workspace>`
+    silently scans NOTHING in a normal BSA workspace (all content
+    lives under analysis/). Fix: point --root at <workspace>/analysis
+    instead.
+
+    Regression: drop a real-looking blocker finding under
+    analysis/ and confirm doctor's privacy section surfaces it.
+    """
+    ws = _init_workspace(tmp_path)
+    # Plant a file the privacy scanner is expected to flag. A
+    # corporate-looking email triggers the `email` detector at
+    # BLOCKER severity (per privacy_scan.py: "email: blocker if
+    # corporate-looking domain; info if test/local TLD"). We nest it
+    # under analysis/discovery/ so the test depends on doctor
+    # pointing `--root` INTO analysis/ (not at the workspace root
+    # where DEFAULT_SKIP_DIR_NAMES would skip it).
+    #
+    # IMPORTANT: the email literal is SPLIT across Python string
+    # concatenation so THIS TEST FILE itself does not contain the
+    # full pattern — otherwise `test_scan_baseline_has_no_blockers`
+    # would fail on repo-wide scan. The scanner's EMAIL_RE requires
+    # a contiguous token on one line.
+    leaked = ws / "analysis" / "discovery" / "d1_leaked_snippet.txt"
+    leaked.parent.mkdir(parents=True, exist_ok=True)
+    leaked.write_text(
+        "# Leaked transcript line\n"
+        "From: " + "payroll" + "@" + "bigcorp-acme-industries" + ".com\n",
+        encoding="utf-8",
+    )
+    result = _run_cli(["-w", str(ws), "doctor"])
+    # Non-zero because privacy scan flagged the secret.
+    assert result.returncode == 1, (
+        f"expected privacy finding to set exit=1; got {result.returncode}\n"
+        f"stdout=\n{result.stdout}\nstderr=\n{result.stderr}"
+    )
+    assert "privacy scan: FAIL" in result.stdout, (
+        "doctor must surface privacy findings under analysis/ — if this "
+        "section says OK, privacy_scan was invoked with a --root that "
+        "DEFAULT_SKIP_DIR_NAMES short-circuits. Re-check cmd_doctor's "
+        "privacy branch."
+    )
+
+
+def test_iter_workspace_canonical_files_strict_raises_when_analysis_missing(tmp_path: Path) -> None:
+    """Codex round-4: the only way to close the content-walk false-clean
+    race (analysis/ disappears between the privacy-scan branch and the
+    content-walk enumeration) is to have the helper itself signal the
+    missing-analysis case. `strict=True` makes that signal explicit
+    via FileNotFoundError; legacy `strict=False` keeps the silent
+    `return []` for non-doctor callers."""
+    # Late import to avoid module-side-effects.
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from scripts.bsa_cli import (  # type: ignore[import-not-found]
+            WorkspaceState,
+            _iter_workspace_canonical_files,
+        )
+    finally:
+        sys.path.pop(0)
+    ws = WorkspaceState(tmp_path)  # tmp_path has no analysis/ yet
+    # Default (strict=False): silent empty list.
+    assert _iter_workspace_canonical_files(ws) == []
+    # strict=True: explicit signal.
+    with pytest.raises(FileNotFoundError):
+        _iter_workspace_canonical_files(ws, strict=True)
+
+
+def test_doctor_separates_error_from_fail_exit_codes(tmp_path: Path) -> None:
+    """Codex round-1 MEDIUM: when a validator returns rc=2 (invocation
+    error, e.g., missing script) doctor must distinguish that from
+    rc=1 (workspace issues) so CI can tell "doctor is broken" from
+    "workspace is dirty". Exit code 2 is reserved for the ERROR class.
+
+    We force rc=2 by running `doctor` against an external workspace
+    that is not initialized — `cmd_doctor` itself bails with rc=2
+    before running any validator. This test pins the invariant
+    "doctor returns 2 when it can't diagnose" from the user-facing side.
+    """
+    # Empty dir → WorkspaceState.is_initialized() is False.
+    result = _run_cli(["-w", str(tmp_path), "doctor"])
+    assert result.returncode == 2
+
+
+def test_doctor_exits_with_summary_line(tmp_path: Path) -> None:
+    """Both clean and failing runs must end with a single-line
+    Summary, so callers (humans + CI) can grep for it."""
+    ws = _init_workspace(tmp_path)
+    clean = _run_cli(["-w", str(ws), "doctor"])
+    assert any(
+        line.startswith("Summary:") for line in clean.stdout.splitlines()
+    ), "Summary line missing from clean run"
+    # Force a failure (same shape as the malformed-marker test).
+    (ws / "analysis" / "runtime" / "ready" / "stage1.ready.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    fail = _run_cli(["-w", str(ws), "doctor"])
+    assert any(
+        line.startswith("Summary:") for line in fail.stdout.splitlines()
+    ), "Summary line missing from failing run"
+
+
 def test_last_marker_uses_emittedat_for_sysco_markers(tmp_path: Path) -> None:
     """Codex review: `last_marker()` only read `timestamp`. Sysco-style
     drifted markers use `emittedAt`. Fixed to accept either."""

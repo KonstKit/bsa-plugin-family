@@ -21,11 +21,12 @@ Subcommands (this file, v1.0.4 scope):
 
     bsa status        Current stage + markers + A51 open counts + audit outputs.
     bsa next          Suggest the next slash-command given current state.
+    bsa doctor        Compose all repo validators against the workspace +
+                      walk every canonical artifact through the F5 write-
+                      validator. Single green/red signal before /bsa-promote.
 
 Future (separate commits in the same v1.0.4 release):
 
-    bsa doctor        Run all validators (marker chain + reconciliation +
-                      no-new-stories + privacy) and aggregate findings.
     bsa materials <src-dir>
                       Convert PDF/DOCX inputs to MD/txt, stage under
                       analysis/proposals/stage1/inputs/ with a draft A50.
@@ -610,6 +611,356 @@ def cmd_next(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---- Doctor: compose all validators ---------------------------------
+
+import os  # noqa: E402  (lazy — only used by cmd_doctor)
+import subprocess  # noqa: E402  (lazy — only used by cmd_doctor)
+
+
+def _run_subprocess_validator(
+    plugin_repo: Path, script_rel: str, *args: str
+) -> tuple[int, str]:
+    """Run a repo validator script in a subprocess; capture both streams.
+
+    Returns (exit_code, combined_text). The validators we orchestrate
+    are inconsistent about channels: validate_marker_chain emits per-
+    finding detail on stderr and a PASS line on stdout; privacy_scan
+    emits a one-line FAIL banner on stderr and the human summary on
+    stdout. Concatenate both so we never drop actionable detail — the
+    per-stream labels help readers disambiguate noisy output.
+    """
+    cmd = [sys.executable, str(plugin_repo / script_rel), *args]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return 2, f"failed to invoke {script_rel}: {exc}"
+    parts: list[str] = []
+    if result.stderr.strip():
+        parts.append(result.stderr.strip())
+    if result.stdout.strip():
+        parts.append(result.stdout.strip())
+    combined = "\n".join(parts)
+    return result.returncode, combined
+
+
+def _iter_workspace_canonical_files(
+    ws: WorkspaceState, strict: bool = False
+) -> list[Path]:
+    """Yield every canonical-surface file the F5 hook would gate.
+
+    Mirrors the dispatcher patterns in
+    governance/schemas/write_validator.py — same paths, glob-walked
+    on disk.
+
+    `strict=False` (legacy/default): silently return [] if analysis/
+    is missing — convenient for callers that only care about the
+    file list and not whether the workspace is intact.
+    `strict=True`: raise FileNotFoundError if analysis/ is missing.
+    Used by cmd_doctor to distinguish "no canonical files yet" from
+    "workspace tree disappeared mid-run" (the second case must
+    promote to an ERROR exit; without `strict`, the two states are
+    indistinguishable to the caller and we can't avoid a false-clean
+    race).
+    """
+    files: list[Path] = []
+    if not ws.analysis.is_dir():
+        if strict:
+            raise FileNotFoundError(
+                f"analysis/ directory missing at {ws.root}"
+            )
+        return files
+    # Markers (main + discovery zones).
+    for d in (ws.main_ready, ws.discovery_ready):
+        if d.is_dir():
+            files.extend(sorted(d.glob("*.json")))
+    # Core controls (main + discovery).
+    for core in (ws.core_controls, ws.discovery_core_controls):
+        if not core.is_dir():
+            continue
+        files.extend(sorted(core.glob("A48_*.md")))
+        for prefix in ("A50_", "A51_", "A58_", "A59_", "A60_", "A62_", "A70_"):
+            files.extend(sorted(core.glob(f"{prefix}*.csv")))
+    return files
+
+
+def _validate_one_file(plugin_repo: Path, ws_root: Path, file_path: Path) -> tuple[int, str]:
+    """Run governance.schemas.write_validator on one file via the CLI.
+
+    Returns (exit_code, stderr). Exit 0 = pass; 1 = blocked; 2 =
+    invocation error. The CLI already emits structured stderr we
+    can surface verbatim.
+    """
+    # The validator wants the path RELATIVE to the workspace root in
+    # its dispatcher regex — not the absolute path. Use the workspace-
+    # relative form so the dispatcher regex matches as it would at
+    # hook time.
+    try:
+        rel = file_path.relative_to(ws_root).as_posix()
+    except ValueError:
+        rel = file_path.as_posix()
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "governance.schemas.write_validator", rel],
+            input=file_path.read_text(encoding="utf-8", errors="replace"),
+            capture_output=True,
+            text=True,
+            cwd=plugin_repo,
+            check=False,
+        )
+    except OSError as exc:
+        return 2, f"failed to invoke write_validator: {exc}"
+    return proc.returncode, proc.stderr.strip()
+
+
+def _indent_detail(out: str) -> str:
+    """Indent per-line detail under a section header; handle empty."""
+    lines = [ln for ln in out.splitlines() if ln]
+    return "\n".join(f"      {ln}" for ln in lines) or "      <no detail>"
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Run the full validator suite + content walk; print summary.
+
+    Exit codes:
+        0 = ALL CLEAN (no findings, no invocation errors).
+        1 = at least one validator reported findings (workspace issue).
+        2 = at least one validator could not be invoked (environment
+            error — e.g., missing script, python abort). Distinct from
+            exit 1 so CI / on-call can distinguish "workspace dirty"
+            from "doctor itself broken".
+    """
+    root = Path(args.workspace).resolve()
+    ws = WorkspaceState(root)
+
+    if not ws.is_initialized():
+        sys.stderr.write(
+            f"[bsa doctor] {root} is not a BSA workspace (no analysis/ directory).\n"
+            "Run /bsa-start in Claude Code to initialize.\n"
+        )
+        return 2
+
+    plugin_repo = _REPO_ROOT
+    findings_count = 0   # rc == 1 events (workspace-level issues)
+    error_count = 0      # rc == 2 events (invocation / environment)
+    sections: list[str] = []
+
+    def _section(label: str, rc: int, out: str) -> None:
+        """Render one validator section. rc 0 → OK, 1 → FAIL, 2 → ERROR."""
+        nonlocal findings_count, error_count
+        if rc == 0:
+            sections.append(f"  {label}: OK")
+        elif rc == 2:
+            error_count += 1
+            sections.append(f"  {label}: ERROR (validator invocation failed)\n"
+                            + _indent_detail(out))
+        else:
+            findings_count += 1
+            sections.append(f"  {label}: FAIL\n" + _indent_detail(out))
+
+    # 1. Marker-chain validator (main + discovery zones).
+    for label, zone_dir in (("main", ws.main_ready), ("discovery", ws.discovery_ready)):
+        if not zone_dir.is_dir():
+            sections.append(f"  marker chain ({label}): SKIP (zone directory absent)")
+            continue
+        rc, out = _run_subprocess_validator(
+            plugin_repo, "scripts/validate_marker_chain.py", str(zone_dir)
+        )
+        _section(f"marker chain ({label})", rc, out)
+
+    # 2. A51 reconciliation auditor.
+    rc, out = _run_subprocess_validator(
+        plugin_repo, "scripts/validate_a51_reconciliation.py", str(root)
+    )
+    _section("A51 reconciliation", rc, out)
+
+    # 3. No-new-stories auditor (only meaningful when A70 exists).
+    a70 = ws.core_controls / "A70_story_register.csv"
+    if a70.is_file():
+        rc, out = _run_subprocess_validator(
+            plugin_repo, "scripts/validate_no_new_stories.py", str(root)
+        )
+        _section("no-new-stories", rc, out)
+    else:
+        sections.append("  no-new-stories: SKIP (no A70 yet — Phase 3 not run)")
+
+    # 4. Privacy scan.
+    #
+    # Two correctness traps we've paid for in review:
+    #
+    # (a) `privacy_scan.py` skips any directory named `analysis` via
+    #     DEFAULT_SKIP_DIR_NAMES — so passing `--root <workspace>`
+    #     silently scans NOTHING in a normal BSA workspace. We pass
+    #     `--root <workspace>/analysis` so the skip list only trims
+    #     nested junk (.git, __pycache__, etc.), not the content we
+    #     care about.
+    #
+    # (b) `privacy_scan.py` writes its rendered report to
+    #     `<plugin-repo>/docs/privacy_audit.md` by default. When
+    #     doctor runs against an EXTERNAL workspace that default
+    #     corrupts the plugin repo's own audit file. Route the
+    #     report into a temp file — we surface findings via stdout/
+    #     stderr only.
+    import tempfile  # local — only used by this branch
+    analysis_dir = root / "analysis"
+    if not analysis_dir.is_dir():
+        # is_initialized() already verified analysis/ at entry, so this
+        # branch only fires if something tore the tree out mid-run
+        # (e.g., concurrent `rm -rf` from another process). That's an
+        # environment failure, not a benign skip — classify as ERROR
+        # so the overall doctor exits 2 rather than silently
+        # under-reporting (a missing analysis/ would also short-circuit
+        # the content walk to empty, producing a false-clean summary).
+        error_count += 1
+        sections.append(
+            "  privacy scan: ERROR (analysis/ directory disappeared mid-run; "
+            "workspace tree is no longer present)"
+        )
+    else:
+        # tempfile.NamedTemporaryFile can raise OSError (no writable
+        # tmp dir, hit FD limit, etc.). If it does, the validator
+        # never ran — surface as ERROR so we keep the 0/1/2 contract
+        # and CI/on-call can distinguish "doctor environment broken"
+        # from "workspace dirty".
+        tmp_report: Optional[str] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w", suffix=".md", prefix="bsa_doctor_privacy_", delete=False
+            ) as tmp:
+                tmp_report = tmp.name
+            rc, out = _run_subprocess_validator(
+                plugin_repo,
+                "scripts/privacy_scan.py",
+                "--root",
+                str(analysis_dir),
+                "--output",
+                tmp_report,
+            )
+        except OSError as exc:
+            error_count += 1
+            sections.append(
+                f"  privacy scan: ERROR (could not allocate temp report: {exc})"
+            )
+        else:
+            _section("privacy scan", rc, out)
+        finally:
+            if tmp_report is not None:
+                try:
+                    os.unlink(tmp_report)
+                except OSError:
+                    pass
+
+    # 5. Content walk: every canonical file through the F5 write-validator.
+    #
+    # Use _iter_workspace_canonical_files(..., strict=True) so a
+    # disappeared analysis/ raises FileNotFoundError rather than
+    # short-circuiting to [] (which is indistinguishable from
+    # "workspace has no canonical files yet"). The strict=True path
+    # collapses what was previously a TOCTOU race between an outer
+    # is_dir() check and the helper's inner short-circuit into a
+    # single point of detection — the helper itself decides.
+    failed_files: list[tuple[str, str]] = []
+    error_files: list[tuple[str, str]] = []
+    walk_error: bool = False
+    try:
+        files = _iter_workspace_canonical_files(ws, strict=True)
+    except FileNotFoundError as exc:
+        walk_error = True
+        files = []
+        error_count += 1
+        sections.append(
+            f"  content validation: ERROR ({exc}; workspace tree was "
+            f"torn out between privacy scan and content walk)"
+        )
+    for f in files:
+        rc, stderr = _validate_one_file(plugin_repo, root, f)
+        if rc == 0:
+            continue
+        try:
+            rel = f.relative_to(root).as_posix()
+        except ValueError:
+            rel = f.as_posix()
+        if rc == 2:
+            error_files.append((rel, stderr))
+        else:
+            failed_files.append((rel, stderr))
+
+    if walk_error:
+        # ERROR section already appended above; skip the SKIP/OK/FAIL path.
+        pass
+    elif not files:
+        # Closes the residual TOCTOU window from round-5: the helper
+        # does several `is_dir()` / `glob()` probes after its initial
+        # `strict=True` guard. If analysis/ disappears DURING those
+        # probes, the helper returns []/partial — and we'd otherwise
+        # misclassify as a benign SKIP. Final post-enumeration check:
+        # if analysis is now gone, surface ERROR instead.
+        if not ws.analysis.is_dir():
+            error_count += 1
+            sections.append(
+                "  content validation: ERROR (analysis/ disappeared during "
+                "enumeration; canonical-file list may be incomplete)"
+            )
+        else:
+            sections.append("  content validation: SKIP (no canonical files yet)")
+    elif not failed_files and not error_files:
+        sections.append(f"  content validation: OK ({len(files)} files)")
+    else:
+        if failed_files:
+            findings_count += 1
+        if error_files:
+            error_count += 1
+        # Header reflects HIGHEST severity present:
+        #   any errors  → ERROR (regardless of FAILs)
+        #   only fails  → FAIL
+        # When both classes appear, the per-file `[FAIL]`/`[ERROR]`
+        # tags below preserve the breakdown.
+        if error_files:
+            header_label = "ERROR" if not failed_files else "ERROR (with FAILs)"
+        else:
+            header_label = "FAIL"
+        block = [
+            f"  content validation: {header_label} "
+            f"({len(failed_files) + len(error_files)} of {len(files)} files flagged)"
+        ]
+        for rel, stderr in failed_files:
+            block.append(f"    - [FAIL]  {rel}")
+            for line in (stderr or "<no detail>").splitlines():
+                block.append(f"        {line}")
+        for rel, stderr in error_files:
+            block.append(f"    - [ERROR] {rel}")
+            for line in (stderr or "<no detail>").splitlines():
+                block.append(f"        {line}")
+        sections.append("\n".join(block))
+
+    # ---- Print summary ---------------------------------------------
+    print(f"BSA doctor: {root}")
+    print()
+    for s in sections:
+        print(s)
+    print()
+    if error_count == 0 and findings_count == 0:
+        print("Summary: ALL CLEAN. /bsa-promote should pass the hook gates.")
+        return 0
+    if error_count > 0:
+        # Report ERROR shape distinctly so CI can `exit 2` triage.
+        bits = []
+        if error_count:
+            bits.append(f"{error_count} validator(s) failed to execute")
+        if findings_count:
+            bits.append(f"{findings_count} validator(s) reported findings")
+        print(
+            f"Summary: {' and '.join(bits)}. Doctor itself encountered an "
+            f"environment error — inspect the ERROR section(s) above before "
+            f"trusting the rest of the report."
+        )
+        return 2
+    print(
+        f"Summary: {findings_count} validator(s) reported findings. "
+        "/bsa-promote will likely be blocked. See per-validator detail above."
+    )
+    return 1
+
+
 # ---- Main dispatcher ------------------------------------------------
 
 
@@ -644,6 +995,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Suggest the next slash-command given the current workspace state.",
     )
     p_next.set_defaults(func=cmd_next)
+
+    p_doctor = subparsers.add_parser(
+        "doctor",
+        help=(
+            "Run all validators against the workspace + walk every "
+            "canonical file through the F5 write-validator. Single "
+            "green/red signal before /bsa-promote."
+        ),
+    )
+    p_doctor.set_defaults(func=cmd_doctor)
 
     args = parser.parse_args(argv)
     return args.func(args)
