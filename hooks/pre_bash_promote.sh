@@ -48,10 +48,16 @@ fi
 # failed under set -o pipefail on the table-format A48 used by the
 # golden fixtures (Sprint 5 F2 fix; see tests/test_plugin_hooks.py
 # round-2 cases).
-PLUGIN_REPO="${BSA_PLUGIN_REPO:-${CLAUDE_PLUGIN_ROOT:-}}"
-if [ -z "${PLUGIN_REPO}" ]; then
-  # Fallback: derive from this script's path (hooks/ is one level under repo root).
-  PLUGIN_REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# v1.0.2 C3 hardening: see hooks/pre_write_canonical.sh for rationale.
+# No env-variable override is honored. Priority:
+#   1. Script realpath — always authoritative.
+#   2. CLAUDE_PLUGIN_ROOT — host-set fallback.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+PLUGIN_REPO="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
+if [ ! -d "${PLUGIN_REPO}/governance/schemas" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/governance/schemas" ]; then
+    PLUGIN_REPO="${CLAUDE_PLUGIN_ROOT}"
+  fi
 fi
 
 # Disable pipefail just for the extraction so a clean missing-field

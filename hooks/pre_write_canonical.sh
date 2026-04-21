@@ -66,9 +66,31 @@ fi
 
 # ---- Schema-conformance check (Sprint 5 F5) --------------------------
 # Locate the plugin repo for the python -m governance.schemas.* CLIs.
-PLUGIN_REPO="${BSA_PLUGIN_REPO:-${CLAUDE_PLUGIN_ROOT:-}}"
-if [ -z "${PLUGIN_REPO}" ]; then
-  PLUGIN_REPO="$(cd "$(dirname "$0")/.." && pwd)"
+#
+# v1.0.2 C3 hardening: the previous code accepted BSA_PLUGIN_REPO from
+# the user's shell, which enabled a validator-redirection attack. The
+# first C3 iteration guarded the override with a second env flag
+# (BSA_PLUGIN_REPO_ALLOW_TEST_OVERRIDE=1), but Codex security review
+# correctly pointed out that any attacker who can inject one env var
+# can inject both — a paired-flag lock is not a lock at all. Final
+# lockdown: NO env-variable override is honored. Priority:
+#   1. Script realpath (always authoritative — the hook lives inside
+#      the plugin, so the repo root is deterministic from `pwd -P` of
+#      the hooks/ parent directory).
+#   2. CLAUDE_PLUGIN_ROOT fallback — host-set by Claude Code itself at
+#      hook invocation time; trusted by construction.
+# Tests run the actual hook script via its real path, so realpath
+# resolution already works without any override.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+PLUGIN_REPO="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
+
+# Sanity: the derived path MUST contain governance/schemas/. If the
+# script was copied out of the plugin tree (unusual), fall back to
+# CLAUDE_PLUGIN_ROOT.
+if [ ! -d "${PLUGIN_REPO}/governance/schemas" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/governance/schemas" ]; then
+    PLUGIN_REPO="${CLAUDE_PLUGIN_ROOT}"
+  fi
 fi
 
 # Read tool-input JSON from stdin if available. If stdin is a TTY or

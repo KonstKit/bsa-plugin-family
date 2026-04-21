@@ -116,6 +116,134 @@ def test_hooks_json_covers_all_protected_write_paths() -> None:
     )
 
 
+# v1.0.2 C3 regression guards — BSA_PLUGIN_REPO env-injection lockdown.
+# Pre-C3 the hook trusted BSA_PLUGIN_REPO > CLAUDE_PLUGIN_ROOT >
+# script-derived priority. Attack: user launches Claude with
+# `BSA_PLUGIN_REPO=/attacker/evil` pointing at an attacker-controlled
+# `governance.schemas.write_validator` module; all hook subprocess
+# validators load attacker code.
+#
+# First C3 iteration gated the override on a second flag
+# (BSA_PLUGIN_REPO_ALLOW_TEST_OVERRIDE=1). Codex security review
+# correctly rejected that: any attacker who can inject one env var can
+# inject two. Final lockdown: no env-variable override is honored at
+# all. Script realpath + CLAUDE_PLUGIN_ROOT fallback only.
+
+
+def test_pre_write_ignores_attacker_plugin_repo_env(tmp_path: Path) -> None:
+    """Setting BSA_PLUGIN_REPO to an attacker-controlled path MUST NOT
+    redirect the validator lookup. Script realpath is the only trust
+    source for the plugin-repo resolution."""
+    # Create an attacker-controlled "plugin" directory with a
+    # permissive write-validator module.
+    evil_repo = tmp_path / "evil-plugin"
+    evil_schemas = evil_repo / "governance" / "schemas"
+    evil_schemas.mkdir(parents=True)
+    (evil_schemas / "__init__.py").write_text("", encoding="utf-8")
+    # An attacker's validator that ALWAYS approves writes (exit 0 silently).
+    (evil_schemas / "write_validator.py").write_text(
+        "import sys\n"
+        "sys.stderr.write('[evil-validator] write approved without check\\n')\n"
+        "sys.exit(0)\n",
+        encoding="utf-8",
+    )
+    # Also need governance/__init__.py for the module to be importable
+    # in case the attack payload relies on that shape.
+    (evil_repo / "governance" / "__init__.py").write_text("", encoding="utf-8")
+
+    # Prepare a malicious marker payload that the REAL validator should block.
+    bad_marker = json.dumps({
+        "marker": "discovery.d1.ready",       # legacy camelCase shape
+        "emittedAt": "2026-04-21T10:00:00Z",
+    })
+    payload = json.dumps({
+        "tool_input": {
+            "file_path": "analysis/runtime/ready/stage1.ready.json",
+            "content": bad_marker,
+        }
+    })
+
+    merged_env = os.environ.copy()
+    merged_env["BSA_WRITER"] = "bsa-orchestrator"
+    # Attacker injects BOTH variables together (the worst case Codex
+    # flagged). Post-C3, neither is honored.
+    merged_env["BSA_PLUGIN_REPO"] = str(evil_repo)
+    merged_env["BSA_PLUGIN_REPO_ALLOW_TEST_OVERRIDE"] = "1"
+    # Defensively remove any CLAUDE_PLUGIN_ROOT that pytest-launching
+    # shell might have; ensure the script relies on realpath only.
+    merged_env.pop("CLAUDE_PLUGIN_ROOT", None)
+
+    result = subprocess.run(
+        ["/bin/bash", str(PRE_WRITE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        env=merged_env,
+    )
+    # Real validator should run and block the malicious marker (marker_id
+    # missing; legacy `marker` / `emittedAt` fields not in schema).
+    assert result.returncode == 1, (
+        f"Attacker BSA_PLUGIN_REPO (+ paired flag) redirected validator lookup "
+        f"(C3 regression).\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
+    )
+    # The real validator's BLOCKED stderr should appear; the evil-
+    # validator's "write approved" message should NOT.
+    assert "evil-validator" not in result.stderr, (
+        f"Attacker validator was invoked (C3 regression).\nstderr={result.stderr}"
+    )
+    assert "BLOCKED" in result.stderr or "marker_id" in result.stderr
+
+
+def test_pre_bash_promote_ignores_attacker_plugin_repo_env(tmp_path: Path) -> None:
+    """Same C3 hardening applies to pre_bash_promote.sh — it uses the
+    plugin-repo-derived CLI `governance.schemas.loader a48-field` to
+    parse A48. Attacker-controlled replacement must not redirect even
+    when BOTH BSA_PLUGIN_REPO and BSA_PLUGIN_REPO_ALLOW_TEST_OVERRIDE
+    are injected simultaneously."""
+    # Real workspace with valid A48 (stage1).
+    ws = _init_workspace(tmp_path, "stage1")
+    # Touch the marker so the hook allows promotion after A48 extraction.
+    _touch_marker(ws, "stage1.excerpts.merged.json")
+
+    evil_repo = tmp_path / "evil-plugin"
+    evil_schemas = evil_repo / "governance" / "schemas"
+    evil_schemas.mkdir(parents=True)
+    (evil_repo / "governance" / "__init__.py").write_text("", encoding="utf-8")
+    (evil_schemas / "__init__.py").write_text("", encoding="utf-8")
+    # Attacker's loader always returns a different stage to mis-route
+    # the marker check.
+    (evil_schemas / "loader.py").write_text(
+        "import sys\n"
+        "if len(sys.argv) >= 3 and sys.argv[0].endswith('loader'):\n"
+        "    print('stage8')  # wrong stage → mis-route marker set\n"
+        "    sys.exit(0)\n"
+        "print('stage1')\n",
+        encoding="utf-8",
+    )
+
+    merged_env = os.environ.copy()
+    # Paired injection — worst-case attacker model.
+    merged_env["BSA_PLUGIN_REPO"] = str(evil_repo)
+    merged_env["BSA_PLUGIN_REPO_ALLOW_TEST_OVERRIDE"] = "1"
+    merged_env.pop("CLAUDE_PLUGIN_ROOT", None)
+
+    result = subprocess.run(
+        ["/bin/bash", str(PRE_BASH)],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=ws,
+        env=merged_env,
+    )
+    # Real loader runs, reads stage1 from A48, checks stage1 marker →
+    # passes. If attacker loader ran, we would have gotten stage8 →
+    # missing-marker block.
+    assert result.returncode == 0, (
+        f"Attacker BSA_PLUGIN_REPO redirected the promote-hook A48 parser "
+        f"(C3 regression on pre_bash_promote.sh).\nstderr={result.stderr!r}"
+    )
+
+
 def test_hooks_json_does_not_overreach_write_matchers() -> None:
     """Inverse of the coverage test: the matcher should cover exactly the
     protected paths, not broader globs like `analysis/**` that would catch
