@@ -4,6 +4,45 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.0.1] — 2026-04-21
+
+Sprint 5 close — **contract-enforcement hardening release**. Schema-as-source-of-truth for canonical artifacts, plus write-time mechanical enforcement via the PreToolUse:Write hook. Closes three reviewer P-level findings (P1 marker-validator alphabet drift, P1 promote-hook A48 parse failure, P2 privacy-scan letter-only secrets). Also closes the entire Sysco-engagement drift class identified during the Phase 2.5 trial run.
+
+**Tag target**: commit `8d4692a` (last Sprint-5-work commit, before Sprint-6 Phase-3 kick-off scaffolding).
+**Canon policy version at v1.0.1**: `1.0.1+hash:65a577fd6dea35474d349e312d6890690625aff11414b3e19848dfbdfc00a93b`. Hash advanced from `cbba8e53…` (v1.0.0) because `runtime-marker-schema.md` gained the previously-undocumented `stage1.ready`, `discovery.d{2,3,4,5}.ready`, and verdict `MERGED` — filling documentation gaps surfaced by the schema-conformance tests.
+
+### Added
+- **F4a** (`034ddb3`) — `governance/schemas/marker.schema.json` + `governance/schemas/loader.py` + 18 schema-conformance tests. Closed marker-ID alphabet (36 IDs); `verdict` enum extended with `MERGED` for composite-promotion markers. Alphabet-sync test prevents future doc-vs-schema drift.
+- **F4b + F2** (`dd5efe8`) — `governance/schemas/a48.schema.json` + three-format A48 parser (`parse_a48`: table / bullet-backtick / bullet-bold). `python3 -m governance.schemas.loader a48-field` CLI. `hooks/pre_bash_promote.sh` delegates parsing to the CLI instead of an in-bash grep that silently failed on table-format A48.
+- **F1** (`c7dd646`) — `scripts/validate_marker_chain.py` reads alphabet + audit-pass sequences from the schema. Private `MAIN_CYCLE_SEQUENCE` / `DISCOVERY_SEQUENCE` tuples removed. Stage-ready / end-state / bridge / non-go-decision markers no longer rejected as `chain-unknown-marker`. `bsa.stage1.entry.enabled` no longer double-rejected.
+- **F3** (`e648401`) — `scripts/privacy_scan._is_likely_natural_prose` rewritten: known-token-prefix gate (21 real secret prefixes: ghp_, sk_live_, xoxb-, AKIA, eyJ, glpat-, shpat_, etc.) + vowel-ratio heuristic (0.30..0.50 prose band). The `QwErTyUiOpAsDfGhJkLzXcVbNm` false-negative reproducer now surfaces as `api_key_token`.
+- **F7** (`9495c2b`) — `commands/bsa-status.md` emits three state-aware notices: `discovery-deliverable-only`, `pre-stage-ready`, `handoff-ready-not-emitted`. Direct UX fix for the Sysco engagement operator-confusion at discovery-exit + bridge state.
+- **F4c + F4d** (`12ec5e9`) — CSV row schemas for A50/A51/A58/A59/A60 + `iter_a50_rows`..`iter_a60_rows` loader helpers + `tier_to_claim_strength()` + 45 schema-conformance tests. `A59.ClaimType` pins the closed INV-07 enum (`direct | inference | analyst_judgment`); legacy values (`policy_statement` / `factual_state` / `process_step` / `decision_pending`) explicitly listed in the `x-bsa-banned-claim-type-values` extension as documentation.
+- **F5** (`5025b2a`) — `governance/schemas/write_validator.py` with path-to-schema dispatcher for all 7 canonical artifacts. `hooks/pre_write_canonical.sh` now runs content validation after the INV-02 identity check. 35 tests including direct Sysco-regression replays (camelCase marker, legacy no_new_facts filename, legacy ClaimType in A59, drift tier label in A50) — all blocked at the hook with structured stderr.
+- **F6** (`d699565`) — `scripts/validate_a51_reconciliation.py` + 9 tests. Detects `A51_RECONCILE_GAP` when marker payloads / handoff packets declare an A51Ref remediated while the canonical register holds it open; `A51_RECONCILE_GHOST` for refs that don't exist in the register at all. Handles operator-shorthand `A51-MISS-010/011` correctly.
+- **F5 extension** (`8d4692a`) — Edit-tool support in the write hook. `apply_edit()` mirrors Claude Code Edit semantics (uniqueness required unless `replace_all=True`). Hook reads existing file, applies edit, validates the post-image. 9 new tests.
+
+### Changed
+- `skills/bsa-orchestrator/references/runtime-marker-schema.md` — added `stage1.ready.json`, `discovery.d{2,3,4,5}.ready.json` bullets; `verdict` column enumerates `MERGED`. These markers were already emitted by `/bsa-start` and discovery D2-D5 stages but were absent from the schema doc.
+- `fixtures/golden/*/expected_markers/stage1.excerpts.merged.json` (4 fixtures) — `verdict: "merged"` → `"MERGED"` normalization for consistency with other ALL-CAPS verdict values.
+- `fixtures/golden/project_0002/expected_outputs/canonical/core_controls/A60_negative_evidence_register.csv` + `project_0003/.../A60_...csv` + `adversarial_prompt_injection_001/.../A60_...csv` — migrated from the 3-column minimal form (NegEvID + RelatedClaimID + Notes) to the canonical 7-column form (adds SourceID + ExcerptRef + NegativeFinding + A51Ref). Finding prose moved from Notes into NegativeFinding where present.
+- `scripts/privacy_whitelist.json` — `.claude-plugin/plugin.json` added to path-globs whitelist (hash hex substring phone-heuristic false-positive, same class as CHANGELOG + handoff manifests).
+
+### Canon policy version
+- **Advanced** from `cbba8e53...` (v1.0.0) → `65a577fd...` (v1.0.1) via the `runtime-marker-schema.md` documentation fill-in. No invariant semantics changed; the hash bump reflects documentation catching up to implementation behavior. The manifest at the v1.0.1 tag point still declares `version: "1.0.0"` — `version` field bump was intentionally deferred to the next feature release (v1.1.0, Sprint 9 close) rather than churning the v1.0.x line for a patch release.
+
+### What's explicitly NOT in v1.0.1 (deferred to v1.1.0 / Sprint 9 close)
+- Phase 3 skills proper (bsa-nfr-collector runtime behavior, bsa-story-writer, bsa-test-scenario-builder, bsa-traceability-matrix, bsa-backlog-bridge).
+- `commands/bsa-dev-handoff.md` composite command.
+- A62/A70/A71/A72 canonical artifacts with live data.
+- Invariants INV-08 / INV-09 / INV-10 in `governance/immutable_invariants.md`.
+- Manifest `version` bump from `1.0.0` to `1.1.0`.
+
+### Verification
+- `python3 -m pytest -q`: 885 passed at v1.0.1 tag point (730 baseline at sprint start + 155 new).
+- Manual replay of every Sysco-engagement drift shape → each blocked at the write hook with structured stderr.
+- All three reviewer P-level findings: reproduced pre-fix, verified fixed post-fix.
+
 ## [v1.0.0] — 2026-04-20
 
 Sprint 4.5 close — **first public release** of `bsa-full`. Phase 0-2 MVP ships on-budget across the 12-week roadmap: 23 skills, 6 slash-commands, 3 safety hooks, 3 golden fixtures + 1 adversarial, 302 unit tests, 7 immutable invariants under canon hash `cbba8e53…`.
