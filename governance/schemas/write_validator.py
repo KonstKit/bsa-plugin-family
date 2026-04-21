@@ -20,6 +20,14 @@ Public API:
         when ok=True for advisory output (e.g., "no schema for this
         path; allowed by default").
 
+    apply_edit(existing_content, old_string, new_string, replace_all=False)
+        -> str
+        Apply a Claude Code Edit-tool replacement to existing content
+        and return the result. Raises EditError when the edit cannot
+        be applied unambiguously (old_string not found / not unique
+        and replace_all=False). Used by the Edit-shape branch of the
+        write-validator CLI.
+
 CLI for shell hooks:
     python3 -m governance.schemas.write_validator <path>
         Reads the file content from stdin (Claude Code PreToolUse:Write
@@ -280,6 +288,54 @@ def validate_canonical_write(path: str, content: str) -> tuple[bool, list[str]]:
 def list_known_paths() -> list[str]:
     """Diagnostic: list the path-pattern strings the dispatcher knows about."""
     return [pattern.pattern for pattern, _, _ in _DISPATCHER]
+
+
+# ---- Edit-tool support (F5 extension) ---------------------------------
+
+
+class EditError(ValueError):
+    """Raised when an Edit-tool replacement cannot be applied unambiguously."""
+
+
+def apply_edit(
+    existing_content: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
+) -> str:
+    """Apply a Claude Code Edit-tool replacement and return the resulting content.
+
+    Mirrors the Edit-tool semantics exactly:
+      - When ``replace_all=False``, ``old_string`` MUST occur exactly
+        once in ``existing_content``. Zero matches → EditError;
+        multiple matches → EditError (would be ambiguous).
+      - When ``replace_all=True``, every occurrence of ``old_string``
+        is replaced with ``new_string``.
+
+    The validator uses this to simulate the post-edit file content
+    BEFORE the actual edit commits — so schema violations land at the
+    hook layer, not as broken canonical files.
+    """
+    if old_string == new_string:
+        raise EditError("old_string and new_string are identical (no-op edit)")
+    if old_string == "":
+        raise EditError("old_string must be non-empty")
+    if replace_all:
+        if old_string not in existing_content:
+            raise EditError(
+                f"old_string not found in existing content (replace_all=True)"
+            )
+        return existing_content.replace(old_string, new_string)
+    # replace_all=False: require exactly one occurrence.
+    occurrences = existing_content.count(old_string)
+    if occurrences == 0:
+        raise EditError("old_string not found in existing content")
+    if occurrences > 1:
+        raise EditError(
+            f"old_string occurs {occurrences} times — ambiguous; "
+            "use replace_all=True or supply more surrounding context"
+        )
+    return existing_content.replace(old_string, new_string, 1)
 
 
 # ---- CLI for shell hooks ----------------------------------------------

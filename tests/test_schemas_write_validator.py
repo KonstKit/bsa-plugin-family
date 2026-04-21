@@ -362,3 +362,50 @@ def test_cli_missing_arg_exits_2() -> None:
     )
     assert result.returncode == 2
     assert "usage:" in result.stderr
+
+
+# ---- 6. apply_edit (Edit-tool support extension) ---------------------
+
+
+def test_apply_edit_simple_replacement() -> None:
+    from governance.schemas.write_validator import apply_edit
+
+    result = apply_edit("hello world", "world", "there")
+    assert result == "hello there"
+
+
+def test_apply_edit_unique_required_when_replace_all_false() -> None:
+    """Edit-tool semantics: old_string MUST be unique unless replace_all=True."""
+    from governance.schemas.write_validator import apply_edit, EditError
+
+    with pytest.raises(EditError, match="occurs 2 times"):
+        apply_edit("foo bar foo", "foo", "baz")
+
+
+def test_apply_edit_replace_all_does_global() -> None:
+    from governance.schemas.write_validator import apply_edit
+
+    result = apply_edit("foo bar foo", "foo", "baz", replace_all=True)
+    assert result == "baz bar baz"
+
+
+def test_apply_edit_missing_old_string_raises() -> None:
+    from governance.schemas.write_validator import apply_edit, EditError
+
+    with pytest.raises(EditError, match="not found"):
+        apply_edit("hello", "missing", "x")
+
+
+def test_apply_edit_empty_old_string_raises() -> None:
+    from governance.schemas.write_validator import apply_edit, EditError
+
+    with pytest.raises(EditError, match="must be non-empty"):
+        apply_edit("hello", "", "x")
+
+
+def test_apply_edit_noop_raises() -> None:
+    """Edit-tool semantics: new_string MUST differ from old_string."""
+    from governance.schemas.write_validator import apply_edit, EditError
+
+    with pytest.raises(EditError, match="identical"):
+        apply_edit("hello", "hello", "hello")

@@ -77,39 +77,78 @@ if [ -z "${TOOL_INPUT_JSON}" ]; then
   exit 0
 fi
 
-# Extract target file_path from the tool-input JSON via Python.
-# (Plugin already requires Python 3.9+ as documented prereq, so adding
-# this dependency is no-op cost; jq is intentionally avoided.)
-TARGET_PATH="$(printf '%s' "${TOOL_INPUT_JSON}" | (cd "${PLUGIN_REPO}" && python3 -c '
-import json, sys
+# Extract (path, content) from the tool-input JSON via Python. Handles
+# both Write (file_path + content) and Edit (file_path + old_string +
+# new_string + replace_all) shapes:
+#
+#   Write → use content directly.
+#   Edit  → read existing file, apply replacement, use the result.
+#
+# Two temp files come back: ${TMPDIR}/bsa-f5-<pid>.{path,content}.
+# Exit 0 + empty files = "skip" (tool shape not recognized; let the
+# actual tool run).
+TMPBASE="${TMPDIR:-/tmp}/bsa-f5-$$"
+trap 'rm -f "${TMPBASE}.path" "${TMPBASE}.content"' EXIT
+
+printf '%s' "${TOOL_INPUT_JSON}" | (cd "${PLUGIN_REPO}" && TMPBASE="${TMPBASE}" python3 -c '
+import json, os, sys
+tmpbase = os.environ["TMPBASE"]
 try:
     payload = json.loads(sys.stdin.read())
 except json.JSONDecodeError:
-    print("__SKIP__"); sys.exit(0)
+    sys.exit(0)
 ti = payload.get("tool_input") if isinstance(payload, dict) else None
 if not isinstance(ti, dict):
-    print("__SKIP__"); sys.exit(0)
+    sys.exit(0)
 path = ti.get("file_path") or ti.get("path") or ""
-content = ti.get("content")
-if not path or content is None:
-    # Edit tool (old_string/new_string) is out of scope for this
-    # iteration — skip rather than block to avoid false positives.
-    print("__SKIP__"); sys.exit(0)
-print(path)
-') || true)"
+if not path:
+    sys.exit(0)
+# Write shape: content provided directly.
+if "content" in ti and ti["content"] is not None:
+    with open(tmpbase + ".path", "w", encoding="utf-8") as fh:
+        fh.write(path)
+    with open(tmpbase + ".content", "w", encoding="utf-8") as fh:
+        fh.write(ti["content"])
+    sys.exit(0)
+# Edit shape: apply old_string → new_string against the existing file
+# and validate the post-image.
+if "old_string" in ti and "new_string" in ti:
+    from pathlib import Path
+    from governance.schemas.write_validator import apply_edit, EditError
+    target = Path(path)
+    if not target.is_file():
+        sys.exit(0)
+    existing = target.read_text(encoding="utf-8")
+    try:
+        post = apply_edit(
+            existing,
+            ti["old_string"],
+            ti["new_string"],
+            bool(ti.get("replace_all", False)),
+        )
+    except EditError:
+        sys.exit(0)
+    with open(tmpbase + ".path", "w", encoding="utf-8") as fh:
+        fh.write(path)
+    with open(tmpbase + ".content", "w", encoding="utf-8") as fh:
+        fh.write(post)
+    sys.exit(0)
+sys.exit(0)
+') || true
 
-if [ "${TARGET_PATH}" = "__SKIP__" ] || [ -z "${TARGET_PATH}" ]; then
+# Skip validation if the extraction produced no files (unknown tool
+# shape, parse failure, edit-inapplicable — all benign at this layer).
+if [ ! -f "${TMPBASE}.path" ] || [ ! -f "${TMPBASE}.content" ]; then
   exit 0
 fi
 
-# Pipe the EXTRACTED content (not the wrapping JSON) into the
-# validator. The validator reads stdin as the proposed file content.
+TARGET_PATH="$(cat "${TMPBASE}.path")"
+
+# Pipe the post-image content into the validator. Validator reads
+# stdin as the proposed file content; on violation it prints
+# structured BLOCKED diagnostics on stderr and exits 1.
 set +e
-printf '%s' "${TOOL_INPUT_JSON}" | (cd "${PLUGIN_REPO}" && python3 -c '
-import json, sys
-payload = json.loads(sys.stdin.read())
-sys.stdout.write(payload["tool_input"]["content"])
-') | (cd "${PLUGIN_REPO}" && python3 -m governance.schemas.write_validator "${TARGET_PATH}")
+(cd "${PLUGIN_REPO}" && python3 -m governance.schemas.write_validator "${TARGET_PATH}") < "${TMPBASE}.content"
 VALIDATOR_RC=$?
 set -e
 

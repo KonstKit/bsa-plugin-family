@@ -418,6 +418,123 @@ def test_pre_write_f5_passes_when_stdin_empty_compatibility_mode() -> None:
     assert result.returncode == 0
 
 
+def test_pre_write_f5_edit_shape_passes_when_post_image_valid(tmp_path: Path) -> None:
+    """Edit on a canonical file: read existing → apply edit → validate result.
+    If post-image is schema-valid, hook passes."""
+    canonical = tmp_path / "analysis" / "canonical" / "core_controls"
+    canonical.mkdir(parents=True)
+    target = canonical / "A48_run_context_card.md"
+    target.write_text(
+        "# A48 Run Context Card\n\n"
+        "- `RunID`: x\n"
+        "- `Mode`: direct\n"
+        "- `CurrentStage`: stage1\n"
+        "- `CanonPolicyVersion`: 1.0.0\n",
+        encoding="utf-8",
+    )
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(target),
+                "old_string": "- `CurrentStage`: stage1",
+                "new_string": "- `CurrentStage`: stage3",
+            }
+        }
+    )
+    merged_env = os.environ.copy()
+    merged_env["BSA_WRITER"] = "bsa-orchestrator"
+    merged_env["BSA_PLUGIN_REPO"] = str(REPO_ROOT)
+    result = subprocess.run(
+        ["/bin/bash", str(PRE_WRITE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        env=merged_env,
+    )
+    assert result.returncode == 0, (
+        f"Edit producing valid post-image rejected.\nstderr={result.stderr}"
+    )
+
+
+def test_pre_write_f5_edit_shape_blocks_when_post_image_invalid(tmp_path: Path) -> None:
+    """Edit that mutates a canonical file into a schema-invalid post-image
+    MUST be blocked. This is the Sysco-class equivalent for Edits."""
+    canonical = tmp_path / "analysis" / "canonical" / "core_controls"
+    canonical.mkdir(parents=True)
+    target = canonical / "A48_run_context_card.md"
+    target.write_text(
+        "# A48 Run Context Card\n\n"
+        "- `RunID`: x\n"
+        "- `Mode`: direct\n"
+        "- `CurrentStage`: stage1\n"
+        "- `CanonPolicyVersion`: 1.0.0\n",
+        encoding="utf-8",
+    )
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(target),
+                "old_string": "- `CurrentStage`: stage1",
+                # Post-image: CurrentStage = stage42 (not in enum) → schema fails.
+                "new_string": "- `CurrentStage`: stage42",
+            }
+        }
+    )
+    merged_env = os.environ.copy()
+    merged_env["BSA_WRITER"] = "bsa-orchestrator"
+    merged_env["BSA_PLUGIN_REPO"] = str(REPO_ROOT)
+    result = subprocess.run(
+        ["/bin/bash", str(PRE_WRITE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        env=merged_env,
+    )
+    assert result.returncode == 1, (
+        f"Edit producing invalid post-image NOT blocked.\nstderr={result.stderr}"
+    )
+    assert "BLOCKED" in result.stderr
+    assert "CurrentStage" in result.stderr or "stage42" in result.stderr
+
+
+def test_pre_write_f5_edit_shape_skips_unapplicable_edit(tmp_path: Path) -> None:
+    """Edit whose old_string doesn't exist in the file is skipped (let the
+    actual tool report; hook's job is schema enforcement, not Edit semantics)."""
+    canonical = tmp_path / "analysis" / "canonical" / "core_controls"
+    canonical.mkdir(parents=True)
+    target = canonical / "A48_run_context_card.md"
+    target.write_text(
+        "# A48 Run Context Card\n\n"
+        "- `RunID`: x\n"
+        "- `Mode`: direct\n"
+        "- `CurrentStage`: stage1\n"
+        "- `CanonPolicyVersion`: 1.0.0\n",
+        encoding="utf-8",
+    )
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": str(target),
+                "old_string": "this string does not exist anywhere",
+                "new_string": "x",
+            }
+        }
+    )
+    merged_env = os.environ.copy()
+    merged_env["BSA_WRITER"] = "bsa-orchestrator"
+    merged_env["BSA_PLUGIN_REPO"] = str(REPO_ROOT)
+    result = subprocess.run(
+        ["/bin/bash", str(PRE_WRITE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        env=merged_env,
+    )
+    # Should pass (return 0) — we don't block on edit-applicability errors,
+    # only on resulting-content schema errors.
+    assert result.returncode == 0
+
+
 def test_pre_write_f5_identity_failure_short_circuits() -> None:
     """If BSA_WRITER is wrong, the hook should block on identity BEFORE
     attempting content validation — the BLOCKED message names INV-02,
