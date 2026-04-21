@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
 # pre_write_canonical.sh — PreToolUse:Write hook for bsa-full plugin.
 #
-# Enforces TWO things on every Write/Edit targeting analysis/canonical/*:
+# Enforces TWO things on every Write/Edit targeting a BSA-protected path:
 #
 #   1. INV-02 single-writer (always): caller MUST identify as
 #      bsa-orchestrator via BSA_WRITER env var.
-#   2. Schema conformance (Sprint 5 F5): for canonical artifacts whose
-#      shape is governed by a schema in governance/schemas/ (markers,
-#      A48, A50, A51, A58, A59, A60), the proposed content is
-#      validated against that schema. Schema mismatch → BLOCKED with
-#      structured stderr listing the violations.
+#   2. Schema conformance (Sprint 5 F5): for artifacts whose shape is
+#      governed by a schema in governance/schemas/ (markers, A48, A50,
+#      A51, A58, A59, A60), the proposed content is validated against
+#      that schema. Schema mismatch → BLOCKED with structured stderr
+#      listing the violations.
 #
-# The matcher in hooks.json narrows to analysis/canonical/** paths, so
-# if this script runs, the write is against a protected path by
+# The matcher in hooks.json narrows to the four protected-path classes:
+#   - analysis/canonical/**
+#   - analysis/discovery/canonical/**
+#   - analysis/runtime/ready/**
+#   - analysis/discovery/runtime/ready/**
+# If this script runs, the write is against one of those paths by
 # definition. The script does identity check first (cheaper, narrower)
 # then content check (catches the Sysco-engagement schema-drift class
-# that the previous identity-only hook waved through).
+# that the pre-F5 identity-only hook waved through, AND the runtime/ready
+# marker-drift class that the Sprint-5 matcher gap allowed past).
 #
 # Claude Code passes the tool input as JSON on stdin. Expected payload
 # shape:
@@ -40,10 +45,11 @@ WRITER="${BSA_WRITER:-}"
 # ---- Identity check (INV-02) ------------------------------------------
 if [ "${WRITER}" != "bsa-orchestrator" ]; then
   cat >&2 <<EOF
-[bsa-full / pre_write_canonical] BLOCKED: write to analysis/canonical/* by non-orchestrator caller.
+[bsa-full / pre_write_canonical] BLOCKED: write to a BSA protected path by non-orchestrator caller.
 
 Single-writer invariant (governance/immutable_invariants.md INV-02):
-- Only bsa-orchestrator may write into analysis/canonical/.
+- Only bsa-orchestrator may write into analysis/canonical/, analysis/discovery/canonical/,
+  analysis/runtime/ready/, or analysis/discovery/runtime/ready/.
 - Worker skills + human edits MUST go through analysis/proposals/<stage>/
   and be promoted via /bsa-promote (two-key promotion).
 

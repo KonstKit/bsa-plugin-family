@@ -13,12 +13,24 @@
     ],
     "PreToolUse": [
       {
-        "_comment": "Single-writer canonical enforcement (INV-02). Blocks any Write or Edit targeting analysis/canonical/* unless the caller identifies as bsa-orchestrator via the BSA_WRITER env var. Hook exit 0 allows, non-zero blocks with the script's stderr surfaced to Claude.",
+        "_comment": "Single-writer canonical enforcement (INV-02) + schema enforcement (F5, Sprint 5 + v1.0.2 C1 fix). Blocks any Write or Edit targeting the BSA protected-path set: (1) main-cycle canonical state — analysis/canonical/**; (2) discovery canonical state — analysis/discovery/canonical/**; (3) main-cycle marker emission zone — analysis/runtime/ready/**; (4) discovery marker emission zone — analysis/discovery/runtime/ready/**. ALL four path classes need coverage: the original Sprint-5 F5 spec only listed (1), which meant marker drift (Sysco-class camelCase marker_id / legacy no_new_facts filename) and discovery canonical drift (ad-hoc ClaimType / tier labels) bypassed the write hook entirely. v1.0.2 C1 adds (2)-(4) to close the gap. The hook itself does identity check (BSA_WRITER=bsa-orchestrator) first, then schema validation via governance/schemas/write_validator.py. Hook exit 0 allows, non-zero blocks with the script's stderr surfaced to Claude.",
         "matcher": "Write|Edit",
         "matchers": [
           {
             "type": "path",
             "pattern": "analysis/canonical/**"
+          },
+          {
+            "type": "path",
+            "pattern": "analysis/discovery/canonical/**"
+          },
+          {
+            "type": "path",
+            "pattern": "analysis/runtime/ready/**"
+          },
+          {
+            "type": "path",
+            "pattern": "analysis/discovery/runtime/ready/**"
           }
         ],
         "hooks": [

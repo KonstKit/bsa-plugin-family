@@ -67,6 +67,83 @@ def test_hooks_json_has_three_hook_entries() -> None:
             assert "${CLAUDE_PLUGIN_ROOT}" in h["command"]
 
 
+# v1.0.2 C1 regression guard (Sprint 5 F5 matcher-coverage gap).
+# The original hook only matched `analysis/canonical/**`. Marker writes to
+# `analysis/runtime/ready/**` and discovery-canonical writes bypassed the
+# hook entirely, which made F5's schema-validation paths unreachable in
+# real Claude Code execution for those path classes. This test pins the
+# COMPLETE protected-path set so a future regression that drops a matcher
+# fails CI at the hooks.json level, not at the invocation-time silent
+# bypass level.
+REQUIRED_PROTECTED_PATHS: frozenset[str] = frozenset({
+    "analysis/canonical/**",
+    "analysis/discovery/canonical/**",
+    "analysis/runtime/ready/**",
+    "analysis/discovery/runtime/ready/**",
+})
+
+
+def test_hooks_json_covers_all_protected_write_paths() -> None:
+    """PreToolUse:Write matcher MUST cover every BSA-protected path class.
+
+    The Sysco-engagement analysis revealed that with only
+    `analysis/canonical/**` as a matcher, every marker write (at
+    analysis/runtime/ready/*.json and analysis/discovery/runtime/ready/*.json)
+    and every discovery-canonical write (analysis/discovery/canonical/**)
+    silently bypassed the F5 schema validation. This test enforces the
+    full set as a data-level assertion.
+    """
+    data = json.loads(HOOKS_JSON.read_text(encoding="utf-8"))
+    write_edit_entries = [
+        e for e in data["hooks"]["PreToolUse"]
+        if e.get("matcher") == "Write|Edit"
+    ]
+    assert len(write_edit_entries) == 1, (
+        "Expected exactly one Write|Edit PreToolUse hook entry; "
+        "splitting the matcher across entries would regress this guard."
+    )
+    patterns = {
+        m["pattern"]
+        for m in write_edit_entries[0].get("matchers", [])
+        if m.get("type") == "path"
+    }
+    missing = REQUIRED_PROTECTED_PATHS - patterns
+    assert not missing, (
+        f"PreToolUse:Write matcher missing required path classes: {sorted(missing)}. "
+        f"Currently covered: {sorted(patterns)}. "
+        f"The Sprint-5 F5 fix depends on every protected path class being matched — "
+        f"a missing entry silently bypasses the hook."
+    )
+
+
+def test_hooks_json_does_not_overreach_write_matchers() -> None:
+    """Inverse of the coverage test: the matcher should cover exactly the
+    protected paths, not broader globs like `analysis/**` that would catch
+    proposals and views too. This keeps the hook fast and keeps
+    intentionally-writable paths (proposals staging, views/) unblocked.
+    """
+    data = json.loads(HOOKS_JSON.read_text(encoding="utf-8"))
+    write_edit_entry = next(
+        e for e in data["hooks"]["PreToolUse"] if e.get("matcher") == "Write|Edit"
+    )
+    patterns = {
+        m["pattern"]
+        for m in write_edit_entry.get("matchers", [])
+        if m.get("type") == "path"
+    }
+    forbidden_broad_globs = {
+        "analysis/**",
+        "**",
+        "*",
+        "analysis/*",
+    }
+    overreach = patterns & forbidden_broad_globs
+    assert not overreach, (
+        f"PreToolUse:Write matcher contains overly-broad patterns: {sorted(overreach)}. "
+        f"These would catch proposals/, views/, and other intentionally-writable paths."
+    )
+
+
 # ---- session_start.sh --------------------------------------------------
 
 
