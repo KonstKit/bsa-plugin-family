@@ -428,6 +428,12 @@ _DISPATCHER: list[_DispatcherEntry] = [
         "a62",
         _make_csv_validator("a62"),
     ),
+    # Phase 3 (Sprint 7+): A70 story register.
+    (
+        re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A70_[a-z_]+\.csv$"),
+        "a70",
+        _make_csv_validator("a70"),
+    ),
 ]
 
 

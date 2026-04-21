@@ -51,12 +51,14 @@
         "discovery.go",
         "discovery.pivot",
         "discovery.more_research",
-        "discovery.no_go"
+        "discovery.no_go",
+        "phase3.nfr.pass",
+        "phase3.story.pass"
       ]
     },
     "stage": {
       "type": "string",
-      "description": "Stage identifier the marker belongs to. Main cycle stages (stage1..stage8), discovery stages (d1..d5), bridge states (discovery.exit, discovery.bridge), end states (handoff, pipeline).",
+      "description": "Stage identifier the marker belongs to. Main cycle stages (stage1..stage8), discovery stages (d1..d5), bridge states (discovery.exit, discovery.bridge), end states (handoff, pipeline), Phase-3 dev-handoff stages (phase3.*).",
       "enum": [
         "stage1",
         "stage2",
@@ -74,7 +76,9 @@
         "discovery.exit",
         "discovery.bridge",
         "handoff",
-        "pipeline"
+        "pipeline",
+        "phase3.nfr",
+        "phase3.story"
       ]
     },
     "verdict": {

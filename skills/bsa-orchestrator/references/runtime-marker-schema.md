@@ -45,6 +45,12 @@
 - `discovery.more_research.json`
 - `discovery.no_go.json`
 
+## Phase 3 Markers (Sprint 6+; opt-in via `/bsa-dev-handoff`)
+- `phase3.nfr.pass.json` (emitted after bsa-nfr-collector promotes A62)
+- `phase3.story.pass.json` (emitted after bsa-story-writer promotes A70)
+
+Additional Phase-3 markers land in subsequent sprints as each owning skill implements: `phase3.test_scenario.pass.json` (Sprint 8), `phase3.traceability.pass.json` (Sprint 8), `phase3.backlog_exported.json` + `pipeline.phase3.complete.json` (Sprint 9).
+
 ## Bridge Rule
 `stage1` may start from discovery only when both markers exist:
 - `discovery.go.json`

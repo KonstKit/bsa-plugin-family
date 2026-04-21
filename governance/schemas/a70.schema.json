@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a70.schema.json",
+  "title": "A70 Story Register row",
+  "description": "Schema for one row of analysis/canonical/core_controls/A70_story_register.csv (Phase 3, US-S7-02). Each row is a user story derived from promoted A59 claims and/or A62 NFRs. Producer: bsa-story-writer. Consumers: bsa-test-scenario-builder (keys test scenarios off StoryID), bsa-traceability-matrix (walks Story → Claim → Source), bsa-backlog-bridge (ships stories to Jira/Linear/generic). INV-08 applies: every row MUST carry non-empty SourceClaimIDs OR non-empty RelatedNFRIDs (or both) — stories authored from thin air are rejected at the hook layer. INVEST criteria recorded as INVESTStatus column; deferred checks trigger an A51 route.",
+  "type": "object",
+  "required": [
+    "StoryID",
+    "Title",
+    "Persona",
+    "StoryText",
+    "AcceptanceCriteria",
+    "SourceClaimIDs",
+    "RelatedNFRIDs",
+    "Priority",
+    "EstimationHint",
+    "INVESTStatus",
+    "A51Ref",
+    "Notes"
+  ],
+  "properties": {
+    "StoryID": {
+      "type": "string",
+      "pattern": "^STORY-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Stable identifier STORY-NNN or STORY-XXX-NNN. Category prefix conventions match A51/A59 (e.g., STORY-UX-001 for user-experience-themed rows, STORY-OPS-042 for operations)."
+    },
+    "Title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Short imperative summary (Jira-title sized). Non-empty; max 120 chars keeps it usable as a listable label."
+    },
+    "Persona": {
+      "type": "string",
+      "minLength": 1,
+      "description": "User role / actor this story is authored for. Free-form but non-empty. Typical: 'Triage Agent', 'Delivery Customer', 'Compliance Auditor'. Should match a subject identified upstream in A59 claims."
+    },
+    "StoryText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?i:As)\\s+(?:a|an|A|An)\\s+.+?,?\\s+I\\s+(?:want|need|Want|Need).+?(?:,\\s+so that\\s+.+)?\\s*$",
+      "description": "Full user story in the canonical shape: 'As a <persona>, I want <goal>, so that <benefit>'. The 'so that' clause is strongly recommended but allowed to be absent when the benefit is implicit in the goal. Pattern validates the shape; semantic check (is this actually a story?) is the skill's own responsibility."
+    },
+    "AcceptanceCriteria": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One or more acceptance criteria. Multi-criterion rows join with ';' or newline. Each criterion should be a testable observable state or outcome. This field drives bsa-test-scenario-builder in Sprint 8 — non-testable criteria are blocked upstream via INVESTStatus."
+    },
+    "SourceClaimIDs": {
+      "type": "string",
+      "pattern": "^(?:C-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]C-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Semicolon/slash-separated list of upstream A59 ClaimIDs this story derives from. May be empty IF RelatedNFRIDs is non-empty. Enforced at the cross-field level (x-bsa-provenance-rules); see INV-08."
+    },
+    "RelatedNFRIDs": {
+      "type": "string",
+      "pattern": "^(?:NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Semicolon/slash-separated list of upstream A62 NFRIDs this story links to. May be empty IF SourceClaimIDs is non-empty. Acceptance criteria for the story should embed measurable targets from any linked NFR."
+    },
+    "Priority": {
+      "type": "string",
+      "enum": ["level-1", "level-2", "level-3"],
+      "description": "level-1 = must-have for launch; level-2 = important / next release; level-3 = backlog / nice-to-have. Inherited from the highest source-claim Criticality by default; may be raised (never lowered) by explicit override with A51 rationale."
+    },
+    "EstimationHint": {
+      "type": "string",
+      "enum": ["xs", "s", "m", "l", "xl", "unknown"],
+      "description": "T-shirt size hint, NOT story points. The plugin does not estimate — this is a coarse producer-hint to help the consuming team triage. 'unknown' is valid and expected when the story is INVEST-deferred on estimability."
+    },
+    "INVESTStatus": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "needs-splitting",
+        "needs-estimation",
+        "needs-testable-acceptance",
+        "needs-negotiation",
+        "escalate"
+      ],
+      "description": "INVEST acceptance state. 'pass' = all 6 criteria met (Independent, Negotiable, Valuable, Estimable, Small, Testable). 'needs-splitting' = S failed (story too large); producer should split. 'needs-estimation' = E deferred (team input required). 'needs-testable-acceptance' = T deferred (acceptance criteria insufficiently concrete). 'needs-negotiation' = N failed (story is a mandate, not negotiable — review with PO). 'escalate' = multiple criteria failed → raise via A51Ref and let the PO triage. Any value other than 'pass' MUST co-populate A51Ref per INV-08+ conventions."
+    },
+    "A51Ref": {
+      "type": "string",
+      "pattern": "^(?:A51-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]A51-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Optional A51 cross-reference. REQUIRED (non-empty) whenever INVESTStatus != 'pass' — every INVEST-deferred story must have a decision / action route recorded in A51. Enforced at the cross-field level."
+    },
+    "Notes": {
+      "type": "string",
+      "description": "Free-form notes. Empty string allowed."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for diff stability.",
+    "order": [
+      "StoryID",
+      "Title",
+      "Persona",
+      "StoryText",
+      "AcceptanceCriteria",
+      "SourceClaimIDs",
+      "RelatedNFRIDs",
+      "Priority",
+      "EstimationHint",
+      "INVESTStatus",
+      "A51Ref",
+      "Notes"
+    ]
+  },
+  "x-bsa-provenance-rules": {
+    "_comment": "INV-08 cross-field rules enforced by bsa-story-writer's own output validator. JSON Schema can't express 'at least one of [A,B] is non-empty' cleanly for CSV-string values that are 'empty' vs 'non-empty' rather than null vs set; the skill and F5 write-time path use this extension as a lookup table.",
+    "at_least_one_of_non_empty": ["SourceClaimIDs", "RelatedNFRIDs"],
+    "rationale": "INV-08: stories authored from thin air are drift. Every story must trace back to a claim (from A59) or an NFR (from A62 which itself traces back to claims)."
+  },
+  "x-bsa-invest-rules": {
+    "_comment": "INVESTStatus ≠ 'pass' MUST co-populate A51Ref. Enforced by the skill's own output validator (cross-field rule outside JSON Schema comfort zone for CSV semantics). INVEST expansion: Independent / Negotiable / Valuable / Estimable / Small / Testable.",
+    "requires_a51_when_status_not_pass": true,
+    "deferrable_criteria": [
+      "needs-splitting",
+      "needs-estimation",
+      "needs-testable-acceptance",
+      "needs-negotiation"
+    ],
+    "fail_fast_status": "escalate"
+  },
+  "x-bsa-banned-story-patterns": {
+    "_comment": "Common anti-patterns that bsa-story-writer MUST refuse to emit. Documentation only — the skill's own output validator rejects; the schema catches obvious shape-level cases via StoryText pattern + AcceptanceCriteria minLength.",
+    "values": [
+      "As a user I want feature X (no benefit clause, no persona specificity)",
+      "As a developer I want clean code (dev-facing; not a user story)",
+      "As an admin I want to configure (persona is a proxy; real actor is vague)",
+      "The system shall <X> (requirement, not a story — belongs in A62 if quality, A59 if observed fact)"
+    ]
+  }
+}
