@@ -50,6 +50,47 @@ Adds:
 - Full KPI scorecard (KPI-001..005 with per-tier breakdown for KPI-001, per-rule counts for KPI-003).
 - Tool availability check: `plantuml`, `xmllint`, `python3 jsonschema` (test dep for handoff-manifest validation).
 
+## State-aware notices
+
+After the compact summary, surface a one-block notice if the workspace is in an actionable transition state. The orchestrator decides which (if any) of these applies based on the marker zone + A48 contents:
+
+### `discovery-deliverable-only`
+**Trigger:** A48.CurrentStage = `discovery.complete` AND `discovery.go.json` present AND `bsa.stage1.entry.enabled.json` present AND no `stage1.*` markers in `analysis/runtime/ready/`.
+
+**Print:**
+```
+NOTICE — Discovery cycle is complete and the bridge into main cycle is open,
+but no main-cycle stage has started. Two paths from here:
+
+  1. Continue to main cycle (Stage 1..8 → handoff):
+       /bsa-stage 1 run
+
+  2. Treat this as a discovery-only deliverable. The artifacts under
+     analysis/discovery/canonical/ + analysis/canonical/core_controls/ are
+     the deliverable; no further action needed. /bsa-handoff will refuse
+     until at least Stage 1 has been promoted.
+```
+
+This notice exists because operators reaching D-Exit + bridge often pause without realizing the workspace is intentionally between cycles, not stuck. It is read-only documentation, not a prompt for the user — just print and continue.
+
+### `pre-stage-ready` (stage just promoted, next stage entry not yet declared)
+**Trigger:** Last marker is `stageN.<audit>.pass` AND `stage{N+1}.ready.json` not present AND N < 8.
+
+**Print:**
+```
+NOTICE — Stage <N> is fully promoted but Stage <N+1> entry has not been
+declared. Run `/bsa-stage <N+1> run` to advance.
+```
+
+### `handoff-ready-not-emitted`
+**Trigger:** `stage8.no_new_claims.pass.json` present AND `handoff.ready.json` not present.
+
+**Print:**
+```
+NOTICE — Stage 8 is promoted; handoff package not yet generated.
+Run `/bsa-handoff` to emit H1-H4 + manifest.
+```
+
 ## Failure modes
 
 - **`analysis/` not initialized**: suggest `/bsa-start` (also the SessionStart hook emits this suggestion proactively).
