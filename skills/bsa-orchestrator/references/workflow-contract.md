@@ -70,12 +70,36 @@ Without discovery:
 7. `stage7`
 8. `stage8`
 9. `handoff`
+10. (optional, Phase 3) `phase3.nfr -> phase3.story -> phase3.test_scenario -> phase3.traceability -> phase3.backlog_exported` via `/bsa-dev-handoff`
 
 With discovery:
 1. `d1 -> d2 -> d3 -> d4 -> d5`
 2. discovery decision (`go/pivot/more_research/no_go`)
 3. if `go`: `bsa.stage1.entry.enabled` then main cycle starts at composite `stage1`
 4. discovery `d5` also provides `stage2_seed_bundle.md` consumed by `bsa-context-framer` when applicable
+5. After `handoff`: same optional Phase-3 tail as above.
+
+## Phase 3 Dev-Handoff Extension (Sprint 6+)
+
+Phase 3 is an **opt-in** extension that runs AFTER `handoff.ready.json` has been emitted. It does not replace or modify the main-cycle handoff; it consumes it as input. Invocation: `/bsa-dev-handoff` (see `commands/bsa-dev-handoff.md`).
+
+Phase-3 stages and their owning skills:
+
+| Phase-3 stage | Skill | Required markers emitted | Artifact promoted |
+|---|---|---|---|
+| `phase3.nfr` | `bsa-nfr-collector` | `phase3.nfr.pass.json` | `A62_nfr_register.csv` |
+| `phase3.story` | `bsa-story-writer` | `phase3.story.pass.json` | `A70_story_register.csv` |
+| `phase3.test_scenario` | `bsa-test-scenario-builder` | `phase3.test_scenario.pass.json` | `A71_test_scenario_register.csv` |
+| `phase3.traceability` | `bsa-traceability-matrix` | `phase3.traceability.pass.json` | `A72_traceability_matrix.csv` |
+| `phase3.backlog_exported` | `bsa-backlog-bridge` | `phase3.backlog_exported.json` | `analysis/handoff/backlog_export_*` (terminal, no promotion) |
+
+After all five pass, orchestrator emits `pipeline.phase3.complete.json`.
+
+Phase-3 invariants (INV-08 / INV-09 / INV-10) will land in `governance/immutable_invariants.md` at v1.1.0 (Sprint 9 close); enforced by the F5 write-validator and per-skill auditors from their respective sprints.
+
+Phase-3 artifacts (A62 / A70 / A71 / A72) gain write-time schema enforcement automatically as their schemas land in `governance/schemas/` and are added to `write_validator.py`'s `_DISPATCHER` table — same mechanism as Sprint-5 A50/A51/A58/A59/A60 enforcement.
+
+Partial runs (`/bsa-dev-handoff --only=<skill>`) are supported so a single Phase-3 skill can be debugged or retried without re-executing upstream Phase-3 work. Main-cycle prerequisites (`handoff.ready` + promoted A59/A50/A51) are still required for any partial run.
 
 ## Promotion Sequence (Two-Key)
 1. Validate stage-owned proposal directory.
