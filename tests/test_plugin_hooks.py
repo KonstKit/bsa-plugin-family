@@ -291,6 +291,156 @@ def test_pre_bash_promote_handles_bullet_bold_a48(tmp_path: Path) -> None:
     assert result2.returncode == 0
 
 
+# ---- F5 integration: pre_write_canonical content validation ----------
+# When stdin carries the tool-input JSON (Claude Code's PreToolUse:Write
+# contract), the hook validates the proposed content against the
+# matching schema in governance/schemas/. Tests below cover both passes
+# and the Sysco-class regression rejects.
+
+
+def _run_pre_write_with_json(tool_input: dict, env: dict | None = None):
+    """Helper: invoke pre_write_canonical.sh with a JSON tool-input piped
+    to stdin. Default env provides BSA_WRITER=bsa-orchestrator so the
+    identity gate passes — content validation is the test target."""
+    payload = json.dumps({"tool_input": tool_input})
+    merged_env = os.environ.copy()
+    merged_env.setdefault("BSA_WRITER", "bsa-orchestrator")
+    merged_env.setdefault("BSA_PLUGIN_REPO", str(REPO_ROOT))
+    if env:
+        merged_env.update(env)
+    return subprocess.run(
+        ["/bin/bash", str(PRE_WRITE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=merged_env,
+    )
+
+
+def test_pre_write_f5_passes_valid_marker_content() -> None:
+    valid_marker = json.dumps(
+        {
+            "marker_id": "stage1.ready",
+            "stage": "stage1",
+            "verdict": "READY",
+            "timestamp": "2026-04-21T10:00:00Z",
+            "canon_policy_version": "1.0.0+hash:abc1234",
+            "canon_policy_version_hash": "abc1234",
+        }
+    )
+    result = _run_pre_write_with_json(
+        {
+            "file_path": "analysis/runtime/ready/stage1.ready.json",
+            "content": valid_marker,
+        }
+    )
+    assert result.returncode == 0, (
+        f"Valid marker rejected by hook content-validation.\nstderr={result.stderr}"
+    )
+
+
+def test_pre_write_f5_blocks_sysco_camelcase_marker() -> None:
+    """Direct replay of the automated_results/discovery/runtime/ready/
+    discovery.d1.ready.json shape. The previous identity-only hook
+    waved this through; F5 must block."""
+    sysco_marker = json.dumps(
+        {
+            "marker": "discovery.d1.ready",
+            "runId": "SYSCO-OD-DISC-20260420-001",
+            "emittedAt": "2026-04-20T00:00:00Z",
+            "emittedBy": "bsa-orchestrator",
+            "canonPolicyVersion": "1.0.0",
+        }
+    )
+    result = _run_pre_write_with_json(
+        {
+            "file_path": "analysis/discovery/runtime/ready/discovery.d1.ready.json",
+            "content": sysco_marker,
+        }
+    )
+    assert result.returncode == 1, (
+        f"Sysco camelCase marker NOT blocked (F5 regression).\n"
+        f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+    )
+    assert "BLOCKED" in result.stderr
+    assert "marker_id" in result.stderr
+
+
+def test_pre_write_f5_blocks_sysco_legacy_claim_type_in_a59() -> None:
+    """Most-impactful F5 negative: A59 with legacy ClaimType strings is
+    blocked at write time. This is the line that closes the engagement
+    drift class mechanically."""
+    sysco_a59 = (
+        "ClaimID,SourceID,ExcerptID,ClaimType,Statement,JustificationRationale,"
+        "A51Ref,ClaimStrength,Criticality,Notes\n"
+        'C-001,S-001,E-001,policy_statement,"Sysco SOP rule",,,"0.85",level-2,\n'
+        'C-002,S-001,E-002,factual_state,"observed state",,,"0.85",level-2,\n'
+    )
+    result = _run_pre_write_with_json(
+        {
+            "file_path": "analysis/canonical/core_controls/A59_claim_register.csv",
+            "content": sysco_a59,
+        }
+    )
+    assert result.returncode == 1, (
+        f"Sysco-class A59 NOT blocked.\nstderr={result.stderr}"
+    )
+    assert "BLOCKED" in result.stderr
+    assert "ClaimType" in result.stderr or "policy_statement" in result.stderr
+
+
+def test_pre_write_f5_skips_validation_for_non_canonical_path() -> None:
+    """Writes to canonical paths NOT covered by a schema (e.g.,
+    canonical/stage5/some_artifact.json that isn't an A-controlled file)
+    pass through after the identity check."""
+    result = _run_pre_write_with_json(
+        {
+            "file_path": "analysis/canonical/stage5/some_artifact.json",
+            "content": '{"anything": "goes"}',
+        }
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_pre_write_f5_passes_when_stdin_empty_compatibility_mode() -> None:
+    """Backward compat: when stdin has no JSON (test contexts that don't
+    pipe), the hook falls back to identity-only mode. This is what
+    keeps the existing test_pre_write_allows_orchestrator test green."""
+    result = subprocess.run(
+        ["/bin/bash", str(PRE_WRITE)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "BSA_WRITER": "bsa-orchestrator"},
+        input="",  # empty stdin
+    )
+    assert result.returncode == 0
+
+
+def test_pre_write_f5_identity_failure_short_circuits() -> None:
+    """If BSA_WRITER is wrong, the hook should block on identity BEFORE
+    attempting content validation — the BLOCKED message names INV-02,
+    not the schema violation."""
+    sysco_marker = json.dumps(
+        {
+            "marker": "wrong",
+            "emittedAt": "2026-04-20T00:00:00Z",
+        }
+    )
+    result = _run_pre_write_with_json(
+        {
+            "file_path": "analysis/runtime/ready/stage1.ready.json",
+            "content": sysco_marker,
+        },
+        env={"BSA_WRITER": "evil-skill"},
+    )
+    assert result.returncode == 1
+    assert "INV-02" in result.stderr
+    # F5 schema BLOCKED message must NOT appear — identity check fired first.
+    assert "BLOCKED: schema validation failed" not in result.stderr
+
+
 def test_pre_bash_promote_table_a48_with_real_fixture_path(tmp_path: Path) -> None:
     """End-to-end: copy the actual project_0001 fixture A48 and verify
     the hook can read its CurrentStage. This is the file path the
