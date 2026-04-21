@@ -4,6 +4,56 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.0.3] — 2026-04-22
+
+**Polish release** — closes the Sprint-6+7 retroactive-review HIGH findings that were deferred past v1.0.2 scope, plus four external-review P2/P3 doc-drift findings. Applies the v1.0.2 C2 enforcement pattern to A62 + A70 extension rules, so Phase-3 artifacts (NFR register + story register) have the same mechanical cross-field enforcement as A59.
+
+**Tag target**: commit `5309481` (last of the v1.0.3 commits).
+**Canon policy version**: `1.0.3+hash:0d4d1de4` — unchanged from v1.0.2 cherry-pick state. No POLICY_GLOBS file was touched.
+
+### Fixed (schema-exec polish)
+
+- **A62 `x-bsa-measurability-rules` executable** (`ef4d23b`) — Pre-fix, the extension declared INV-09 (performance/availability/scalability NFRs require Metric+Target OR A51Ref) in plain text, but `_make_csv_validator()` ignored it. New helper `_apply_measurability_rules()` reads the extension and applies per-row after JSON Schema. Qualitative NFR categories (usability/compliance/security/maintainability/observability/portability) unaffected.
+
+- **A70 `x-bsa-provenance-rules` executable** (`ef4d23b`) — INV-08 seed: story rows must have at least one of SourceClaimIDs / RelatedNFRIDs non-empty. Pre-fix, both-empty rows passed F5 silently. New helper `_apply_provenance_rules()` generalizes to any schema declaring the `at_least_one_of_non_empty` extension.
+
+- **A70 `x-bsa-invest-rules` executable** (`ef4d23b`) — INVEST-A51 coupling: INVESTStatus != 'pass' requires non-empty A51Ref. Pre-fix, deferred-INVEST rows without A51Ref passed silently. New helper `_apply_invest_rules()` enforces.
+
+- **Extension-handler wiring** — all four extension handlers (including existing C2 `_apply_claim_type_rules`) invoked in `_make_csv_validator` per row. Schema-agnostic — schemas without a given extension no-op cleanly. Same pattern A71/A72 schemas (Sprint 8) can adopt.
+
+### Fixed (external-review doc drift)
+
+- **`config/request_skill_routes.json`** (`5309481`) — P2. `canon_policy_version` bumped from `"0.9"` (pre-Sprint-1 value) to `"1.0.0"`.
+- **`CONTRIBUTING.md`** (`5309481`) — P2. Pre-commit checklist's "302 tests must pass" replaced with the current count (991) and a rule-based framing ("all pass", not a hardcoded number) so future sprint test growth doesn't re-stale the doc.
+- **`README.md`** (`5309481`) — P3. Status line refreshed: 28 skills (was 23), ~991 tests (was 302), v1.0.0 → v1.0.3 patch-line history replaces the Sprint-4.5-snapshot freeze. Repo-layout block updated in lockstep.
+- **`docs/architecture_overview.md`** (`5309481`) — P3. Canon-version example `1.0.0-rc2+hash:cbba8e53` replaced with live `1.0.0+hash:0d4d1de4` + a v1.0.x patch-line convention note (semver stays at 1.0.0 across patches; hash moves with POLICY_GLOBS edits).
+
+### Added (tests only)
+
+13 new regression tests (Group 9 in `tests/test_schemas_write_validator.py`): 9 A62 measurability (3 required categories × missing Metric+Target, 1 valid, 1 A51-alternative, 6 qualitative-unaffected), 3 A70 provenance (orphan / claim-only / NFR-only), 8 A70 INVEST (5 deferred-no-A51 / 3 deferred-with-A51 / 1 pass-no-A51), 1 multi-rule interaction test.
+
+### Deferred (carried beyond v1.0.3)
+
+- **H5 — no-new-stories tokenization** heuristic too strict on paraphrase + too loose on numeric/unit/acronym tokens. Needs stemming + unit-preserving tokenizer. Scheduled for v1.1.0 (Sprint 8 or 9 when test-scenario-builder surfaces real-engagement token diversity).
+- **LOW — malformed extension-shape guard** (Codex noted in v1.0.3 review) — handlers assume extension is absent or dict; a truthy-non-dict value would `AttributeError`. Defensive isinstance checks → v1.0.4 or Sprint-8 polish.
+- **LOW — A62/A70 extension shape-pin tests** analogous to the existing A59 one.
+
+### Canon policy
+
+- **Unchanged** at `0d4d1de4e425773461afe3ff3d10d41e68e25eb2a45e4697beec78c7a2c675b3`. v1.0.3 touches only non-POLICY_GLOBS files (hook validators, tests, CHANGELOG, README, CONTRIBUTING, architecture_overview, routing manifest).
+
+### Verification
+
+- `python3 -m pytest -q`: 991 passed.
+- Schema-polish commit: Codex code-review APPROVE (`CODEX_ID 1776798093_v103_cr`). Confirmed all three deferred HIGH findings closed; whitespace handling consistent with C2; test coverage adequate.
+- Doc-drift commit: no Codex round (zero semantic behavior; external reviewer's findings serve as the verification gate). Each finding factually validated against HEAD content pre-fix.
+
+### Bookkeeping
+
+- Manifest `version` stays at `1.0.0` through v1.0.3 — bump to `1.1.0` accompanies the Phase-3 feature release at Sprint 9 close.
+- Sprint 5 retro trilogy now complete: `sprint_5.md` (v1.0.1 scope), `sprint_5_v1_0_2_hotfix.md` (v1.0.2 must-fix), `sprint_5_v1_0_3_polish.md` (this release).
+- Next step: Phase-2.5 pilot on v1.0.3 on the Sysco Order & Deliver materials, now with A59 + A62 + A70 all mechanically enforced. If clean, proceed to Sprint 8 (bsa-test-scenario-builder, US-S8-01).
+
 ## [v1.0.2] — 2026-04-21
 
 **Security hotfix** — retroactive Codex review of the Sprint-5 F5 work surfaced three CRITICAL findings + one HIGH that rendered the v1.0.1 "contract-enforcement hardening" claim misleading in production. All four now closed. v1.0.1 users should upgrade.
