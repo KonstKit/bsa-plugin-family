@@ -6,6 +6,7 @@
 - Bridge: `analysis/runtime/ready/bsa.stage1.entry.enabled.json`
 
 ## Main Control + Audit Markers
+- `stage1.ready.json`
 - `stage1.excerpts.merged.json`
 - `stage2.ready.json`
 - `stage2.context_state.pass.json`
@@ -25,10 +26,14 @@
 
 ## Discovery Markers
 - `discovery.d1.ready.json`
+- `discovery.d2.ready.json`
 - `discovery.d2.claims.merged.json`
 - `discovery.d2.research_quality.pass.json`
+- `discovery.d3.ready.json`
 - `discovery.d3.prioritization.pass.json`
+- `discovery.d4.ready.json`
 - `discovery.d4.constraint_audit.pass.json`
+- `discovery.d5.ready.json`
 - `discovery.d5.citation_audit.pass.json`
 - `discovery.d5.no_solution_leakage.pass.json`
 - optional (strict profile):
@@ -53,7 +58,7 @@ Every marker JSON file MUST be an object with at minimum these fields:
 |---|---|---|---|
 | `marker_id` | string | yes | Filename stem (e.g., `stage3.citation_audit.pass`). |
 | `stage` | string | yes | Stage identifier (`stage1`..`stage8`, `d1`..`d5`, `handoff`, `pipeline`). |
-| `verdict` | string | yes | `PASS`, `FAIL`, `READY`, or for decision markers `GO`/`PIVOT`/`MORE_RESEARCH`/`NO_GO`. |
+| `verdict` | string | yes | `PASS`, `FAIL`, `READY`, `MERGED` (for `stage1.excerpts.merged` and `discovery.d2.claims.merged` composite-promotion markers), or for decision markers `GO`/`PIVOT`/`MORE_RESEARCH`/`NO_GO`. |
 | `timestamp` | string (ISO-8601 UTC) | yes | Emission time. |
 | `canon_policy_version` | string | yes | Accepts both bare semver (`0.95`) and Sprint-3 semver+hash form (`1.0.0+hash:abc123`). |
 | `canon_policy_version_hash` | string | Sprint-3+ | 6-64 hex chars. Matches the SHA-256 digest from `scripts/compute_canon_hash.py`. Optional in pre-v1.0 workspaces; mandatory at v1.0.0-rc1 and later. |

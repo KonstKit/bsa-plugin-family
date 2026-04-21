@@ -1,7 +1,7 @@
 {
   "marker_id": "stage1.excerpts.merged",
   "stage": "stage1",
-  "verdict": "merged",
+  "verdict": "MERGED",
   "timestamp": "2026-04-19T09:00:00Z",
   "canon_policy_version": "1.0.0-rc2",
   "canon_policy_version_hash": "cbba8e53",

@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/marker.schema.json",
+  "title": "BSA Runtime Marker",
+  "description": "Schema for marker JSON files emitted under analysis/runtime/ready/ and analysis/discovery/runtime/ready/. Single source of truth for marker_id alphabet + required payload fields. Canonical documentation: skills/bsa-orchestrator/references/runtime-marker-schema.md. Enforcement points: scripts/validate_marker_chain.py (chain validator) and hooks/pre_write_canonical.sh (write-time validation, US-S5 / F5).",
+  "type": "object",
+  "required": [
+    "marker_id",
+    "stage",
+    "verdict",
+    "timestamp",
+    "canon_policy_version"
+  ],
+  "properties": {
+    "marker_id": {
+      "type": "string",
+      "description": "Filename stem of the marker file (without .json). Closed alphabet — adding a new marker requires a schema change (not a skill-doc change alone).",
+      "enum": [
+        "stage1.ready",
+        "stage1.excerpts.merged",
+        "stage2.ready",
+        "stage2.context_state.pass",
+        "stage3.ready",
+        "stage3.citation_audit.pass",
+        "stage4.ready",
+        "stage5.ready",
+        "stage5.anchor_audit.pass",
+        "stage6.ready",
+        "stage6.anchor_audit.pass",
+        "stage7.ready",
+        "stage7.skeptical_review.pass",
+        "stage8.ready",
+        "stage8.no_new_claims.pass",
+        "handoff.ready",
+        "pipeline.complete",
+        "bsa.stage1.entry.enabled",
+        "discovery.d1.ready",
+        "discovery.d2.ready",
+        "discovery.d2.claims.merged",
+        "discovery.d2.research_quality.pass",
+        "discovery.d3.ready",
+        "discovery.d3.prioritization.pass",
+        "discovery.d4.ready",
+        "discovery.d4.constraint_audit.pass",
+        "discovery.d5.ready",
+        "discovery.d5.citation_audit.pass",
+        "discovery.d5.no_solution_leakage.pass",
+        "discovery.d5.skeptical_review.pass",
+        "discovery.d5.no_new_claims.pass",
+        "discovery.exit.pass",
+        "discovery.go",
+        "discovery.pivot",
+        "discovery.more_research",
+        "discovery.no_go"
+      ]
+    },
+    "stage": {
+      "type": "string",
+      "description": "Stage identifier the marker belongs to. Main cycle stages (stage1..stage8), discovery stages (d1..d5), bridge states (discovery.exit, discovery.bridge), end states (handoff, pipeline).",
+      "enum": [
+        "stage1",
+        "stage2",
+        "stage3",
+        "stage4",
+        "stage5",
+        "stage6",
+        "stage7",
+        "stage8",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "discovery.exit",
+        "discovery.bridge",
+        "handoff",
+        "pipeline"
+      ]
+    },
+    "verdict": {
+      "type": "string",
+      "description": "Outcome of the stage/audit this marker represents. READY = stage entry; PASS/FAIL = audit outcome; MERGED = composite-promotion merge marker (e.g., stage1.excerpts.merged reports 'merged' rather than a pass/fail since the merge itself is the event, audit outcomes ride on separate markers); GO/PIVOT/MORE_RESEARCH/NO_GO = discovery-exit decision.",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "READY",
+        "MERGED",
+        "GO",
+        "PIVOT",
+        "MORE_RESEARCH",
+        "NO_GO"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC emission time."
+    },
+    "canon_policy_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:-[A-Za-z0-9.-]+)?(?:\\+[A-Za-z0-9.:-]+)?$",
+      "description": "Bare semver ('0.95'), semver+hash ('1.0.0+hash:abc123'), or pre-release form ('1.0.0-rc1+hash:abc123'). Both pre-Sprint-3 and Sprint-3+ workspaces supported."
+    },
+    "canon_policy_version_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{6,64}$",
+      "description": "SHA-256 prefix of the canon policy byte set. Optional in pre-v1.0 workspaces; mandatory at v1.0.0-rc1 and later. Chain validator tolerates missing hash as 'pre-hash workspace'."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-audit-pass-sequence": {
+    "_comment": "Audit-pass sequences used by scripts/validate_marker_chain.py for chain-gating checks. NOT the full marker alphabet — only the mandatory gate markers that form the promotion chain. Ready markers (stage*.ready) and end-state markers (handoff.ready, pipeline.complete) are in the marker_id alphabet above but not part of the gating sequence.",
+    "main": [
+      "stage1.excerpts.merged",
+      "stage2.context_state.pass",
+      "stage3.citation_audit.pass",
+      "stage5.anchor_audit.pass",
+      "stage6.anchor_audit.pass",
+      "stage7.skeptical_review.pass",
+      "stage8.no_new_claims.pass"
+    ],
+    "discovery": [
+      "discovery.d1.ready",
+      "discovery.d2.claims.merged",
+      "discovery.d2.research_quality.pass",
+      "discovery.d3.prioritization.pass",
+      "discovery.d4.constraint_audit.pass",
+      "discovery.d5.citation_audit.pass",
+      "discovery.d5.no_solution_leakage.pass",
+      "discovery.exit.pass",
+      "discovery.go"
+    ]
+  },
+  "x-bsa-ready-markers": {
+    "_comment": "Stage-ready markers (emitted by orchestrator when a stage becomes workable). Informational — validators accept these as valid but do not gate on them.",
+    "enum": [
+      "stage1.ready",
+      "stage2.ready",
+      "stage3.ready",
+      "stage4.ready",
+      "stage5.ready",
+      "stage6.ready",
+      "stage7.ready",
+      "stage8.ready",
+      "discovery.d1.ready",
+      "discovery.d2.ready",
+      "discovery.d3.ready",
+      "discovery.d4.ready",
+      "discovery.d5.ready"
+    ]
+  },
+  "x-bsa-end-state-markers": {
+    "_comment": "Terminal markers. pipeline.complete is emitted after /bsa-handoff. handoff.ready is emitted after stage8 promote as the gate into handoff packaging.",
+    "enum": [
+      "handoff.ready",
+      "pipeline.complete"
+    ]
+  },
+  "x-bsa-bridge-markers": {
+    "_comment": "Cross-chain bridge markers. bsa.stage1.entry.enabled is emitted after discovery.go to allow main-cycle stage1 activation.",
+    "enum": [
+      "bsa.stage1.entry.enabled"
+    ]
+  },
+  "x-bsa-decision-markers": {
+    "_comment": "Discovery-exit decision markers. Exactly one of these is emitted at D-Exit.",
+    "enum": [
+      "discovery.go",
+      "discovery.pivot",
+      "discovery.more_research",
+      "discovery.no_go"
+    ]
+  }
+}

@@ -53,6 +53,11 @@
       "glob": "CHANGELOG.md",
       "reason": "The CHANGELOG documents release-artifact sha256 digests (handoff manifests, canon hash); those 64-char hex strings contain 10-11 digit numeric substrings the phone heuristic catches. Release-metadata checksums, not PII.",
       "added_at": "2026-04-20"
+    },
+    {
+      "glob": ".claude-plugin/plugin.json",
+      "reason": "Plugin manifest carries canonPolicyVersion.hash_full — a 64-char SHA-256 hex string that occasionally contains 10-11 digit numeric substrings caught by the phone-number heuristic. Same false-positive class as CHANGELOG/handoff manifests.",
+      "added_at": "2026-04-21"
     }
   ]
 }
