@@ -422,6 +422,12 @@ _DISPATCHER: list[_DispatcherEntry] = [
         "a60",
         _make_csv_validator("a60"),
     ),
+    # Phase 3 (Sprint 6+): A62 NFR register.
+    (
+        re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A62_[a-z_]+\.csv$"),
+        "a62",
+        _make_csv_validator("a62"),
+    ),
 ]
 
 
