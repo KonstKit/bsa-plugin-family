@@ -4,6 +4,39 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.0.4] — 2026-04-22
+
+**UX-pass release** — adds a shell-friendly `bsa` CLI that READS the workspace state and tells the operator where they are + what to do next, plus stages external materials (PDF/DOCX/MD/TXT) into the canonical Stage-1 inputs surface with a draft A50 source manifest. The CLI does NOT replace slash-commands; all canonical state mutation still goes through `/bsa-start`, `/bsa-stage`, `/bsa-promote`, `/bsa-audit`, `/bsa-handoff`. Read-only on canonical state for `status`/`next`/`doctor`; `materials` writes only to `analysis/proposals/stage1/inputs/` (gated by `--commit`, outside the F5 dispatcher regex).
+
+**Tag target**: commit `9d3c99b` (last of the v1.0.4 commits).
+**Canon policy version**: `1.0.3+hash:0d4d1de4` — unchanged from v1.0.3. No POLICY_GLOBS file was touched.
+
+### Added
+
+- **`scripts/bsa` (shell wrapper)** + **`scripts/bsa_cli.py` (Python CLI)** — locates the plugin repo from realpath-on-`$0` (same lockdown as `hooks/pre_write_canonical.sh` per v1.0.2 C3), so the documented `ln -s /path/to/bsa-plugin-family/scripts/bsa ~/.local/bin/bsa` install mode works. Stdlib at module level; PDF/DOCX libs imported lazily inside the materials subcommand.
+
+- **`bsa status`** (`895581f`) — Reads A48 (RunID, Mode, CurrentStage, CanonPolicyVersion), markers in both zones (`analysis/runtime/ready/` + `analysis/discovery/runtime/ready/`), A51 open counts split by BlockingStatus, and audit outputs (no-new-claims report, citation/consistency reports). Tolerates Sysco-style camelCase markers (`marker`/`emittedAt` instead of `marker_id`/`timestamp`) via fallback keys; tolerates malformed marker JSON (skipped silently). Uninitialized workspace exits 2 with clear "not a BSA workspace" message.
+
+- **`bsa next`** (`c9013e8`) — State machine over A48 stage + marker presence → next slash-command suggestion. `_STAGE_REQUIRED_MARKERS` table mirrors `hooks/pre_bash_promote.sh` exactly (drift-check test parses the hook's case-pattern block). Zone-aware presence checks (`_zone_filenames_for_stage`); main vs discovery zones never cross-contaminate. Distinguishes d1 init state (where `/bsa-start` emits `discovery.d1.ready` BEFORE the worker runs) via `_d1_has_proposal_output` check; suggests `/bsa-stage d1 run` instead of bogus `/bsa-promote`.
+
+- **`bsa doctor`** (`77d305d`) — Composes 4 repo validators against the workspace (validate_marker_chain × 2 zones, validate_a51_reconciliation, validate_no_new_stories with SKIP when no A70, privacy_scan with `--root <ws>/analysis` to dodge the `DEFAULT_SKIP_DIR_NAMES` "analysis" entry) + walks every canonical artifact through `python3 -m governance.schemas.write_validator`. Single green/red signal before `/bsa-promote`. Exit-code contract `0/1/2`: ALL CLEAN / workspace dirty / doctor-environment broken — CI can distinguish "workspace has issues" from "doctor itself is broken". Privacy-scan output routed to a tempfile so the plugin's own `docs/privacy_audit.md` is not corrupted by external-workspace runs. Pre+post `is_dir(analysis/)` bracketing closes the TOCTOU false-clean race when the workspace tree is torn out mid-run.
+
+- **`bsa materials <src-dir>`** (`9d3c99b`) — FIRST write-side CLI subcommand. Converts PDF (pypdf, optional), DOCX (python-docx, optional), MD/TXT (verbatim) into MD files staged under `analysis/proposals/stage1/inputs/source_NNN_<slug>.md`, plus a DRAFT `source_manifest.csv` matching the A50 column order EXACTLY (`ReliabilityTier=T5` default; user must re-tag during `/bsa-stage 1`). Default is dry-run preview; `--commit` required to write; `--force` overrides idempotency; `--recursive` walks subdirs. Three-layered idempotency (Origin in manifest → slug-on-disk + provenance match → exact target collision); slug collisions across distinct sources allocate `<base>_<sha1[:6]>` alt-slugs instead of false-skipping. Atomic writes via `_atomic_write_text` (tempfile + os.replace + chmod-preserve). Refuses if any of `analysis/`, `proposals/`, `stage1/`, `inputs/` is a symlink, OR if `manifest_path`/planned target is a symlink, OR if existing manifest header drifts from `_A50_HEADER`, OR if existing manifest is read-only (`os.access(W_OK)` check, since `os.replace` would otherwise bypass mode bits). Recursive walk skips symlinked DIRECTORIES (would loop forever) but honors symlinked FILES (legit cloud-folder use case).
+
+### Tests
+
+- 71 new regression tests added under `tests/test_bsa_cli.py` (978 → 1061 cumulative across the v1.0.3 → v1.0.4 window). Covers: graceful degradation on uninitialized / malformed / drifted workspaces; bash wrapper + symlink install path; state-machine drift-check against `pre_bash_promote.sh`; doctor exit-code contract + plugin-repo-untouched invariant; materials idempotency (3 layers); materials write-side safety (symlinks, header drift, atomic writes, mode preservation); optional-dep install-hint surfaces correctly; A50 schema compliance of the draft manifest.
+
+### Codex review discipline
+
+- 18 Codex review rounds total across 4 chunks (2 + 3 + 6 + 7), all reaching APPROVE. Each chunk's commit message carries the per-round finding tables. Pattern: read-only chunks (status, next) closed in 2-3 rounds; subprocess-orchestration chunk (doctor) needed 6 (multiple TOCTOU narrowings); first write-side chunk (materials) needed 7 (every threat class — symlinks, idempotency, atomicity, mode preservation — addressed individually). Future write-side commands should budget 5-7 review rounds.
+
+### Deferred (carried into v1.0.4+1 polish)
+
+- **A51 `RaisedByStage` enum extension** — Phase-2.5 pilot uses `discovery.d1`..`discovery.d5` + `discovery.complete` as RaisedByStage values, but A51 schema enum currently only documents `stage1`-`stage8` + `handoff`. Pilot blocker — without this the discovery-zone A51 issues fail F5 validation.
+- **Malformed-extension-shape `isinstance` guards** — A59/A62/A70 cross-field rule handlers assume the extension property is either absent or a dict. A truthy-non-dict value would `AttributeError`.
+- **A62/A70 shape-pin tests** — A59 has `test_a59_claim_type_rules_schema_extension_structure`; A62/A70 don't.
+
 ## [v1.0.3] — 2026-04-22
 
 **Polish release** — closes the Sprint-6+7 retroactive-review HIGH findings that were deferred past v1.0.2 scope, plus four external-review P2/P3 doc-drift findings. Applies the v1.0.2 C2 enforcement pattern to A62 + A70 extension rules, so Phase-3 artifacts (NFR register + story register) have the same mechanical cross-field enforcement as A59.
