@@ -713,6 +713,56 @@ def test_a71_deferral_rules_schema_extension_structure() -> None:
         )
 
 
+def test_a72_deferral_rules_schema_extension_status_field_override() -> None:
+    """Sprint 8 US-S8-02: A72 reuses the generalized
+    `_apply_deferral_rules` handler from A71 but with
+    `status_field='LinkType'` override (instead of A71's default
+    'AutomationStatus'). Pin both halves so a future schema edit
+    can't silently drop the override and re-route to AutomationStatus
+    (which doesn't exist in A72)."""
+    from governance.schemas import loader
+
+    schema = loader.load_schema("a72")
+    ext = schema.get("x-bsa-deferral-rules", {})
+    assert isinstance(ext, dict) and ext, (
+        "x-bsa-deferral-rules extension absent or wrong shape"
+    )
+    assert ext.get("status_field") == "LinkType", (
+        f"A72 must override status_field to LinkType; got {ext.get('status_field')!r}. "
+        "Without the override, _apply_deferral_rules would default to "
+        "AutomationStatus and silently no-op on every A72 row."
+    )
+    assert ext.get("requires_a51_when_status") == "a51-routed"
+    # Both pivot fields must exist on A72.
+    a72_props = schema["properties"]
+    for field in ("LinkType", "A51Ref"):
+        assert field in a72_props, (
+            f"A72 property {field!r} missing — deferral rule would never trigger"
+        )
+
+
+def test_a72_foreign_key_rules_schema_extension_structure() -> None:
+    """Sprint 8 US-S8-02: pin documentary x-bsa-foreign-key-rules
+    shape (same role as A71's x-bsa-nfr-coverage-rules — declares
+    cross-artifact integrity that the skill self-validates today;
+    future hook-layer enforcement is filed as TODO)."""
+    from governance.schemas import loader
+
+    schema = loader.load_schema("a72")
+    ext = schema.get("x-bsa-foreign-key-rules", {})
+    assert isinstance(ext, dict) and ext, (
+        "x-bsa-foreign-key-rules extension absent or wrong shape"
+    )
+    # applies_to_all_rows pin (US-S8-02 round-2 fix): no LinkType
+    # exemption from FK/consistency checks.
+    assert ext.get("applies_to_all_rows") is True
+    assert ext.get("story_id_resolves_in") == "A70_story_register.csv"
+    assert ext.get("claim_id_resolves_in") == "A59_claim_register.csv"
+    assert ext.get("source_id_resolves_in") == "A50_source_register.csv"
+    assert ext.get("claim_source_consistency") is True
+    assert "rationale" in ext
+
+
 def test_a71_nfr_coverage_rules_schema_extension_structure() -> None:
     """Sprint 8 US-S8-01: pin documentary x-bsa-nfr-coverage-rules
     shape. Even though the NFR-coverage rule is enforced at the skill

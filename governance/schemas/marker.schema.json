@@ -54,7 +54,8 @@
         "discovery.no_go",
         "phase3.nfr.pass",
         "phase3.story.pass",
-        "phase3.test_scenario.pass"
+        "phase3.test_scenario.pass",
+        "phase3.traceability.pass"
       ]
     },
     "stage": {
@@ -80,7 +81,8 @@
         "pipeline",
         "phase3.nfr",
         "phase3.story",
-        "phase3.test_scenario"
+        "phase3.test_scenario",
+        "phase3.traceability"
       ]
     },
     "verdict": {

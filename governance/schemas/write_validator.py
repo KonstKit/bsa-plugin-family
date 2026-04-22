@@ -631,6 +631,12 @@ _DISPATCHER: list[_DispatcherEntry] = [
         "a71",
         _make_csv_validator("a71"),
     ),
+    # Phase 3 (Sprint 8 US-S8-02): A72 traceability matrix.
+    (
+        re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A72_[a-z_]+\.csv$"),
+        "a72",
+        _make_csv_validator("a72"),
+    ),
 ]
 
 

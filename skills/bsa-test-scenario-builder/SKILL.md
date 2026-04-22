@@ -5,7 +5,7 @@ description: Build Gherkin-style Given/When/Then test scenarios in A71_test_scen
 
 # BSA Test Scenario Builder
 
-Run this skill after `bsa-story-writer` has promoted `A70_story_register.csv`. Produces test scenarios that downstream skills (`bsa-traceability-matrix`, `bsa-backlog-bridge`) consume.
+Run this skill after `bsa-story-writer` has promoted `A70_story_register.csv`. Produces test scenarios that `bsa-backlog-bridge` consumes (ships scenarios alongside stories to Jira/Linear/generic). NB: `bsa-traceability-matrix` does NOT read A71 — the matrix is keyed off stories, not scenarios; scenario coverage lives in this skill's own `test_scenario_authoring_report.md`.
 
 ## Scope
 
@@ -88,7 +88,7 @@ Invoked by `/bsa-dev-handoff` (Phase-3 composite command) as the third stage: `p
 
 May also be invoked directly via `/bsa-dev-handoff --only=test-scenario` for debugging / partial re-runs; prerequisites (phase3.story.pass + promoted A70) must be satisfied.
 
-Downstream consumers (`bsa-traceability-matrix`, `bsa-backlog-bridge`) read the promoted A71; they do not invoke this skill directly (INV-06 composition-via-orchestrator).
+Downstream consumer is `bsa-backlog-bridge` only — it reads the promoted A71 to attach scenario provenance to exported stories. `bsa-traceability-matrix` does NOT read A71 (the matrix is keyed off stories, not scenarios). Neither downstream invokes this skill directly (INV-06 composition-via-orchestrator).
 
 ## Cross-refs
 
