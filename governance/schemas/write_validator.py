@@ -298,7 +298,14 @@ def _apply_claim_type_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     ``requires_non_empty`` list + optional ``or_a51ref_set`` bool).
     """
     rules = schema.get("x-bsa-claim-type-rules", {})
-    if not rules:
+    # v1.0.4+1 polish: defensive isinstance guard. A malformed schema
+    # could have `x-bsa-claim-type-rules: "please enforce"` (truthy
+    # non-dict) — the bare truthiness check would pass and the
+    # downstream `.get(...)` would AttributeError. Treat malformed
+    # shapes as no-op (silently skip the cross-field check); the
+    # JSON Schema layer will not flag the extension shape itself
+    # because $-extensions are advisory to JSON Schema validators.
+    if not isinstance(rules, dict) or not rules:
         return []
     claim_type = (row.get("ClaimType") or "").strip()
     rule = rules.get(claim_type)
@@ -348,7 +355,8 @@ def _apply_measurability_rules(row: dict, schema: dict, row_idx: int) -> list[st
     issue for this row.
     """
     ext = schema.get("x-bsa-measurability-rules", {})
-    if not ext:
+    # v1.0.4+1 polish: see _apply_claim_type_rules for rationale.
+    if not isinstance(ext, dict) or not ext:
         return []
     required_categories = ext.get(
         "quantitative_categories_requiring_metric_and_target", []
@@ -392,7 +400,8 @@ def _apply_provenance_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     ``at_least_one_of_non_empty`` list gets the same treatment.
     """
     ext = schema.get("x-bsa-provenance-rules", {})
-    if not ext:
+    # v1.0.4+1 polish: see _apply_claim_type_rules for rationale.
+    if not isinstance(ext, dict) or not ext:
         return []
     any_of = ext.get("at_least_one_of_non_empty", [])
     if not any_of:
@@ -422,7 +431,8 @@ def _apply_invest_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     JSON Schema catches that upstream; this handler bails silently.
     """
     ext = schema.get("x-bsa-invest-rules", {})
-    if not ext or not ext.get("requires_a51_when_status_not_pass"):
+    # v1.0.4+1 polish: see _apply_claim_type_rules for rationale.
+    if not isinstance(ext, dict) or not ext.get("requires_a51_when_status_not_pass"):
         return []
     status = (row.get("INVESTStatus") or "").strip()
     if not status or status == "pass":

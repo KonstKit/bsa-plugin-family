@@ -57,10 +57,15 @@
         "d3",
         "d4",
         "d5",
+        "discovery.d1",
+        "discovery.d2",
+        "discovery.d3",
+        "discovery.d4",
+        "discovery.d5",
         "discovery.exit",
         "discovery.complete"
       ],
-      "description": "Pipeline stage that emitted this route. Same enum as A48.CurrentStage."
+      "description": "Pipeline stage that emitted this route. Aligned with — but not strictly identical to — A48.CurrentStage. A51 additionally accepts the prefixed `discovery.dN` forms (N=1..5) used by some discovery workers when they want to disambiguate from the bare `dN` orchestrator-state value (e.g., Sysco-style engagements where the discovery workers emit `discovery.d1` for traceability into runtime markers like `discovery.d1.ready.json`). The bare `dN` form remains valid for fixtures + orchestrator-level tracking; the prefixed form is for raised-by-this-discovery-step provenance."
     },
     "RelatedSourceID": {
       "type": "string",

@@ -592,6 +592,143 @@ def test_a59_claim_type_rules_schema_extension_structure() -> None:
     assert aj.get("or_a51ref_set", False) is False
 
 
+def test_a62_measurability_rules_schema_extension_structure() -> None:
+    """v1.0.4+1 polish (Codex v1.0.3 LOW): pin x-bsa-measurability-rules
+    shape so a future A62 schema edit can't silently remove the
+    executable enforcement hook (same risk class as A59 — what isn't
+    tested can drift out of the schema and back into 'documentary
+    only' status without anyone noticing)."""
+    from governance.schemas import loader
+
+    schema = loader.load_schema("a62")
+    ext = schema.get("x-bsa-measurability-rules", {})
+    assert isinstance(ext, dict) and ext, (
+        "x-bsa-measurability-rules extension absent or wrong shape "
+        "— would silently disable the INV-09 cross-field check"
+    )
+    # The list of categories that REQUIRE Metric+Target (or A51Ref).
+    cats = ext.get("quantitative_categories_requiring_metric_and_target")
+    assert isinstance(cats, list) and cats, (
+        "quantitative_categories_requiring_metric_and_target must be "
+        "a non-empty list of NFRCategory enum values"
+    )
+    # Per INV-09, the three quantitative categories must be present.
+    assert set(cats) >= {"performance", "availability", "scalability"}, (
+        f"quantitative_categories_requiring_metric_and_target missing "
+        f"one of the three required INV-09 categories. Got {cats}"
+    )
+    # Every listed category must be a valid NFRCategory enum value.
+    nfr_enum = schema["properties"]["NFRCategory"]["enum"]
+    for cat in cats:
+        assert cat in nfr_enum, (
+            f"category {cat!r} listed in measurability rules but not in "
+            f"NFRCategory enum {nfr_enum} — would never trigger"
+        )
+
+
+def test_a70_provenance_rules_schema_extension_structure() -> None:
+    """v1.0.4+1 polish (Codex v1.0.3 LOW): pin x-bsa-provenance-rules
+    shape (INV-08: SourceClaimIDs OR RelatedNFRIDs non-empty)."""
+    from governance.schemas import loader
+
+    schema = loader.load_schema("a70")
+    ext = schema.get("x-bsa-provenance-rules", {})
+    assert isinstance(ext, dict) and ext, (
+        "x-bsa-provenance-rules extension absent or wrong shape — "
+        "would silently disable the INV-08 cross-field check"
+    )
+    any_of = ext.get("at_least_one_of_non_empty")
+    assert isinstance(any_of, list) and any_of, (
+        "at_least_one_of_non_empty must be a non-empty list of A70 columns"
+    )
+    # Both INV-08 provenance fields must be in the list.
+    assert set(any_of) >= {"SourceClaimIDs", "RelatedNFRIDs"}, (
+        f"at_least_one_of_non_empty missing INV-08 provenance field(s). "
+        f"Got {any_of}"
+    )
+    # Both fields must actually exist as A70 properties.
+    a70_props = schema["properties"]
+    for field in any_of:
+        assert field in a70_props, (
+            f"field {field!r} listed in provenance rules but not in A70 "
+            f"property set — would never have content to check"
+        )
+
+
+def test_a70_invest_rules_schema_extension_structure() -> None:
+    """v1.0.4+1 polish (Codex v1.0.3 LOW): pin x-bsa-invest-rules shape
+    (INVEST-A51 coupling: INVESTStatus != 'pass' requires A51Ref)."""
+    from governance.schemas import loader
+
+    schema = loader.load_schema("a70")
+    ext = schema.get("x-bsa-invest-rules", {})
+    assert isinstance(ext, dict) and ext, (
+        "x-bsa-invest-rules extension absent or wrong shape — "
+        "would silently disable the INVEST-A51 coupling check"
+    )
+    # The boolean flag is the entire rule semantic. If a future edit
+    # flips this to false (or removes it), the cross-field check
+    # silently no-ops; pin as True.
+    assert ext.get("requires_a51_when_status_not_pass") is True, (
+        "requires_a51_when_status_not_pass must be exactly True; "
+        "any other value disables the executable check"
+    )
+    # INVESTStatus + A51Ref must both exist as A70 properties (sanity
+    # for the cross-field check).
+    a70_props = schema["properties"]
+    for field in ("INVESTStatus", "A51Ref"):
+        assert field in a70_props, (
+            f"A70 property {field!r} missing — INVEST rule would never trigger"
+        )
+
+
+# ---- 7b. v1.0.4+1 polish — malformed-extension-shape isinstance guards ----
+# Pre-fix, all four extension handlers in write_validator did
+# `if not ext: return []` then `ext.get(...)`. A truthy non-dict
+# value (e.g., schema author types `x-bsa-invest-rules: "please
+# enforce"`) would AttributeError on `.get`. Codex v1.0.3 LOW.
+
+
+@pytest.mark.parametrize(
+    "extension_key,handler_name",
+    [
+        ("x-bsa-claim-type-rules", "_apply_claim_type_rules"),
+        ("x-bsa-measurability-rules", "_apply_measurability_rules"),
+        ("x-bsa-provenance-rules", "_apply_provenance_rules"),
+        ("x-bsa-invest-rules", "_apply_invest_rules"),
+    ],
+)
+def test_malformed_extension_shape_does_not_crash_handler(
+    extension_key: str, handler_name: str,
+) -> None:
+    """All four cross-field handlers must treat a malformed (non-dict)
+    extension shape as a silent no-op. Pre-fix, `.get` would raise
+    AttributeError on a truthy non-dict value."""
+    from governance.schemas import write_validator
+
+    handler = getattr(write_validator, handler_name)
+    row: dict = {}  # any row shape — handlers should bail before reading
+    for malformed_value in (
+        "please enforce",      # string truthy
+        ["a", "b"],            # list truthy
+        42,                    # int truthy
+        True,                  # bool truthy
+    ):
+        schema = {extension_key: malformed_value}
+        # Must not raise — caught silently as "extension absent".
+        try:
+            out = handler(row, schema, row_idx=1)
+        except AttributeError as exc:
+            pytest.fail(
+                f"{handler_name} crashed on malformed {extension_key} "
+                f"value {malformed_value!r}: {exc}"
+            )
+        assert out == [], (
+            f"{handler_name} returned violations for malformed "
+            f"{extension_key}={malformed_value!r}; expected silent no-op"
+        )
+
+
 # ---- 8. v1.0.2 H-sec-4 — marker filename↔marker_id + FormatChecker ----
 # Pre-H-sec-4 the marker validator ran jsonschema WITHOUT FormatChecker,
 # so `format: date-time` on timestamp was advisory only. A marker with

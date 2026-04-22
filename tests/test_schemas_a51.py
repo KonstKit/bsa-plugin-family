@@ -200,12 +200,41 @@ def test_all_golden_fixture_rows_validate(
             "NextAction": "Decide on phase-2 scope",
             "ResolutionStatus": "wontfix",
         },
+        {
+            # v1.0.4+1 polish: prefixed `discovery.dN` form must validate.
+            # Sysco engagement raised hard-block missing-source rows
+            # against `discovery.d1` (see Phase-2.5 pilot blocker note in
+            # docs/retros/sprint_5_v1_0_4_ux_pass.md). Pre-fix, the bare
+            # `d1` was the only legal form and Sysco's rows failed F5.
+            "A51Ref": "A51-MISS-001",
+            "IssueType": "missing_source",
+            "Severity": "high",
+            "BlockingStatus": "hard",
+            "RaisedByStage": "discovery.d1",
+            "RelatedSourceID": "",
+            "RelatedClaimID": "MISS-001",
+            "NextAction": "Request formal SLA/NFR doc from Ross/JB",
+            "ResolutionStatus": "open",
+        },
+        {
+            "A51Ref": "A51-MISS-099",
+            "IssueType": "missing_source",
+            "Severity": "medium",
+            "BlockingStatus": "soft",
+            "RaisedByStage": "discovery.d5",
+            "RelatedSourceID": "S-099",
+            "RelatedClaimID": "",
+            "NextAction": "Re-extract from updated source",
+            "ResolutionStatus": "open",
+        },
     ],
     ids=[
         "minimal-numeric-ref",
         "category-prefix-INJ",
         "category-prefix-CNTR-with-multi-sources",
         "discovery-complete-stage",
+        "prefixed-discovery-d1-stage",
+        "prefixed-discovery-d5-stage",
     ],
 )
 def test_representative_rows_validate(
