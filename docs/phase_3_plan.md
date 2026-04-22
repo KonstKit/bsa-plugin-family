@@ -14,7 +14,7 @@ Phase 2.5 gate unblocked by Sprint 5 (schema enforcement + reconciliation audito
 | **bsa-story-writer** | A59 claims + A62 NFRs + H2 delivery packet | `A70_story_register.csv` | A59 + A62 |
 | **bsa-test-scenario-builder** | A70 stories + A59 claims + A62 NFRs | `A71_test_scenario_register.csv` | A70 + A62 |
 | **bsa-traceability-matrix** | A70 + A59 + A50 | `A72_traceability_matrix.csv` | A70 + A59 + A50 |
-| **bsa-backlog-bridge** | A70 + A71 + A72 + H1-H4 | `handoff/backlog_export.{json,csv}` + platform-specific files | all of A70-A72 |
+| **bsa-backlog-bridge** | A70 + A72 + A50 + H1-H4 (NOT A71 — test scenarios are out-of-scope for backlog import; see Sprint 9 retro) | `handoff/backlog_export.{json,csv}` + platform-specific files | A70 + A72 |
 
 ## New canonical artifacts (4 CSVs)
 

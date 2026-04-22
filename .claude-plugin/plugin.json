@@ -20,10 +20,10 @@
   ],
   "canonPolicyVersion": {
     "semver": "1.0.0",
-    "hash_prefix": "3c32c861",
-    "hash_full": "3c32c86101a4a6945b4bed2cd48285a6cd755ab57fc097c6496335244a5e476e",
+    "hash_prefix": "0d7654f6",
+    "hash_full": "0d7654f6d3672ca49b38f18efa73d697548d876d756b47075befe11588885a52",
     "computed_by": "scripts/compute_canon_hash.py",
-    "computed_at": "2026-04-22T18:30:00Z",
+    "computed_at": "2026-04-22T21:00:00Z",
     "_comment": "Custom field — Claude Code preserves unknown top-level fields. Recomputed manually via scripts/compute_canon_hash.py after any POLICY_GLOBS edit; tests/test_plugin_manifest.py::test_manifest_canon_hash_matches_current_script_output fails locally on any drift between this value and the live script output."
   }
 }

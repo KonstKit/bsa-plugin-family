@@ -5,7 +5,7 @@ description: Build Gherkin-style Given/When/Then test scenarios in A71_test_scen
 
 # BSA Test Scenario Builder
 
-Run this skill after `bsa-story-writer` has promoted `A70_story_register.csv`. Produces test scenarios that `bsa-backlog-bridge` consumes (ships scenarios alongside stories to Jira/Linear/generic). NB: `bsa-traceability-matrix` does NOT read A71 — the matrix is keyed off stories, not scenarios; scenario coverage lives in this skill's own `test_scenario_authoring_report.md`.
+Run this skill after `bsa-story-writer` has promoted `A70_story_register.csv`. Produces the test-engineering surface — A71 is consumed directly by QA tooling and human reviewers (not by any other Phase-3 skill at v1.1.0). NB: `bsa-traceability-matrix` does NOT read A71 (the matrix is keyed off stories, not scenarios); `bsa-backlog-bridge` does NOT read A71 (test scenarios are out-of-scope for backlog import). Scenario coverage lives in this skill's own `test_scenario_authoring_report.md`. A future runnable-test exporter (filed as `[TODO-S8-01-RUNNABLE-EXPORT]`) would be the first downstream consumer.
 
 ## Scope
 
@@ -88,7 +88,10 @@ Invoked by `/bsa-dev-handoff` (Phase-3 composite command) as the third stage: `p
 
 May also be invoked directly via `/bsa-dev-handoff --only=test-scenario` for debugging / partial re-runs; prerequisites (phase3.story.pass + promoted A70) must be satisfied.
 
-Downstream consumer is `bsa-backlog-bridge` only — it reads the promoted A71 to attach scenario provenance to exported stories. `bsa-traceability-matrix` does NOT read A71 (the matrix is keyed off stories, not scenarios). Neither downstream invokes this skill directly (INV-06 composition-via-orchestrator).
+No Phase-3 downstream skill reads A71 mechanically at v1.1.0:
+- `bsa-traceability-matrix` is keyed off stories (A70), not scenarios.
+- `bsa-backlog-bridge` is keyed off stories + matrix (A70 + A72) — test scenarios are out-of-scope for backlog import (they live in QA tooling, not the issue tracker).
+A71 is consumed directly by QA tooling and human reviewers. A future runnable-test exporter (`[TODO-S8-01-RUNNABLE-EXPORT]`) would be the first downstream skill consumer. None of the above invokes this skill directly (INV-06 composition-via-orchestrator).
 
 ## Cross-refs
 

@@ -98,6 +98,11 @@ def _expected_stage_verdict(marker_id: str) -> tuple[str | None, str | None]:
         "discovery.pivot": ("discovery.exit", "PIVOT"),
         "discovery.more_research": ("discovery.exit", "MORE_RESEARCH"),
         "discovery.no_go": ("discovery.exit", "NO_GO"),
+        # Phase-3 terminal markers (Sprint 9 US-S9-01..05). Don't fit
+        # the `^phase3\.([a-z_]+)\.pass$` patterned-match because
+        # neither ends in `.pass`; both get explicit EXACT entries.
+        "phase3.backlog_exported": ("phase3.backlog", "PASS"),
+        "pipeline.phase3.complete": ("phase3.complete", "PASS"),
     }
     if marker_id in EXACT:
         return EXACT[marker_id]
@@ -196,6 +201,33 @@ def _validate_marker_json(path: str, content: str) -> list[str]:
                 f"which implies verdict={expected_verdict!r}"
             )
     return violations
+
+
+def _validate_jira_export_json(path: str, content: str) -> list[str]:
+    """Parse Jira export JSON + validate against backlog_export_jira schema.
+
+    Sprint 9 US-S9-01. The export is structured (top-level object with
+    discriminator + issues array), not row-by-row CSV, so it gets its
+    own validator instead of `_make_csv_validator`. Schema enforces
+    the discriminator (`export_format` must be exactly 'jira'), the
+    Jira REST v3 issue shape, and the BSA provenance block on every
+    issue. Path argument is accepted for dispatcher signature but
+    not used (no path-dependent bindings)."""
+    import jsonschema  # lazy
+
+    del path  # not used for export JSON
+    try:
+        doc = json.loads(content)
+    except json.JSONDecodeError as exc:
+        return [f"<json>: invalid JSON — {exc}"]
+    schema = _loader.load_schema("backlog_export_jira")
+    validator = jsonschema.Draft202012Validator(
+        schema, format_checker=jsonschema.FormatChecker()
+    )
+    return [
+        f"{'.'.join(str(p) for p in e.absolute_path) or '<root>'}: {e.message}"
+        for e in sorted(validator.iter_errors(doc), key=lambda e: list(e.absolute_path))
+    ]
 
 
 def _validate_a48_markdown(path: str, content: str) -> list[str]:
@@ -636,6 +668,28 @@ _DISPATCHER: list[_DispatcherEntry] = [
         re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A72_[a-z_]+\.csv$"),
         "a72",
         _make_csv_validator("a72"),
+    ),
+    # Phase 3 (Sprint 9 US-S9-01..03): bsa-backlog-bridge exports.
+    # First F5 dispatcher entries under analysis/handoff/ rather than
+    # canonical/. Exports are derived terminal output (not promoted
+    # canonical state); we still gate them at write time so a
+    # malformed export — wrong field name, missing provenance, broken
+    # platform shape — fails the write rather than landing as a
+    # silent half-export the consumer's tool would reject.
+    (
+        re.compile(r"(?:^|/)analysis/handoff/backlog_export_jira\.json$"),
+        "backlog_export_jira",
+        _validate_jira_export_json,
+    ),
+    (
+        re.compile(r"(?:^|/)analysis/handoff/backlog_export_linear\.csv$"),
+        "backlog_export_linear",
+        _make_csv_validator("backlog_export_linear"),
+    ),
+    (
+        re.compile(r"(?:^|/)analysis/handoff/backlog_export_generic\.csv$"),
+        "backlog_export_generic",
+        _make_csv_validator("backlog_export_generic"),
     ),
 ]
 

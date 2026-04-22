@@ -46,12 +46,14 @@
 - `discovery.no_go.json`
 
 ## Phase 3 Markers (Sprint 6+; opt-in via `/bsa-dev-handoff`)
-- `phase3.nfr.pass.json` (emitted after bsa-nfr-collector promotes A62)
-- `phase3.story.pass.json` (emitted after bsa-story-writer promotes A70)
+- `phase3.nfr.pass.json` (emitted after bsa-nfr-collector promotes A62; Sprint 6)
+- `phase3.story.pass.json` (emitted after bsa-story-writer promotes A70; Sprint 7)
 - `phase3.test_scenario.pass.json` (emitted after bsa-test-scenario-builder promotes A71; Sprint 8 US-S8-01)
 - `phase3.traceability.pass.json` (emitted after bsa-traceability-matrix promotes A72; Sprint 8 US-S8-02)
+- `phase3.backlog_exported.json` (emitted after bsa-backlog-bridge writes the requested platform exports under analysis/handoff/; Sprint 9 US-S9-01..03)
+- `pipeline.phase3.complete.json` (emitted at the end of a full /bsa-dev-handoff chain — NOT under --only=backlog-bridge; Sprint 9)
 
-Additional Phase-3 markers land in subsequent sprints as each owning skill implements: `phase3.backlog_exported.json` + `pipeline.phase3.complete.json` (Sprint 9).
+Phase 3 marker alphabet is now closed at v1.1.0.
 
 ## Bridge Rule
 `stage1` may start from discovery only when both markers exist:

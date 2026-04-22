@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/backlog_export_generic.schema.json",
+  "title": "Generic backlog export row",
+  "description": "Schema for one row of analysis/handoff/backlog_export_generic.csv produced by bsa-backlog-bridge (Phase 3, US-S9-03). The 'paste-into-our-home-grown-tool' format — minimal CSV with the columns most likely to be useful: Title, Description, AcceptanceCriteria, Priority, plus full BSA provenance (StoryID, SourceClaimIDs, RelatedNFRIDs, INVESTStatus, A51Ref). No platform-specific fields (Status, Estimate, Labels) — those are tool-specific overlays. Read-only with respect to canonical state. Schema-enforced via F5 dispatcher entry under analysis/handoff/backlog_export_generic.csv.",
+  "type": "object",
+  "required": [
+    "Title",
+    "Description",
+    "AcceptanceCriteria",
+    "Priority",
+    "StoryID",
+    "SourceClaimIDs",
+    "RelatedNFRIDs",
+    "INVESTStatus",
+    "A51Ref"
+  ],
+  "properties": {
+    "Title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Sourced from A70.Title."
+    },
+    "Description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Sourced from A70.StoryText (the canonical 'As a <persona>, I want <goal>, so that <benefit>' shape)."
+    },
+    "AcceptanceCriteria": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Sourced from A70.AcceptanceCriteria verbatim. Whatever separator A70 used (semicolon, newline) carries through unchanged so the consumer's tooling can re-split as it sees fit."
+    },
+    "Priority": {
+      "type": "string",
+      "enum": ["level-1", "level-2", "level-3"],
+      "description": "Verbatim from A70.Priority — generic format does NOT translate to platform-specific tiers; consumers map however they like."
+    },
+    "StoryID": {
+      "type": "string",
+      "pattern": "^STORY-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Verbatim A70.StoryID. Required for drift detection."
+    },
+    "SourceClaimIDs": {
+      "type": "string",
+      "pattern": "^(?:C-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]C-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Verbatim A70.SourceClaimIDs. Empty allowed when RelatedNFRIDs is non-empty."
+    },
+    "RelatedNFRIDs": {
+      "type": "string",
+      "pattern": "^(?:NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Verbatim A70.RelatedNFRIDs."
+    },
+    "INVESTStatus": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "needs-splitting",
+        "needs-estimation",
+        "needs-testable-acceptance",
+        "needs-negotiation",
+        "escalate"
+      ],
+      "description": "Verbatim A70.INVESTStatus. Lets the consumer surface deferred items in their own backlog UI."
+    },
+    "A51Ref": {
+      "type": "string",
+      "pattern": "^(?:A51-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]A51-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Verbatim A70.A51Ref. Required (non-empty) when INVESTStatus != 'pass' — same coupling as A70 enforces; the bridge preserves the linkage for the consumer."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for diff stability + idempotency.",
+    "order": [
+      "Title",
+      "Description",
+      "AcceptanceCriteria",
+      "Priority",
+      "StoryID",
+      "SourceClaimIDs",
+      "RelatedNFRIDs",
+      "INVESTStatus",
+      "A51Ref"
+    ]
+  },
+  "x-bsa-provenance-rules": {
+    "_comment": "INV-08 carries through to the export — every row MUST carry non-empty SourceClaimIDs OR RelatedNFRIDs (mirrors A70 schema's same-named extension). Reuses the generalized _apply_provenance_rules handler in write_validator.py.",
+    "at_least_one_of_non_empty": ["SourceClaimIDs", "RelatedNFRIDs"],
+    "rationale": "An export row with both provenance fields empty would be a backlog item the consumer can't trace back to a claim or NFR — defeats the whole point of the bridge. Schema-enforced at write time."
+  },
+  "x-bsa-invest-rules": {
+    "_comment": "INVESTStatus ↔ A51Ref coupling carries through to the export. INVESTStatus != 'pass' MUST co-populate A51Ref (mirrors A70 schema's same-named extension). Reuses the generalized _apply_invest_rules handler in write_validator.py.",
+    "requires_a51_when_status_not_pass": true,
+    "rationale": "A deferred backlog item without an A51 route is silently abandoned work. The bridge preserves the A70-level coupling so the consumer's import retains the deferred-decision linkage."
+  }
+}

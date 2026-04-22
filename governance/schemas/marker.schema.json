@@ -55,7 +55,9 @@
         "phase3.nfr.pass",
         "phase3.story.pass",
         "phase3.test_scenario.pass",
-        "phase3.traceability.pass"
+        "phase3.traceability.pass",
+        "phase3.backlog_exported",
+        "pipeline.phase3.complete"
       ]
     },
     "stage": {
@@ -82,7 +84,9 @@
         "phase3.nfr",
         "phase3.story",
         "phase3.test_scenario",
-        "phase3.traceability"
+        "phase3.traceability",
+        "phase3.backlog",
+        "phase3.complete"
       ]
     },
     "verdict": {
@@ -159,10 +163,12 @@
     ]
   },
   "x-bsa-end-state-markers": {
-    "_comment": "Terminal markers. pipeline.complete is emitted after /bsa-handoff. handoff.ready is emitted after stage8 promote as the gate into handoff packaging.",
+    "_comment": "Terminal markers. handoff.ready is emitted after stage8 promote as the gate into handoff packaging. pipeline.complete is emitted after /bsa-handoff (main-cycle terminal). phase3.backlog_exported is emitted after bsa-backlog-bridge writes the requested platform exports under analysis/handoff/. pipeline.phase3.complete is the Phase-3 terminal marker — emitted at the end of a full /bsa-dev-handoff chain (NOT under --only=backlog-bridge).",
     "enum": [
       "handoff.ready",
-      "pipeline.complete"
+      "pipeline.complete",
+      "phase3.backlog_exported",
+      "pipeline.phase3.complete"
     ]
   },
   "x-bsa-bridge-markers": {

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/backlog_export_linear.schema.json",
+  "title": "Linear backlog export row",
+  "description": "Schema for one row of analysis/handoff/backlog_export_linear.csv produced by bsa-backlog-bridge (Phase 3, US-S9-02). Linear's CSV import accepts a column subset (Title, Description, Status, Priority, Labels, Assignee, Estimate); the bridge emits exactly that subset plus BSA provenance columns (StoryID, SourceClaimIDs, RelatedNFRIDs) so the export is idempotent + traceable. Read-only with respect to canonical state. Schema-enforced via F5 dispatcher entry under analysis/handoff/backlog_export_linear.csv.",
+  "type": "object",
+  "required": [
+    "Title",
+    "Description",
+    "Status",
+    "Priority",
+    "Labels",
+    "Estimate",
+    "StoryID",
+    "SourceClaimIDs",
+    "RelatedNFRIDs"
+  ],
+  "properties": {
+    "Title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Linear issue title. Sourced from A70.Title."
+    },
+    "Description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Markdown body: A70.StoryText followed by an 'Acceptance criteria' section. Linear renders Markdown natively."
+    },
+    "Status": {
+      "type": "string",
+      "enum": ["Backlog", "Todo"],
+      "description": "Initial Linear status. Bridge defaults to 'Backlog' for INVEST-deferred stories (INVESTStatus != 'pass') and 'Todo' for INVEST-pass stories. Closed statuses (In Progress, Done, Canceled) are out of scope — Linear teams own lifecycle post-import."
+    },
+    "Priority": {
+      "type": "string",
+      "enum": ["1", "2", "3"],
+      "description": "Linear priority (1 = Urgent, 2 = High, 3 = Medium). Maps from A70.Priority: level-1 → 1, level-2 → 2, level-3 → 3."
+    },
+    "Labels": {
+      "type": "string",
+      "pattern": "^(?=(?:[^,]+,)*bsa-export(?:,|$))(?=(?:[^,]+,)*level-[1-3](?:,|$))(?=(?:[^,]+,)*invest-(?:pass|needs-splitting|needs-estimation|needs-testable-acceptance|needs-negotiation|escalate)(?:,|$))(?!(?:[^,]+,)*bsa-export(?:,[^,]+)*,bsa-export(?:,|$))(?!(?:[^,]+,)*level-[1-3](?:,[^,]+)*,level-[1-3](?:,|$))(?!(?:[^,]+,)*invest-(?:pass|needs-splitting|needs-estimation|needs-testable-acceptance|needs-negotiation|escalate)(?:,[^,]+)*,invest-(?:pass|needs-splitting|needs-estimation|needs-testable-acceptance|needs-negotiation|escalate)(?:,|$))[a-z0-9_\\-]+(?:,[a-z0-9_\\-]+)*$",
+      "description": "Comma-separated Linear labels. Schema enforces (via 3 positive + 3 negative lookaheads) that the comma list contains EXACTLY ONE of each required tag class: 'bsa-export' provenance tag + a 'level-1|2|3' priority tier (mapping verbatim from A70.Priority) + an 'invest-*' tier (one of pass / needs-splitting / needs-estimation / needs-testable-acceptance / needs-negotiation / escalate, prefixed). Negative lookaheads catch contradictory duplicates: 'bsa-export,level-1,level-2,invest-pass' (two priority tiers), 'bsa-export,level-1,invest-pass,invest-needs-estimation' (two INVEST tiers — Linear has no separate INVESTStatus field to disambiguate, so this would be silently broken), and duplicate 'bsa-export' all fail validation. Per-tag character class is lowercase + alphanumeric + hyphen + underscore. Operators may add extra labels post-export; the schema accepts any number of extras as long as the three required-tag classes appear EXACTLY ONCE each."
+    },
+    "Estimate": {
+      "type": "string",
+      "enum": ["1", "2", "3", "5", "8", "13", ""],
+      "description": "Linear estimate (Fibonacci). Maps from A70.EstimationHint: xs→1, s→2, m→3, l→5, xl→8, unknown→empty string. Empty string is the explicit 'no hint' value (Linear leaves the field blank on import)."
+    },
+    "StoryID": {
+      "type": "string",
+      "pattern": "^STORY-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Provenance: A70.StoryID. Linear stores this as a custom field (or in description footer if customfields are unavailable on the team's plan). Required for downstream drift detection."
+    },
+    "SourceClaimIDs": {
+      "type": "string",
+      "pattern": "^(?:C-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]C-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Provenance: A70.SourceClaimIDs verbatim (semicolon/slash list). Empty allowed when RelatedNFRIDs is non-empty (mirrors A70 INV-08)."
+    },
+    "RelatedNFRIDs": {
+      "type": "string",
+      "pattern": "^(?:NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Provenance: A70.RelatedNFRIDs verbatim. Empty allowed when SourceClaimIDs is non-empty."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for diff stability. Linear-import-required columns first (Title..Estimate), BSA provenance columns after. Re-running the bridge produces byte-identical output (apart from the source A70 timestamp embedded in any free-text bodies the operator added).",
+    "order": [
+      "Title",
+      "Description",
+      "Status",
+      "Priority",
+      "Labels",
+      "Estimate",
+      "StoryID",
+      "SourceClaimIDs",
+      "RelatedNFRIDs"
+    ]
+  },
+  "x-bsa-provenance-rules": {
+    "_comment": "INV-08 carries through to the export — every row MUST carry non-empty SourceClaimIDs OR RelatedNFRIDs (mirrors A70 schema's same-named extension). Reuses the generalized _apply_provenance_rules handler in write_validator.py — same hook-time enforcement as A70 itself.",
+    "at_least_one_of_non_empty": ["SourceClaimIDs", "RelatedNFRIDs"],
+    "rationale": "An export row with both provenance fields empty would be a backlog item the consumer can't trace back to a claim or NFR — defeats the whole point of the bridge. Schema-enforced at write time so a bridge bug emitting empty provenance fails the F5 hook."
+  }
+}

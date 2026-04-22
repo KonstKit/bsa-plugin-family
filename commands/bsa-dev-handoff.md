@@ -22,7 +22,7 @@ Run the Phase-3 dev-handoff extension after a successful main-cycle handoff. Tur
 - `handoff.ready.json` marker present (/bsa-handoff completed).
 - `analysis/handoff/H1_exec_brief.md` + `H2_delivery_packet.md` + `H3_validation_packet.md` + `H4_open_items_packet.md` + `handoff_manifest.json` present.
 - Canonical `A59_claim_register.csv` + `A50_source_register.csv` + `A51_issue_route_register.csv` promoted (these are the sources the Phase-3 skills read).
-- Phase-3 skills installed: `bsa-nfr-collector`, `bsa-story-writer`, `bsa-test-scenario-builder`, `bsa-traceability-matrix`, `bsa-backlog-bridge`. As of Sprint 8 US-S8-02: `bsa-nfr-collector` (Sprint 6), `bsa-story-writer` (Sprint 7), `bsa-test-scenario-builder` (Sprint 8 US-S8-01), and `bsa-traceability-matrix` (Sprint 8 US-S8-02) are fully implemented; only `bsa-backlog-bridge` (Sprint 9) remains as a scaffold — partial runs via `--only=nfr` / `--only=story` / `--only=test-scenario` / `--only=traceability` are the supported full path until Sprint 9 closes.
+- Phase-3 skills installed: `bsa-nfr-collector` (Sprint 6), `bsa-story-writer` (Sprint 7), `bsa-test-scenario-builder` (Sprint 8 US-S8-01), `bsa-traceability-matrix` (Sprint 8 US-S8-02), `bsa-backlog-bridge` (Sprint 9 US-S9-01..03). All five skills are now fully implemented — Phase-3 chain runs end-to-end as of v1.1.0.
 
 ## What this command does
 
@@ -32,7 +32,7 @@ Delegate to `bsa-orchestrator`, which composes the 5 Phase-3 skills:
 2. **bsa-story-writer** (Sprint 7 — implemented) reads promoted A59 + A62, authors `A70_story_register.csv` per INVEST criteria. INV-08 enforced: every story carries SourceClaimIDs or RelatedNFRIDs. Emits `phase3.story.pass.json`.
 3. **bsa-test-scenario-builder** (Sprint 8 US-S8-01 — implemented) reads A70 + A62 + A59, authors `A71_test_scenario_register.csv` in Gherkin Given-When-Then. INV-10 enforced: every scenario carries a single SourceStoryID. Measurable NFRs drive at least one scenario each (NFR-coverage rule: Then-clause references the NFR's Metric AND contains its literal Target string from A62). AutomationStatus=deferred rows co-populate A51Ref. Emits `phase3.test_scenario.pass.json`.
 4. **bsa-traceability-matrix** (Sprint 8 US-S8-02 — implemented) builds `A72_traceability_matrix.csv` linking A70 stories ↔ A59 claims ↔ A50 sources (three-way join, one row per Story↔ClaimID↔SourceID triple). LinkType=`a51-routed` rows MUST co-populate A51Ref (`x-bsa-deferral-rules` with `status_field='LinkType'` override). Foreign-key resolution + claim-source consistency enforced by skill self-validation (`x-bsa-foreign-key-rules`, documentary at the schema layer). Emits `phase3.traceability.pass.json`. Orphan report + coverage report (KPI-006: story-to-claim coverage ratio) are derived views.
-5. **bsa-backlog-bridge** (Sprint 9 — scaffold) produces `analysis/handoff/backlog_export_{jira.json,linear.csv,generic.csv}` per the `--platform` flag. Strictly read-only on canonical state. Emits `phase3.backlog_exported.json` on success.
+5. **bsa-backlog-bridge** (Sprint 9 US-S9-01..03 — implemented) produces `analysis/handoff/backlog_export_{jira.json,linear.csv,generic.csv}` per the `--platform` flag. Strictly read-only on canonical state; F5 dispatcher gates each export shape (Sprint 9 added `analysis/handoff/` paths to F5 for the first time). Content-idempotent — same A70/A72 input → byte-identical CSV output (Linear/generic) and byte-identical Jira `issues[]` content (the Jira top-level `generated_at` metadata field is the only across-run variation). INV-08 provenance preserved on every exported issue (`x-bsa-provenance-rules` enforced on Linear + generic CSVs; `anyOf` on the Jira `bsa_provenance` block). Generic export additionally enforces INVESTStatus ↔ A51Ref coupling (`x-bsa-invest-rules`). Emits `phase3.backlog_exported.json` on success.
 6. Orchestrator emits `pipeline.phase3.complete.json` after all five skills pass.
 
 Each inter-skill transition uses the two-key promotion gate established in Sprint 3 (evidence-binding + audit-pass marker), reusing the main-cycle machinery.
@@ -45,7 +45,7 @@ Each inter-skill transition uses the two-key promotion gate established in Sprin
 | `story` | phase3.nfr.pass + promoted A62 |
 | `test-scenario` | phase3.story.pass + promoted A70 + promoted A62 |
 | `traceability` | phase3.story.pass + promoted A70 + promoted A59 + promoted A50 + promoted A62 (NFR-mediated traces require A62; phase3.nfr.pass for marker-parity) |
-| `backlog-bridge` | phase3.test_scenario.pass + phase3.traceability.pass + promoted A70 + A71 + A72 |
+| `backlog-bridge` | phase3.story.pass + phase3.traceability.pass + promoted A70 + A72 (+ A50 for source-name lookups). NB: bsa-backlog-bridge does NOT read A71 — test scenarios are out-of-scope for backlog import; the bridge is keyed off stories + matrix, not scenarios. |
 
 Partial runs are supported so a single Phase-3 skill can be debugged / retried without re-executing upstream work.
 
@@ -59,7 +59,7 @@ Under `analysis/runtime/ready/`:
 - `phase3.backlog_exported.json`
 - `pipeline.phase3.complete.json`
 
-These marker IDs land in `governance/schemas/marker.schema.json` as each owning sprint ships the corresponding skill. As of Sprint 8 US-S8-02: `phase3.nfr.pass` (Sprint 6), `phase3.story.pass` (Sprint 7), `phase3.test_scenario.pass` (Sprint 8 US-S8-01), and `phase3.traceability.pass` (Sprint 8 US-S8-02) are in the schema; `phase3.backlog_exported` and `pipeline.phase3.complete` (Sprint 9) are added with their owning sprint.
+These marker IDs all land in `governance/schemas/marker.schema.json` as of Sprint 9 (US-S9-01..03 added `phase3.backlog_exported` + `pipeline.phase3.complete`; the other four were added by their owning sprints — `phase3.nfr.pass` Sprint 6, `phase3.story.pass` Sprint 7, `phase3.test_scenario.pass` Sprint 8 US-S8-01, `phase3.traceability.pass` Sprint 8 US-S8-02). H-sec-4 binds them all: the four `phase3.*.pass` markers via the patterned-match `^phase3\\.([a-z_]+)\\.pass$`; `phase3.backlog_exported` + `pipeline.phase3.complete` via explicit EXACT entries (neither ends in `.pass`).
 
 ## Output
 
@@ -91,5 +91,5 @@ After `pipeline.phase3.complete.json`:
 - `skills/bsa-story-writer/SKILL.md` — implemented (Sprint 7 US-S7-02).
 - `skills/bsa-test-scenario-builder/SKILL.md` — implemented (Sprint 8 US-S8-01).
 - `skills/bsa-traceability-matrix/SKILL.md` — implemented (Sprint 8 US-S8-02).
-- `skills/bsa-backlog-bridge/SKILL.md` — scaffold (Sprint 9 US-S9-01..03).
+- `skills/bsa-backlog-bridge/SKILL.md` — implemented (Sprint 9 US-S9-01..03).
 - `commands/bsa-handoff.md` — upstream main-cycle handoff (prerequisite).
