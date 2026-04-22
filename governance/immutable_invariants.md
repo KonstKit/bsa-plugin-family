@@ -111,6 +111,46 @@ Governance anchor for future Phase 7 self-improvement loop.
 
 ---
 
+### INV-08: Story-claim provenance (Phase 3)
+**Statement:** Every `A70_story_register.csv` row MUST carry non-empty `SourceClaimIDs` (≥ 1 A59 ClaimID) OR non-empty `RelatedNFRIDs` (≥ 1 A62 NFRID). Stories authored from thin air — both provenance fields empty — are rejected at the F5 hook layer.
+
+**Rationale:** Mirrors INV-03 (no new claims in Stage 8 / handoff) but applied to user stories. A story without claim or NFR provenance is the Phase-3 equivalent of a hallucinated handoff — drift the operator can't trace back to source content.
+
+**Enforcement:**
+- `governance/schemas/a70.schema.json` — `x-bsa-provenance-rules.at_least_one_of_non_empty: ["SourceClaimIDs", "RelatedNFRIDs"]`
+- `governance/schemas/write_validator.py::_apply_provenance_rules` — F5 hook-time enforcement
+- The same `x-bsa-provenance-rules` extension carries through to backlog exports (`backlog_export_linear.schema.json`, `backlog_export_generic.schema.json`) + Jira export `bsa_provenance.anyOf` constraint — INV-08 propagates end-to-end through the bridge.
+
+**Override policy:** `requires_explicit_a51_route` — operators who genuinely want a story without claim/NFR provenance MUST raise an A51 `decision_needed` route documenting the rationale. The hook still rejects; the override is a workflow signal, not a schema bypass.
+
+---
+
+### INV-09: NFR measurability (Phase 3)
+**Statement:** Every `A62_nfr_register.csv` row of category `performance | availability | scalability` MUST carry non-empty `Metric` AND non-empty `Target` OR non-empty `A51Ref`. Qualitative categories (`usability | compliance | security | maintainability | observability | portability`) MAY omit `Metric+Target` BUT MUST populate `TestabilityNotes`.
+
+**Rationale:** Quantitative NFRs without measurable targets are aspirational, not requirements — they create the LLM-drift class where "Fast please." silently ships as a performance NFR. The Metric+Target pair (or A51 deferral) forces the authoring skill to either commit to a number OR record the open decision explicitly.
+
+**Enforcement:**
+- `governance/schemas/a62.schema.json` — `x-bsa-measurability-rules.quantitative_categories_requiring_metric_and_target: ["performance", "availability", "scalability"]`
+- `governance/schemas/write_validator.py::_apply_measurability_rules` — F5 hook-time enforcement
+
+**Override policy:** `requires_explicit_a51_route` — same pattern as INV-08. Measurability-deferred NFRs surface the gap via A51 instead of bypassing the schema.
+
+---
+
+### INV-10: Test-scenario provenance (Phase 3)
+**Statement:** Every `A71_test_scenario_register.csv` row MUST carry non-empty `SourceStoryID` resolving to an existing A70 row. Composite scenarios (multiple StoryIDs in one row) are forbidden — the SourceStoryID column is singular.
+
+**Rationale:** Test scenarios without story drivers are dead test code — they verify behavior nobody asked for. The 1:1 (or 1:N from one story to multiple scenarios) shape forces every test to trace back to a user-facing decision.
+
+**Enforcement:**
+- `governance/schemas/a71.schema.json` — `SourceStoryID` is in `required` AND has the singular pattern `^STORY-(?:[A-Z]{2,5}-)?[0-9]{3,4}$` (no semicolon-list).
+- F5 hook-time enforcement at write.
+
+**Override policy:** `none` — INV-10 is unconditional. A test scenario without a story driver is always wrong; the fix is to author the missing story first.
+
+---
+
 ## Scope of self-improvement (Phase 7 L1/L2)
 
 The future Phase 7 self-improvement loop may tune:
