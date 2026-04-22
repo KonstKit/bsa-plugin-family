@@ -1,0 +1,9 @@
+{
+  "marker_id": "phase3.nfr.pass",
+  "stage": "phase3.nfr",
+  "verdict": "PASS",
+  "timestamp": "2026-04-22T22:00:00Z",
+  "canon_policy_version": "1.1.0+hash:0d7654f6",
+  "canon_policy_version_hash": "0d7654f6",
+  "notes": "bsa-nfr-collector promoted A62 with NFR-PERF-001. Quantitative-category NFR with empty Target (the contested THRESHOLD) and non-empty Metric (the uncontested WHAT — first-response-minutes) — INV-09 satisfied via A51Ref alternative (A51-CONFL-001 captures the unresolved upstream Target contradiction). PASS verdict means the contract was followed: the contested Target deferred via A51, not silently picked one side; uncontested Metric retained."
+}

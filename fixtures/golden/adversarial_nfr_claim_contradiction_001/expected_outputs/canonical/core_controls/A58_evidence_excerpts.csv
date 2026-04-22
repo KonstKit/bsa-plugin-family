@@ -1,0 +1,3 @@
+ExcerptID,SourceID,Locator,ExcerptText,Notes
+E-001,S-001,"source_001_ops_runbook.md:L7","High-severity tickets receive an initial agent response within 4 hours of arrival.",Verbatim from ops runbook 'High-severity ticket SLA' section
+E-002,S-002,"source_002_pm_directive.md:L5","High-severity tickets MUST receive initial agent response within 30 minutes of arrival. Anything slower than 30 minutes counts as a customer-facing SLA breach.",Verbatim from PM Alex email; explicitly contradicts E-001's 4-hour window

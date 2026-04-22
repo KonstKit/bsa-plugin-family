@@ -1,0 +1,2 @@
+A51Ref,IssueType,Severity,BlockingStatus,RaisedByStage,RelatedSourceID,RelatedClaimID,NextAction,ResolutionStatus
+A51-CONFL-001,contradiction,high,hard,stage1,S-001;S-002,C-001;C-002,Resolve High-severity initial-response SLA: ops runbook (S-001) says 4 hours; PM Alex email (S-002) says 30 minutes. Stakeholder validation required before downstream NFR / story / scenario can carry a concrete Metric+Target.,open

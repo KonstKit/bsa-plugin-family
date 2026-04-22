@@ -1,0 +1,3 @@
+TraceID,StoryID,ClaimID,SourceID,LinkType,LinkStrength,A51Ref,Notes
+TR-001,STORY-001,C-001,S-001,a51-routed,high,A51-CONFL-001,"Story-001 trace via C-001 (ops runbook 4h SLA, T2 source → high). LinkType=a51-routed because the claim is contradicted; acceptance deferred until A51-CONFL-001 resolves."
+TR-002,STORY-001,C-002,S-002,a51-routed,high,A51-CONFL-001,"Story-001 trace via C-002 (PM email 30min SLA, T2 policy-directive source → high). LinkType=a51-routed because the claim is contradicted; acceptance deferred until A51-CONFL-001 resolves. Same LinkStrength as TR-001 because both upstream sources are T2."

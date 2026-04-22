@@ -1,0 +1,9 @@
+{
+  "marker_id": "phase3.test_scenario.pass",
+  "stage": "phase3.test_scenario",
+  "verdict": "PASS",
+  "timestamp": "2026-04-22T22:10:00Z",
+  "canon_policy_version": "1.1.0+hash:0d7654f6",
+  "canon_policy_version_hash": "0d7654f6",
+  "notes": "bsa-test-scenario-builder promoted A71 with TS-001. AutomationStatus=deferred per x-bsa-deferral-rules — A51-CONFL-001 co-populated. Then-clause preserves both contradicted literals (4 hours / 30 minutes) rather than picking one. PASS verdict reflects contract adherence: deferred + A51 route + literal-preservation."
+}

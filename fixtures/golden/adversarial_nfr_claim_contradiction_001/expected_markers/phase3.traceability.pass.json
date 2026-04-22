@@ -1,0 +1,9 @@
+{
+  "marker_id": "phase3.traceability.pass",
+  "stage": "phase3.traceability",
+  "verdict": "PASS",
+  "timestamp": "2026-04-22T22:15:00Z",
+  "canon_policy_version": "1.1.0+hash:0d7654f6",
+  "canon_policy_version_hash": "0d7654f6",
+  "notes": "bsa-traceability-matrix promoted A72 with 2 trace rows (TR-001 + TR-002). Both LinkType=a51-routed per x-bsa-deferral-rules — A51-CONFL-001 co-populated on each. FK integrity satisfied (StoryID/ClaimID/SourceID all resolve in A70/A59/A50; A59[ClaimID].SourceID matches each row's SourceID — round-2 invariant applies_to_all_rows=true holds even for a51-routed rows). PASS verdict reflects contract adherence: contradicted traces deferred via A51 with full FK integrity preserved."
+}

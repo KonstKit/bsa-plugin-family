@@ -1,0 +1,13 @@
+{
+  "fixture_id": "adversarial_nfr_claim_contradiction_001",
+  "schema_version": 1,
+  "captured_at": "2026-04-22T22:00:00Z",
+  "authoring_mode": "synthetic_adversarial",
+  "_authoring_mode_comment": "Hand-authored Sprint 9 US-S9-04 adversarial fixture demonstrating Phase-3 contradictory-evidence handling. Two upstream sources disagree on a measurable target; the chain (A59 → A60 → A51 → A62 → A70 → A71 → A72) propagates the contradiction as A51-routed deferrals at every layer.",
+  "canon_policy_version": "1.1.0+hash:0d7654f6",
+  "plugin_version": "1.1.0",
+  "model_used": "n/a (synthetic fixture)",
+  "model_version_hash": "n/a (synthetic fixture)",
+  "_model_fields_comment": "model_used / model_version_hash will remain n/a — this fixture's whole point is to be a deterministic regression baseline, not a model-driven sample.",
+  "scenario_tags": ["adversarial", "phase-3", "contradiction", "a51-routed", "deferred-measurability", "invest-needs-negotiation"]
+}

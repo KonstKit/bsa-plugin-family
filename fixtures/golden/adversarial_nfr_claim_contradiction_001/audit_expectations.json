@@ -1,0 +1,46 @@
+{
+  "fixture_id": "adversarial_nfr_claim_contradiction_001",
+  "scenario": "Phase-3 contradictory-evidence regression baseline. Two upstream sources disagree on a measurable target (High-severity initial-response SLA: ops runbook says 4h; PM email says 30min). The chain (A59 → A60 → A51 → A62 → A70 → A71 → A72) MUST propagate the contradiction as A51-routed deferrals at every layer rather than silently picking one side.",
+  "expected_verdicts": {
+    "phase3.nfr.pass": "PASS",
+    "phase3.story.pass": "PASS",
+    "phase3.test_scenario.pass": "PASS",
+    "phase3.traceability.pass": "PASS"
+  },
+  "expected_invariants": [
+    "A51 has at least one IssueType=contradiction row referencing both contradicted ClaimIDs",
+    "A60 cross-link rows: each contradicted claim is captured as negative evidence for the other",
+    "Quantitative-category A62 NFR with empty Target (and non-empty Metric — the WHAT is uncontested; only the THRESHOLD is) carries non-empty A51Ref (INV-09 satisfied via alternative)",
+    "Every A70 story whose acceptance depends on a contradicted target carries INVESTStatus=needs-negotiation + non-empty A51Ref (x-bsa-invest-rules)",
+    "Every A71 scenario verifying a contradicted target carries AutomationStatus=deferred + non-empty A51Ref (x-bsa-deferral-rules)",
+    "Every A72 trace row touching a contradicted claim carries LinkType=a51-routed + non-empty A51Ref (x-bsa-deferral-rules with status_field=LinkType override)",
+    "Zero rows in any Phase-3 artifact silently pick one side of the contradiction"
+  ],
+  "expected_a51_routes": ["A51-CONFL-001"],
+  "expected_a51_issue_types_present": ["contradiction"],
+  "expected_phase3_counts": {
+    "a59_claims": 2,
+    "a60_negative_evidence_rows": 2,
+    "a62_nfrs": 1,
+    "a70_stories": 1,
+    "a71_scenarios": 1,
+    "a72_traces": 2,
+    "_comment": "Adversarial fixture intentionally minimal — 2 sources, 2 contradicted claims, 2 cross-link negative-evidence rows, 1 deferred NFR / story / scenario, 2 a51-routed trace rows (one per contradicted claim)."
+  },
+  "expected_contradiction_propagation": {
+    "_comment": "The 5 places the contradiction must surface (one per Phase-3 artifact + the A51 register itself). Drift in any of these paths means the chain silently picked one side or dropped the contradiction.",
+    "a51_route_id": "A51-CONFL-001",
+    "a51_issue_type": "contradiction",
+    "a62_a51_ref_set": true,
+    "a62_target_empty": true,
+    "a62_metric_non_empty": true,
+    "_a62_split_comment": "Metric (the WHAT — first-response-minutes) is uncontested; only Target (the THRESHOLD — 4 hours vs 30 minutes) is contradicted. So Target empty + Metric non-empty + A51Ref set is the correct shape; not Metric+Target both empty.",
+    "a70_invest_status": "needs-negotiation",
+    "a70_a51_ref_set": true,
+    "a71_automation_status": "deferred",
+    "a71_a51_ref_set": true,
+    "a72_link_type_all_rows": "a51-routed",
+    "a72_a51_ref_all_rows_set": true
+  },
+  "notes": "Regression baseline for Sprint 9 US-S9-04. Any diff between the fixture state on disk and committed expected_outputs/ signals drift in the Phase-3 contradiction-handling contract."
+}

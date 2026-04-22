@@ -1,0 +1,3 @@
+NegEvID,SourceID,ExcerptRef,RelatedClaimID,NegativeFinding,A51Ref,Notes
+NE-001,S-002,E-002,C-001,"PM Alex email asserts 30-minute initial-response window for High-severity, contradicting the 4-hour figure C-001 derives from the ops runbook (S-001).",A51-CONFL-001,Cross-link entry; A51 contradiction route captures the routing
+NE-002,S-001,E-001,C-002,"Ops runbook asserts 4-hour initial-response window for High-severity, contradicting the 30-minute figure C-002 derives from the PM email (S-002).",A51-CONFL-001,Cross-link entry; A51 contradiction route captures the routing

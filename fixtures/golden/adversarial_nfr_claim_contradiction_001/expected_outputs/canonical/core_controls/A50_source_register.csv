@@ -1,0 +1,3 @@
+SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,Priority,Language,DateOrVersion,Notes
+S-001,process_note,Support Ops Runbook — Triage SLA,internal ops team lead,readable,T2,high,en,2026-03-15,Authored-primary current-state runbook (signed off quarterly per team charter)
+S-002,policy_document,PM Alex Email Directive on Customer SLA,PM Alex (product role),readable,T2,high,en,2026-04-10,"Authored-primary policy directive from PM (active enterprise-SLA policy as of email date); same-tier as S-001. Per reliability_tier_spec.md, same-tier contradiction does NOT auto-resolve via tier hierarchy — A51 contradiction route is the contract-correct outcome."
