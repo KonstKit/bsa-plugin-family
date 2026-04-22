@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a71.schema.json",
+  "title": "A71 Test Scenario Register row",
+  "description": "Schema for one row of analysis/canonical/core_controls/A71_test_scenario_register.csv (Phase 3, US-S8-01). Each row is a test scenario keyed to a single A70 story (INV-10: SourceStoryID required). Producer: bsa-test-scenario-builder. Consumers: bsa-traceability-matrix (walks Scenario → Story → Claim → Source), bsa-backlog-bridge (ships scenarios alongside stories to Jira/Linear/generic). Scenario shape is Gherkin-style Given / When / Then; if RelatedNFRID is present, the Then-clause MUST embed the NFR's Metric+Target so the scenario asserts a measurable target rather than aspirational behavior (cross-field rule x-bsa-nfr-coverage-rules).",
+  "type": "object",
+  "required": [
+    "ScenarioID",
+    "Title",
+    "SourceStoryID",
+    "RelatedNFRID",
+    "Given",
+    "When",
+    "Then",
+    "Tags",
+    "Priority",
+    "AutomationStatus",
+    "A51Ref",
+    "Notes"
+  ],
+  "properties": {
+    "ScenarioID": {
+      "type": "string",
+      "pattern": "^TS-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Stable identifier TS-NNN or TS-XXX-NNN. Category prefix conventions match A51/A59/STORY (e.g., TS-PERF-001 for performance scenarios, TS-UX-042 for user-experience scenarios)."
+    },
+    "Title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Short imperative summary, Jira-title sized. Should read as the assertion the scenario proves (e.g., 'High-severity tickets page on-call within SLA')."
+    },
+    "SourceStoryID": {
+      "type": "string",
+      "pattern": "^STORY-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Required (INV-10) — every test scenario MUST trace to exactly one A70 story. A scenario that doesn't fit any story is either (a) covering an NFR-only verification (use the NFR-driven story or split the NFR into a story first) or (b) dead test code with no business signal. Single ID, NOT a list — composite scenarios should be split."
+    },
+    "RelatedNFRID": {
+      "type": "string",
+      "pattern": "^(?:NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4})?$",
+      "description": "Optional. Single A62 NFRID this scenario verifies. When non-empty, the Then-clause MUST embed the NFR's Metric+Target as the assertion (cross-field rule x-bsa-nfr-coverage-rules). Empty allowed for functional scenarios that don't verify an NFR target. Single ID for clarity — multi-NFR coverage requires multiple scenarios."
+    },
+    "Given": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Gherkin precondition. Multi-step preconditions joined by ' AND '. Should be observable workspace / system state, not implementation detail. Example: 'a Tier-1 customer has placed an order AND order status is `submitted`'."
+    },
+    "When": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Gherkin action — the trigger event the scenario tests. Single action per scenario; multiple actions = split into separate scenarios. Example: 'the order-status webhook fires with `delivered` payload'."
+    },
+    "Then": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Gherkin observable outcome. MUST be testable — a measurable observable, not a feeling. When RelatedNFRID is set, the Then-clause MUST reference the NFR's Metric (a recognizable paraphrase of the metric name is acceptable; a verbatim copy is not required) AND contain the literal Target string from A62 (whatever shape A62 chose for that row — `< 500`, `>= 99.9`, `500 ms`, etc.). The rationale: the assertion needs to be mechanically traceable back to the NFR's measurable target. Documentary at the schema layer (x-bsa-nfr-coverage-rules); skill-validated at write time. Multi-assertion outcomes joined by ' AND '. Example: NFR-PERF-001 with Metric='p95 latency ms', Target='< 500' → Then-clause 'the page-latency p95 is < 500 ms over a 10-minute window' — `< 500` is the literal Target string; `latency p95` recognizably paraphrases the metric name."
+    },
+    "Tags": {
+      "type": "string",
+      "pattern": "^(?:@[a-z0-9_\\-]+(?:,@[a-z0-9_\\-]+)*)?$",
+      "description": "Optional comma-separated Gherkin-style tags (e.g., '@smoke,@perf,@critical'). Lowercase + alphanumeric + hyphen + underscore only. Empty allowed."
+    },
+    "Priority": {
+      "type": "string",
+      "enum": ["level-1", "level-2", "level-3"],
+      "description": "Same enum as A70.Priority. Inherited from the SourceStoryID's Priority by default; may be raised (never lowered) by explicit override with A51 rationale (e.g., a regression risk surfaces during scenario authoring)."
+    },
+    "AutomationStatus": {
+      "type": "string",
+      "enum": [
+        "automated",
+        "partial",
+        "manual",
+        "deferred",
+        "not-automated"
+      ],
+      "description": "Where this scenario stands in the automation pipeline. 'automated' = exists in CI as a runnable test. 'partial' = automation exists but covers a subset of the assertion. 'manual' = scripted manual test, no automation. 'deferred' = automation blocked on something external (tooling, env, data) — MUST co-populate A51Ref. 'not-automated' = explicitly chosen manual-forever (compliance scenarios, exploratory checks). Any value other than 'automated' / 'partial' / 'manual' / 'not-automated' (i.e., 'deferred') triggers the cross-field A51 requirement."
+    },
+    "A51Ref": {
+      "type": "string",
+      "pattern": "^(?:A51-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]A51-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Optional A51 cross-reference. REQUIRED (non-empty) when AutomationStatus == 'deferred' — every deferred scenario must have a decision / action route recorded in A51 (parallel to A70.INVESTStatus + A51Ref coupling). Enforced at the cross-field level (x-bsa-deferral-rules)."
+    },
+    "Notes": {
+      "type": "string",
+      "description": "Free-form notes. Empty string allowed."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for diff stability.",
+    "order": [
+      "ScenarioID",
+      "Title",
+      "SourceStoryID",
+      "RelatedNFRID",
+      "Given",
+      "When",
+      "Then",
+      "Tags",
+      "Priority",
+      "AutomationStatus",
+      "A51Ref",
+      "Notes"
+    ]
+  },
+  "x-bsa-nfr-coverage-rules": {
+    "_comment": "DOCUMENTARY at the F5/schema layer today. When RelatedNFRID is non-empty, the Then-clause MUST reference the NFR's Metric (paraphrase OK — humans don't write snake_case identifiers in Gherkin) AND contain the literal Target string from A62 (whatever shape A62 chose for that row — `< 500`, `>= 99.9`, `500 ms`, etc. The unit may live in Metric or Target; the validator is comparing against whatever string A62 actually stored). The literal-Target requirement matters because the assertion is what becomes a runnable test threshold. Executable enforcement is currently bsa-test-scenario-builder's own output-validator responsibility because the rule needs cross-artifact A62 lookup at hook time (read NFR's Metric+Target then check Then-clause embeds them) — F5's path-bound dispatch can't naturally reach a sibling artifact at write time. Future hook-layer enforcement is filed as [TODO-S8-01-X-ARTIFACT-NFR-COVERAGE] in skills/bsa-test-scenario-builder/SKILL.md; will land when a cross-artifact validator pattern is established (US-S8-02 or later).",
+    "requires_then_embeds_metric_and_target_when_nfr_set": true,
+    "rationale": "Without this rule, a scenario can claim to cover NFR-PERF-001 (Metric='p95 latency ms', Target='< 500') but have a Then-clause like 'the agent gets paged' — no measurable assertion, no regression-detection signal, no real test."
+  },
+  "x-bsa-deferral-rules": {
+    "_comment": "AutomationStatus == 'deferred' MUST co-populate A51Ref. Same shape as A70.x-bsa-invest-rules — keeps the deferred-state-requires-A51-routing pattern uniform across Phase-3 artifacts.",
+    "requires_a51_when_status": "deferred",
+    "rationale": "A scenario marked deferred without an A51 route is silently abandoned automation work — the gap shows up months later in coverage reports with no decision trail. Co-populating A51Ref keeps the deferral visible and routable."
+  }
+}

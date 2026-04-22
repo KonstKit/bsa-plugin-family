@@ -53,7 +53,8 @@
         "discovery.more_research",
         "discovery.no_go",
         "phase3.nfr.pass",
-        "phase3.story.pass"
+        "phase3.story.pass",
+        "phase3.test_scenario.pass"
       ]
     },
     "stage": {
@@ -78,7 +79,8 @@
         "handoff",
         "pipeline",
         "phase3.nfr",
-        "phase3.story"
+        "phase3.story",
+        "phase3.test_scenario"
       ]
     },
     "verdict": {

@@ -22,6 +22,7 @@ Public API:
     iter_a60_rows(path)         -> Iterator[dict]              (A60 negative evidence rows)
     iter_a62_rows(path)         -> Iterator[dict]              (A62 NFR register rows, Phase 3)
     iter_a70_rows(path)         -> Iterator[dict]              (A70 story register rows, Phase 3)
+    iter_a71_rows(path)         -> Iterator[dict]              (A71 test scenario register rows, Phase 3)
     tier_to_claim_strength(t)   -> float                       (T1..T5 → ClaimStrength)
 
 Stdlib-only at import time. ``jsonschema`` is imported lazily by
@@ -327,6 +328,11 @@ def iter_a62_rows(path: Path) -> Iterator[dict[str, str]]:
 def iter_a70_rows(path: Path) -> Iterator[dict[str, str]]:
     """Yield A70 story-register rows (Phase 3, US-S7-01)."""
     return _iter_canonical_csv("a70", path)
+
+
+def iter_a71_rows(path: Path) -> Iterator[dict[str, str]]:
+    """Yield A71 test-scenario-register rows (Phase 3, US-S8-01)."""
+    return _iter_canonical_csv("a71", path)
 
 
 def _iter_canonical_csv(schema_name: str, path: Path) -> Iterator[dict[str, str]]:

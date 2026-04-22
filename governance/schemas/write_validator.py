@@ -114,6 +114,17 @@ def _expected_stage_verdict(marker_id: str) -> tuple[str | None, str | None]:
     m = re.match(r"^discovery\.d([1-5])\..+\.pass$", marker_id)
     if m:
         return f"d{m.group(1)}", "PASS"
+    # Phase-3 markers (Sprint 6+, US-S8-01 round-3 fix). For
+    # `phase3.<sub>.pass`, the implied stage is `phase3.<sub>` (the
+    # marker.schema.json stage enum carries phase3.nfr / phase3.story
+    # / phase3.test_scenario). Pre-fix, these markers passed H-sec-4
+    # without stage/verdict binding, so e.g.
+    # phase3.test_scenario.pass.json could carry stage="stage1",
+    # verdict="READY" and the H-sec-4 check would say nothing —
+    # only the schema-enum check flagged stage drift.
+    m = re.match(r"^phase3\.([a-z_]+)\.pass$", marker_id)
+    if m:
+        return f"phase3.{m.group(1)}", "PASS"
     return None, None
 
 
@@ -416,6 +427,52 @@ def _apply_provenance_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     ]
 
 
+def _apply_deferral_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
+    """Apply A71-style ``x-bsa-deferral-rules`` extension against a row.
+
+    Sprint 8 US-S8-01 — generalizes the v1.0.3 INVEST-A51 coupling
+    pattern (`_apply_invest_rules`) to a configurable status-field
+    + deferred-value pair. For A71:
+
+    * field = ``AutomationStatus``
+    * deferred value = ``"deferred"``
+    * when row[field] == deferred → A51Ref MUST be non-empty.
+
+    The handler reads the rule's ``requires_a51_when_status`` value
+    (a string — the specific deferred-state identifier) and the
+    ``status_field`` (defaults to a stable per-schema convention; A71
+    declares it implicitly via the rule shape). For A71 the
+    status_field is hard-coded to ``AutomationStatus`` because the
+    schema declaration carries no other plausible field; a future
+    schema could add ``"status_field": "..."`` to the rule dict to
+    override.
+
+    Defensive isinstance guard (v1.0.4+1 polish pattern): malformed
+    extension shape no-ops silently.
+    """
+    ext = schema.get("x-bsa-deferral-rules", {})
+    if not isinstance(ext, dict):
+        return []
+    deferred_value = ext.get("requires_a51_when_status")
+    if not deferred_value:
+        return []
+    # Status field defaults to AutomationStatus (the only A71 use-site
+    # at Sprint 8). Future schemas can override via "status_field".
+    status_field = ext.get("status_field", "AutomationStatus")
+    status = (row.get(status_field) or "").strip()
+    if status != deferred_value:
+        return []
+    a51_ref = (row.get("A51Ref") or "").strip()
+    if a51_ref:
+        return []
+    return [
+        f"line {row_idx} {status_field}={status!r}: A51Ref is empty — "
+        f"{deferred_value!r}-state rows MUST co-populate A51Ref so the "
+        f"deferral decision is tracked "
+        f"(x-bsa-deferral-rules → requires_a51_when_status={deferred_value!r})"
+    ]
+
+
 def _apply_invest_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     """Apply A70-style ``x-bsa-invest-rules`` extension against a row.
 
@@ -497,12 +554,16 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
                 #   x-bsa-measurability-rules (A62, v1.0.3): INV-09 seed
                 #   x-bsa-provenance-rules (A70, v1.0.3): INV-08 seed
                 #   x-bsa-invest-rules (A70, v1.0.3): INVEST-A51 coupling
-                # All four follow the C2 pattern: read extension,
+                #   x-bsa-deferral-rules (A71, Sprint 8): generalized
+                #     status+A51 coupling — any deferred row must
+                #     route through A51.
+                # All five follow the C2 pattern: read extension,
                 # apply per-row, emit line-numbered message on failure.
                 violations.extend(_apply_claim_type_rules(row, schema, row_idx))
                 violations.extend(_apply_measurability_rules(row, schema, row_idx))
                 violations.extend(_apply_provenance_rules(row, schema, row_idx))
                 violations.extend(_apply_invest_rules(row, schema, row_idx))
+                violations.extend(_apply_deferral_rules(row, schema, row_idx))
         except csv.Error as exc:
             violations.append(f"CSV parse error: {exc}")
         return violations
@@ -563,6 +624,12 @@ _DISPATCHER: list[_DispatcherEntry] = [
         re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A70_[a-z_]+\.csv$"),
         "a70",
         _make_csv_validator("a70"),
+    ),
+    # Phase 3 (Sprint 8 US-S8-01): A71 test scenario register.
+    (
+        re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A71_[a-z_]+\.csv$"),
+        "a71",
+        _make_csv_validator("a71"),
     ),
 ]
 

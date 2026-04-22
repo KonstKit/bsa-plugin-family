@@ -689,6 +689,53 @@ def test_a70_invest_rules_schema_extension_structure() -> None:
 # enforce"`) would AttributeError on `.get`. Codex v1.0.3 LOW.
 
 
+def test_a71_deferral_rules_schema_extension_structure() -> None:
+    """Sprint 8 US-S8-01: pin x-bsa-deferral-rules shape on A71. Same
+    anti-drift role as the A59/A62/A70 shape pins above."""
+    from governance.schemas import loader
+
+    schema = loader.load_schema("a71")
+    ext = schema.get("x-bsa-deferral-rules", {})
+    assert isinstance(ext, dict) and ext, (
+        "x-bsa-deferral-rules extension absent or wrong shape — "
+        "would silently disable the AutomationStatus=deferred → A51Ref "
+        "executable check"
+    )
+    assert ext.get("requires_a51_when_status") == "deferred", (
+        f"requires_a51_when_status must be exactly 'deferred'; "
+        f"got {ext.get('requires_a51_when_status')!r}"
+    )
+    # AutomationStatus + A51Ref must both exist as A71 properties.
+    a71_props = schema["properties"]
+    for field in ("AutomationStatus", "A51Ref"):
+        assert field in a71_props, (
+            f"A71 property {field!r} missing — deferral rule would never trigger"
+        )
+
+
+def test_a71_nfr_coverage_rules_schema_extension_structure() -> None:
+    """Sprint 8 US-S8-01: pin documentary x-bsa-nfr-coverage-rules
+    shape. Even though the NFR-coverage rule is enforced at the skill
+    layer (not in write_validator — it requires cross-artifact A62
+    lookup at hook time), the schema declaration is the contract;
+    tests pin its shape so the eventual cross-artifact validator
+    can rely on it."""
+    from governance.schemas import loader
+
+    schema = loader.load_schema("a71")
+    ext = schema.get("x-bsa-nfr-coverage-rules", {})
+    assert isinstance(ext, dict) and ext, (
+        "x-bsa-nfr-coverage-rules extension absent or wrong shape"
+    )
+    assert (
+        ext.get("requires_then_embeds_metric_and_target_when_nfr_set") is True
+    ), (
+        "the rule semantic must be exactly True; any other value "
+        "disables the documented NFR-coverage check"
+    )
+    assert "rationale" in ext  # narrative rationale must accompany the rule
+
+
 @pytest.mark.parametrize(
     "extension_key,handler_name",
     [
@@ -696,6 +743,7 @@ def test_a70_invest_rules_schema_extension_structure() -> None:
         ("x-bsa-measurability-rules", "_apply_measurability_rules"),
         ("x-bsa-provenance-rules", "_apply_provenance_rules"),
         ("x-bsa-invest-rules", "_apply_invest_rules"),
+        ("x-bsa-deferral-rules", "_apply_deferral_rules"),
     ],
 )
 def test_malformed_extension_shape_does_not_crash_handler(
