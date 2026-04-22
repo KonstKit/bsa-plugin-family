@@ -55,7 +55,7 @@ When reusing a source from discovery, `bsa-evidence-intake` MUST also check whet
 2. On match, REUSE the discovery `E-xxx` identifier.
 3. On miss, mint a fresh `E-xxx` using the next available number across both namespaces.
 
-Excerpt body content is re-validated against the source file; if the stored `ExcerptText` no longer matches the locator window (e.g., source was edited between discovery and main Stage 1), the orchestrator raises an `A51` with `IssueType=contradiction`, `Severity=hard`, and blocks promotion until the excerpt set is reconciled.
+Excerpt body content is re-validated against the source file; if the stored `ExcerptText` no longer matches the locator window (e.g., source was edited between discovery and main Stage 1), the orchestrator raises an `A51` with `IssueType=contradiction`, `Severity=critical`, `BlockingStatus=hard`, and blocks promotion until the excerpt set is reconciled.
 
 ### A58 carry-forward and provenance
 
@@ -91,7 +91,7 @@ Two A59 rows (one from discovery, one from main Stage 1 intake before lineage pr
 
 On conflict:
 1. Orchestrator MUST emit a `merge_log.jsonl` entry with `event=claim_conflict`.
-2. MUST create an `A51` row with `IssueType=contradiction`, `Severity=hard`, `BlockingStatus=hard`, `RaisedByStage=stage1`, `RelatedClaimID` pointing at BOTH discovery and main claim IDs (comma-separated in `RelatedClaimID` with explicit prefix), and `NextAction` requiring manual reconciliation.
+2. MUST create an `A51` row with `IssueType=contradiction`, `Severity=critical`, `BlockingStatus=hard`, `RaisedByStage=stage1`, `RelatedClaimID` pointing at BOTH discovery and main claim IDs (comma-separated in `RelatedClaimID` with explicit prefix), and `NextAction` requiring manual reconciliation.
 3. Main Stage 1 promotion is blocked until the A51 row reaches `ResolutionStatus=resolved`.
 4. Neither version is silently chosen; analyst MUST reconcile (keep one / keep both / replace with a new unified claim) in a proposal-layer edit before re-running promotion.
 

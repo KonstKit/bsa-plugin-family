@@ -43,7 +43,7 @@ Every `H1_exec_brief.md` MUST contain these five sections, in this order, with t
 
 ### `## Risks & Blockers`
 - Table with columns: `Risk | Severity | Impacted scope | Trace`.
-- Severity ∈ {`blocker`, `high`, `medium`, `low`}.
+- Severity ∈ {`critical`, `high`, `medium`, `low`} — matches A51 schema enum (pre-v1.1.1 doc used a `blocker` synonym at the top tier; v1.1.1 aligned the H1 risk table with A51's actual enum).
 - `Trace` cites either a `[C-xxx]` claim + `[A51-xxx]` route or `[A51-xxx]` alone for pure uncertainty.
 - Exactly 3-5 rows; if more exist, move to H4 `## Open Items Digest`.
 

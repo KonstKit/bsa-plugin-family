@@ -133,10 +133,10 @@ acquires a file-lock, writes the canonical state, emits the next stage's `*.read
 - **INV-02** — single-writer canonical: only `bsa-orchestrator` writes under `analysis/canonical/`.
 - **INV-03** — no new claims introduced after Stage 7 (no-new-claims gate, KPI-005 = 0).
 - **INV-04** — two-key promotion: audit markers + evidence-binding both required for every promotion.
-- **INV-05** — `A51` is not a claim source (only uncertainty / contradiction / missing_source / decision_needed / boundary_risk routes).
+- **INV-05** — `A51` is not a claim source (only uncertainty / contradiction / missing_source / decision_needed / boundary_risk / inventory_gap / cross_tier_contradiction routes).
 - **INV-06** — composition via orchestrator: skills do not call each other directly.
 - **INV-07** — `ClaimType` enum closed to `{direct, inference, analyst_judgment}`; `analyst_judgment` rows MUST carry `JustificationRationale` referencing ≥ 1 upstream `ClaimID`. Enum extension requires a major CanonPolicyVersion bump.
 
-Plus the **tier-delta ≤ 1 contested rule** from the reliability tier spec: contradicting claims at tier-delta ≤ 1 route via `A51` with `IssueType=cross_tier_contradiction` (per [reliability_tier_spec.md](../skills/bsa-evidence-intake/references/reliability_tier_spec.md) §Conflict Resolution), `BlockingStatus=hard`, and both rows get `ClaimStrength=0.0`.
+Plus the **tier-delta ≤ 1 contested rule** from the reliability tier spec: contradicting claims at tier-delta ≤ 1 route via `A51` with `IssueType=cross_tier_contradiction` (per [reliability_tier_spec.md](../skills/bsa-evidence-intake/references/reliability_tier_spec.md) §Conflict Resolution), `Severity=high`, `BlockingStatus=hard`, and both rows get `ClaimStrength=0.0`.
 
 Full registry: [../governance/immutable_invariants.md](../governance/immutable_invariants.md).

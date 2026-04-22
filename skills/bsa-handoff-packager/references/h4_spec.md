@@ -25,14 +25,14 @@ Every `H4_open_items_packet.md` MUST contain these five sections, in this order,
 ### `## Open Items Digest (A51 filtered)`
 - Table with columns: `A51Ref | IssueType | Severity | BlockingStatus | RaisedByStage | Age (days) | Summary | Related ClaimID`.
 - One row per A51 row with `ResolutionStatus != closed`.
-- `IssueType` exactly matches A51 schema: `uncertainty | contradiction | missing_source | decision_needed | boundary_risk`.
+- `IssueType` exactly matches A51 schema: `uncertainty | contradiction | missing_source | decision_needed | boundary_risk | inventory_gap | cross_tier_contradiction`.
 - `BlockingStatus` exactly matches A51 schema: `hard | soft | informational`.
 - Order: `hard` first, then `soft`, then `informational`; within each tier by descending `Severity`.
 - `Summary` ≤ 1 sentence, paraphrased from A51 row — MUST NOT introduce new actors/quantities (INV-03).
 - `Age (days)` = handoff emit date − A51 row raise date.
 
 ### `## Decisions Required (by severity)`
-- Ordered list, grouped by severity (`blocker` → `high` → `medium` → `low`).
+- Ordered list, grouped by A51 Severity (`critical` → `high` → `medium` → `low`). Note: pre-v1.1.1 doc used a `blocker` synonym at the top tier; v1.1.1 aligned the H4 grouping with A51 schema's actual enum (`critical` is the maximum-severity value).
 - Every item has:
   - A 1-line decision statement (imperative form: "Approve …", "Accept …", "Reject …", "Defer …").
   - Trace `[A51-xxx]` pointing to the underlying A51 row.
@@ -48,7 +48,7 @@ Every `H4_open_items_packet.md` MUST contain these five sections, in this order,
 
 ### `## Target Resolution Windows`
 - Table with columns: `A51Ref | Severity | Target resolution date | SLA source | Escalation trigger date`.
-- `Target resolution date` derived from severity-to-SLA mapping documented in `skills/bsa-orchestrator/references/sla_mapping.md` (falls back to default SLA when unspecified: blocker = 2 business days, high = 5, medium = 10, low = 20).
+- `Target resolution date` derived from severity-to-SLA mapping documented in `skills/bsa-orchestrator/references/sla_mapping.md` (falls back to default SLA when unspecified: critical = 2 business days, high = 5, medium = 10, low = 20).
 - `Escalation trigger date` = `Target resolution date` + `grace window` (default 2 business days).
 - `SLA source` names the applicable policy doc or defaults to "orchestrator default".
 

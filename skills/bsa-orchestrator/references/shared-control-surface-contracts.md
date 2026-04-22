@@ -31,8 +31,8 @@
 
 ## A51 Minimal Columns
 - `A51Ref`
-- `IssueType` (`uncertainty|contradiction|missing_source|decision_needed|boundary_risk`)
-- `Severity`
+- `IssueType` (`uncertainty|contradiction|missing_source|decision_needed|boundary_risk|inventory_gap|cross_tier_contradiction`)
+- `Severity` (`low|medium|high|critical`)
 - `BlockingStatus` (`hard|soft|informational`)
 - `RaisedByStage`
 - `RelatedSourceID`

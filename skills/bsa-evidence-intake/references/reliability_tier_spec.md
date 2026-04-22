@@ -56,7 +56,7 @@ When two A59 claims (or two A50 sources claimed to support the same content) dis
 | Tier-delta | Policy |
 |---|---|
 | **≥ 2** (e.g., T1 vs T3, T2 vs T4) | **Higher-tier wins by default.** The lower-tier row is auto-marked `SupersededBy=<higher-tier ClaimID>` in A59. Orchestrator logs `source_tier_mismatch` with `resolution=soft_resolved`. Analyst can override with an explicit A51 route if needed. |
-| **≤ 1** (e.g., T1 vs T2, T3 vs T4) | **Contested — neither wins automatically.** Both rows get `ClaimStatus=contested`. Orchestrator auto-routes via A51 with `IssueType=cross_tier_contradiction`, `BlockingStatus=hard`. Downstream stage promotion is blocked until manual resolution. |
+| **≤ 1** (e.g., T1 vs T2, T3 vs T4) | **Contested — neither wins automatically.** Both rows get `ClaimStatus=contested`. Orchestrator auto-routes via A51 with `IssueType=cross_tier_contradiction`, `Severity=high`, `BlockingStatus=hard`. Downstream stage promotion is blocked until manual resolution. |
 | **same tier** | Same as ≤ 1 — contested, auto-route, hard-block. |
 
 ### By anecdotal flag

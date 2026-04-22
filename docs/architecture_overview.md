@@ -59,7 +59,7 @@ Every pipeline transition emits a marker under `analysis/runtime/ready/` (main c
 | INV-02 | Single-writer canonical: only orchestrator writes under `analysis/canonical/` | PreToolUse:Write hook |
 | INV-03 | No new claims in Stage 8 + handoff (KPI-005 = 0) | `bsa-no-new-claims-auditor` |
 | INV-04 | Two-key promotion: audit markers + evidence-binding both required | orchestrator promotion routine + PreToolUse:Bash hook |
-| INV-05 | A51 is not a claim source (only uncertainty/contradiction/missing_source/decision_needed/boundary_risk routes) | A51 schema + review |
+| INV-05 | A51 is not a claim source (only uncertainty/contradiction/missing_source/decision_needed/boundary_risk/inventory_gap/cross_tier_contradiction routes) | A51 schema + review |
 | INV-06 | Composition via orchestrator (no direct skill-to-skill calls) | `bsa-orchestrator/SKILL.md` + review |
 | INV-07 | ClaimType enum closed to `{direct, inference, analyst_judgment}` | `bsa-claim-binder/SKILL.md` + fixture_runner + pytest |
 

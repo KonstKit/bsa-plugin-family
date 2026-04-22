@@ -227,6 +227,48 @@ def test_all_golden_fixture_rows_validate(
             "NextAction": "Re-extract from updated source",
             "ResolutionStatus": "open",
         },
+        {
+            # v1.1.1 Sysco pilot blocker: IssueType=inventory_gap
+            # (broader than missing_source — targets a category/set
+            # of expected items, not a single source).
+            "A51Ref": "A51-INV-001",
+            "IssueType": "inventory_gap",
+            "Severity": "medium",
+            "BlockingStatus": "soft",
+            "RaisedByStage": "discovery.d4",
+            "RelatedSourceID": "",
+            "RelatedClaimID": "",
+            "NextAction": "Complete the constraint-inventory category for the order-deliver workflow before proceeding to D5",
+            "ResolutionStatus": "open",
+        },
+        {
+            # v1.1.1 Sysco pilot blocker: Severity=critical
+            # (exceeds high — contract-binding SLA breach risk).
+            "A51Ref": "A51-CONFL-099",
+            "IssueType": "contradiction",
+            "Severity": "critical",
+            "BlockingStatus": "hard",
+            "RaisedByStage": "stage3",
+            "RelatedSourceID": "S-001;S-002",
+            "RelatedClaimID": "C-099",
+            "NextAction": "Resolve contractual-SLA contradiction immediately — customer-facing breach risk",
+            "ResolutionStatus": "open",
+        },
+        {
+            # v1.1.1 internal contract alignment: IssueType=cross_tier_contradiction
+            # (orchestrator-emitted variant for the reliability-tier-delta ≤ 1
+            # contested rule, per reliability_tier_spec.md §Conflict Resolution
+            # + test_tier_conflict_scenarios coverage).
+            "A51Ref": "A51-CTC-001",
+            "IssueType": "cross_tier_contradiction",
+            "Severity": "high",
+            "BlockingStatus": "hard",
+            "RaisedByStage": "stage1",
+            "RelatedSourceID": "S-T1-001;S-T2-002",
+            "RelatedClaimID": "C-101;C-102",
+            "NextAction": "Reconcile tier-delta ≤ 1 contested claim pair (T1 vs T2) — neither wins automatically",
+            "ResolutionStatus": "open",
+        },
     ],
     ids=[
         "minimal-numeric-ref",
@@ -235,6 +277,9 @@ def test_all_golden_fixture_rows_validate(
         "discovery-complete-stage",
         "prefixed-discovery-d1-stage",
         "prefixed-discovery-d5-stage",
+        "v1_1_1-issue-type-inventory-gap",
+        "v1_1_1-severity-critical",
+        "v1_1_1-issue-type-cross-tier-contradiction",
     ],
 )
 def test_representative_rows_validate(

@@ -4,6 +4,36 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.1] — 2026-04-23
+
+**Sysco pilot enum-extension patch + internal contract alignment.** Closes the schema-extendable subset of Sysco-pilot drift via three additive A51 enum extensions, plus aligns existing internal documentation with the closed schema enums (no behavior change; doc drift had accumulated since v1.0.0).
+
+**Tag target**: this commit (the v1.1.1 enum-extension patch).
+**Canon policy version**: `1.1.1+hash:a5b51af8` — patch-line bump from 1.1.0 (additive enum extensions are backward-compatible). Hash advanced from edits to A51 schema, h1/h4 specs, shared-control-surface-contracts, reliability_tier_spec, discovery_to_main_merge.
+
+### Added
+
+- **A51 IssueType enum extension** — `inventory_gap` (Sysco pilot, distinguishes a missing CATEGORY/SET of expected artifacts from a single `missing_source`) + `cross_tier_contradiction` (internal alignment — promotes the orchestrator-emitted variant for the reliability-tier-delta ≤ 1 contested rule from a doc-only convention to a first-class enum value matching `test_tier_conflict_scenarios` coverage). IssueType enum is now 7 values (was 5 in v1.1.0).
+- **A51 Severity enum extension** — `critical` (Sysco pilot, exceeds `high` for contract-binding SLA breach risk + customer-facing/regulatory issues). Severity enum is now 4 values (was 3 in v1.1.0).
+- **`migrations/v1.0_to_v1.1/README.md`** — drift catalogue + per-class migration backlog for v1.0.x pilot workspaces (Sysco baseline). Eight drift classes (marker payload schema, verdict enum, A50 Priority/ReliabilityTier/AccessStatus/SourceID format, A60 column set, A51 reconciliation) with `additive` / `mechanical` / `manual` verdicts each.
+- **`docs/pilot_validation.md`** — Sysco pilot status + framework-level pilot-validation invariants. Pilot template for future engagements.
+
+### Aligned (internal contract drift closed in this patch)
+
+- **`shared-control-surface-contracts.md` A51 Minimal Columns** — published the new closed sets (IssueType + Severity).
+- **`h1_spec.md` § Risks & Blockers** — Severity enum aligned to A51 actual enum (`critical → high → medium → low`); pre-v1.1.1 `blocker` synonym is now an explicit alignment note.
+- **`h4_spec.md` § Open Items Digest + § Decisions Required + § Target Resolution Windows** — IssueType enum now publishes 7-value set; Severity grouping aligned to `critical → high → medium → low`; SLA fallback uses `critical = 2 business days` instead of legacy `blocker`.
+- **`reliability_tier_spec.md` § Conflict Resolution** — tier-delta ≤ 1 row gains explicit `Severity=high` (was missing) alongside the existing `BlockingStatus=hard`.
+- **`discovery_to_main_merge.md` § Excerpt dedup + § Conflict detection** — replaced legacy `Severity=hard` (typo of BlockingStatus into Severity) with `Severity=critical` + explicit `BlockingStatus=hard` on both A51 routing rules.
+- **`docs/architecture_overview.md` INV-05 + `docs/workflow.md` INV-05** — INV-05 row now lists all 7 IssueType values.
+- **`tests/test_schemas_a51.py`** — added 3 parametric cases covering `inventory_gap`, `Severity=critical`, and `cross_tier_contradiction` (negative tests preserved).
+
+### Carried forward (deferred to v1.1.2 or v1.2)
+
+- Sysco mechanical migration script (`scripts/migrate_v1.0_to_v1.1.py`) — spec'd in `migrations/v1.0_to_v1.1/README.md`, implementation pending. Operators currently apply the per-row mapping rules manually + use `bsa doctor` as a checklist.
+- Sysco manual-review steps (verdict caveats, A50 AccessStatus partial, A60 column-set mapping, A51 reconciliation) — operator runbook pending.
+- Second-round Sysco doctor pass after migration script lands.
+
 ## [v1.1.0] — 2026-04-22
 
 **Phase-3 release** — closes the Phase-3 dev-handoff workstream (Sprints 6-9). All 5 Phase-3 skills are now real implementations: `bsa-nfr-collector` (Sprint 6), `bsa-story-writer` (Sprint 7), `bsa-test-scenario-builder` (Sprint 8 US-S8-01), `bsa-traceability-matrix` (Sprint 8 US-S8-02), `bsa-backlog-bridge` (Sprint 9 US-S9-01..03). 4 new canonical artifacts (A62 NFR register, A70 story register, A71 test scenario register, A72 traceability matrix). 3 new platform-specific export shapes (Jira REST v3 JSON, Linear CSV, generic CSV) under `analysis/handoff/` — first F5 dispatch on `analysis/handoff/` paths. 3 new immutable invariants (INV-08 story-claim provenance, INV-09 NFR measurability, INV-10 test-scenario provenance) codified in `governance/immutable_invariants.md`. Two committed Phase-3 regression baselines: happy-path (project_0001 fixture extension) + adversarial (claim-contradiction → A51 propagation chain).
