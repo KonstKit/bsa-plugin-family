@@ -1,0 +1,9 @@
+{
+  "marker_id": "phase3.story.pass",
+  "stage": "phase3.story",
+  "verdict": "PASS",
+  "timestamp": "2026-04-22T20:05:00Z",
+  "canon_policy_version": "1.0.0+hash:3c32c861",
+  "canon_policy_version_hash": "3c32c861",
+  "notes": "bsa-story-writer promoted A70_story_register.csv (3 rows). INV-08 (provenance) satisfied — every story carries non-empty SourceClaimIDs. INVEST: STORY-001 + STORY-002 pass; STORY-003 deferred on Estimable, A51-001 co-populated."
+}

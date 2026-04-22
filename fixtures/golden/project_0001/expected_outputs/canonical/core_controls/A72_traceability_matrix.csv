@@ -1,0 +1,5 @@
+TraceID,StoryID,ClaimID,SourceID,LinkType,LinkStrength,A51Ref,Notes
+TR-001,STORY-001,C-003,S-001,direct,high,,Story-001 links paging-rule claim from ops process note (T2 source → high)
+TR-002,STORY-001,C-007,S-001,direct,high,,Story-001 links SLA-window claim from ops process note (T2 source → high). Also reachable via NFR-PERF-001 (which carries SourceClaimIDs=C-007); not duplicated as nfr-mediated per row-identity uniqueness.
+TR-003,STORY-002,C-006,S-002,direct,low,,Story-002 links engineering-escalation pain-point from PM interview (T4 source → low)
+TR-004,STORY-003,C-005,S-002,a51-routed,low,A51-001,Story-003 links 15%-duplicate inference from PM interview; trace acceptance deferred until A51-001 (duplicate-rate validation against ticketing-system data) resolves. C-008 (analyst_judgment) is intentionally NOT in the matrix — analyst_judgment claims have no SourceID by design (the claim IS the analyst's recommendation; no upstream source); STORY-003's link to C-008 is captured in traceability_orphans.md instead.

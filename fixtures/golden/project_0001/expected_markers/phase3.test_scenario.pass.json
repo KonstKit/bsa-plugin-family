@@ -1,0 +1,9 @@
+{
+  "marker_id": "phase3.test_scenario.pass",
+  "stage": "phase3.test_scenario",
+  "verdict": "PASS",
+  "timestamp": "2026-04-22T20:10:00Z",
+  "canon_policy_version": "1.0.0+hash:3c32c861",
+  "canon_policy_version_hash": "3c32c861",
+  "notes": "bsa-test-scenario-builder promoted A71_test_scenario_register.csv (3 rows). INV-10 (every scenario has SourceStoryID) satisfied. NFR-coverage rule satisfied for TS-001 (Then-clause references first-response-minutes metric AND contains literal Target '<= 240'). TS-003 AutomationStatus=deferred → A51-001 co-populated per x-bsa-deferral-rules."
+}

@@ -1,24 +1,44 @@
 {
   "fixture_id": "project_0001",
-  "scenario": "Support-ticket triage analysis, direct mode, process path",
+  "scenario": "Support-ticket triage analysis, direct mode, process path. Extended at Sprint 8 US-S8-03 with Phase-3 artifacts (A62/A70/A71/A72) for end-to-end integration testing.",
   "expected_verdicts": {
     "stage1.excerpts.merged": "merged",
     "stage2.context_state.pass": "PASS",
     "stage3.citation_audit.pass": "PASS",
-    "stage8.no_new_claims.pass": "PASS"
+    "stage8.no_new_claims.pass": "PASS",
+    "phase3.nfr.pass": "PASS",
+    "phase3.story.pass": "PASS",
+    "phase3.test_scenario.pass": "PASS",
+    "phase3.traceability.pass": "PASS"
   },
   "expected_kpi_bounds": {
     "KPI-001_weighted_coverage": {"min": 0.55, "max": 0.80, "actual": 0.62},
     "KPI-003_critical_unsupported_claims": {"exact": 0},
-    "KPI-005_new_claim_leakage": {"exact": 0}
+    "KPI-005_new_claim_leakage": {"exact": 0},
+    "KPI-006_story_to_claim_coverage": {"min": 0.66, "max": 1.00, "actual": 1.00, "_comment": "All 3 stories have at least one A72 row (STORY-001 has 2 direct, STORY-002 has 1 direct, STORY-003 has 1 a51-routed). Ratio = 3/3 = 1.00."}
   },
   "expected_invariants": [
     "every A59 row has SourceID+ExcerptID OR A51Ref",
     "every analyst_judgment row has non-empty justification_rationale that references >= 1 upstream ClaimID",
     "every A51 row has IssueType + Severity + BlockingStatus",
-    "no A59 row has ClaimType outside {direct, inference, analyst_judgment}"
+    "no A59 row has ClaimType outside {direct, inference, analyst_judgment}",
+    "INV-08 (Phase 3): every A70 row has non-empty SourceClaimIDs OR RelatedNFRIDs",
+    "INV-09 (Phase 3): every quantitative-category A62 row has Metric+Target",
+    "INV-10 (Phase 3): every A71 row has non-empty SourceStoryID resolving in A70",
+    "Phase-3 FK integrity: every A72 row's StoryID/ClaimID/SourceID resolves in A70/A59/A50; A59[ClaimID].SourceID equals A72 row's SourceID for all rows"
   ],
   "expected_a51_routes": ["A51-001", "A51-002"],
   "expected_claim_types_present": ["direct", "inference", "analyst_judgment"],
-  "notes": "Regression baseline. Any diff between fixture state on disk and committed expected_outputs/ signals drift."
+  "expected_phase3_counts": {
+    "a62_nfrs": 2,
+    "a70_stories": 3,
+    "a71_scenarios": 3,
+    "a72_traces": 4,
+    "_comment": "Phase-3 fixture intentionally small but representative. Includes one quantitative + one qualitative NFR; one INVEST-pass + one INVEST-deferred story; one automated + one manual + one deferred scenario; direct + a51-routed traces."
+  },
+  "expected_orphans": {
+    "a59_claims_without_a72_row": ["C-001", "C-002", "C-004", "C-008"],
+    "_comment": "C-001/C-002/C-004 are direct claims that no story derived a row from (operations narrative, not story-driving). C-008 is analyst_judgment with no SourceID — intentionally absent from the matrix per skill workflow; captured conceptually in traceability_orphans.md."
+  },
+  "notes": "Regression baseline. Any diff between fixture state on disk and committed expected_outputs/ signals drift. Phase-3 extension at US-S8-03 demonstrates contract shapes for the bsa-nfr-collector / bsa-story-writer / bsa-test-scenario-builder / bsa-traceability-matrix outputs; the integration test in tests/test_integration_phase3_project_0001.py asserts cross-artifact coherence across A50→A59→A62→A70→A71→A72 + the four phase3.*.pass markers."
 }

@@ -1,0 +1,9 @@
+{
+  "marker_id": "phase3.traceability.pass",
+  "stage": "phase3.traceability",
+  "verdict": "PASS",
+  "timestamp": "2026-04-22T20:15:00Z",
+  "canon_policy_version": "1.0.0+hash:3c32c861",
+  "canon_policy_version_hash": "3c32c861",
+  "notes": "bsa-traceability-matrix promoted A72_traceability_matrix.csv (4 rows: TR-001..TR-004). FK integrity + claim-source consistency satisfied for all 4 rows. C-008 (analyst_judgment, no SourceID) intentionally absent from the matrix — captured in traceability_orphans.md per workflow. TR-004 LinkType=a51-routed, A51-001 co-populated (deferred acceptance pending duplicate-rate validation)."
+}

@@ -1,0 +1,9 @@
+{
+  "marker_id": "phase3.nfr.pass",
+  "stage": "phase3.nfr",
+  "verdict": "PASS",
+  "timestamp": "2026-04-22T20:00:00Z",
+  "canon_policy_version": "1.0.0+hash:3c32c861",
+  "canon_policy_version_hash": "3c32c861",
+  "notes": "bsa-nfr-collector promoted A62_nfr_register.csv (2 rows: NFR-PERF-001 quantitative + NFR-USAB-001 qualitative). INV-09 measurability rule satisfied (PERF row carries Metric+Target; USAB row uses TestabilityNotes alternative)."
+}
