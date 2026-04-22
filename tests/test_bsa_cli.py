@@ -1026,3 +1026,704 @@ def test_last_marker_uses_emittedat_for_sysco_markers(tmp_path: Path) -> None:
     ]
     assert last_line, "Last marker line missing from output"
     assert "discovery.d2.ready" in last_line[0]
+
+
+# ---- 10. Materials (chunk 4) -----------------------------------------
+
+
+def _make_src_dir(tmp_path: Path, files: dict[str, str]) -> Path:
+    """Create a source dir under tmp_path/src with named files."""
+    src = tmp_path / "src"
+    src.mkdir()
+    for name, body in files.items():
+        (src / name).write_text(body, encoding="utf-8")
+    return src
+
+
+def test_materials_missing_src_dir_exits_2(tmp_path: Path) -> None:
+    """Bad src arg → exit 2 with clear message."""
+    ws = _init_workspace(tmp_path)
+    result = _run_cli(["-w", str(ws), "materials", str(tmp_path / "nope")])
+    assert result.returncode == 2
+    assert "source directory not found" in result.stderr
+
+
+def test_materials_uninitialized_workspace_exits_2(tmp_path: Path) -> None:
+    """Workspace must be initialized before staging."""
+    src = _make_src_dir(tmp_path, {"a.md": "x"})
+    result = _run_cli(["-w", str(tmp_path / "blank"), "materials", str(src)])
+    assert result.returncode == 2
+    assert "not a BSA workspace" in result.stderr
+
+
+def test_materials_dry_run_writes_nothing(tmp_path: Path) -> None:
+    """Default behavior is preview — no files appear in the workspace,
+    no manifest created. The exit code is 0 (preview rendered OK)."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {
+        "Procurement Policy v4.2.md": "# Policy\nbody",
+        "Interview Alex.txt": "transcript",
+    })
+    result = _run_cli(["-w", str(ws), "materials", str(src)])
+    assert result.returncode == 0, result.stderr
+    assert "DRY RUN" in result.stdout
+    assert "S-001" in result.stdout
+    assert "S-002" in result.stdout
+    # Nothing written.
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    assert not inputs.exists()
+    manifest = ws / "analysis" / "proposals" / "stage1" / "source_manifest.csv"
+    assert not manifest.exists()
+
+
+def test_materials_commit_writes_inputs_and_manifest(tmp_path: Path) -> None:
+    """--commit actually writes converted files + draft manifest."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {
+        "Procurement Policy v4.2.md": "# Policy v4.2\nbody",
+        "Interview Alex.txt": "transcript with Alex",
+    })
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 0, result.stderr
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    files = sorted(p.name for p in inputs.iterdir())
+    assert files == [
+        "source_001_interview_alex.md",
+        "source_002_procurement_policy_v4_2.md",
+    ], files
+    # The version marker `v4_2` must survive the slug — early bug
+    # double-stripped it to `v4`.
+    body = (inputs / "source_002_procurement_policy_v4_2.md").read_text(encoding="utf-8")
+    assert "Policy v4.2" in body
+    # Provenance comment present.
+    assert "bsa materials" in body
+    assert "SourceID=S-002" in body
+    # Manifest has header + 2 rows; T5 default; corp-clean Origins.
+    manifest = ws / "analysis" / "proposals" / "stage1" / "source_manifest.csv"
+    lines = manifest.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 3
+    assert lines[0].startswith("SourceID,SourceType,Title,Origin")
+    assert lines[1].startswith("S-001,interview_transcript,")
+    assert ",T5," in lines[1]
+    assert lines[2].startswith("S-002,process_note,")
+    assert ",T5," in lines[2]
+
+
+def test_materials_idempotent_re_run_skips_already_staged(tmp_path: Path) -> None:
+    """Re-running on the SAME src dir must NOT duplicate-stage:
+    existing Origin entries in source_manifest.csv are detected and
+    skipped. Manifest stays stable; no new files written."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {"a.md": "x", "b.md": "y"})
+    # First run: writes both.
+    first = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert first.returncode == 0
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    manifest = ws / "analysis" / "proposals" / "stage1" / "source_manifest.csv"
+    files_before = sorted(p.name for p in inputs.iterdir())
+    manifest_before = manifest.read_text(encoding="utf-8")
+    # Second run with same args.
+    second = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert second.returncode == 0
+    assert "Wrote 0 file(s)" in second.stdout
+    assert "already staged" in second.stdout
+    # No new files; manifest byte-equal.
+    files_after = sorted(p.name for p in inputs.iterdir())
+    assert files_after == files_before
+    assert manifest.read_text(encoding="utf-8") == manifest_before
+
+
+def test_materials_force_overwrites(tmp_path: Path) -> None:
+    """--force re-stages files that idempotency would skip; manifest
+    grows by the re-staged rows."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {"a.md": "v1"})
+    _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    # Mutate source between runs to verify the new content lands.
+    (src / "a.md").write_text("v2 body", encoding="utf-8")
+    second = _run_cli(["-w", str(ws), "materials", str(src), "--commit", "--force"])
+    assert second.returncode == 0
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    files = sorted(p.name for p in inputs.iterdir())
+    # First run took S-001; --force re-stages with a NEW SourceID
+    # (S-002) since SourceID assignment is monotonic.
+    assert "source_001_a.md" in files
+    assert "source_002_a.md" in files
+    assert "v2 body" in (inputs / "source_002_a.md").read_text(encoding="utf-8")
+
+
+def test_materials_unsupported_files_reported_separately(tmp_path: Path) -> None:
+    """Files with unsupported extensions are listed in the report
+    but do not abort the run; convertible files still proceed."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {
+        "ok.md": "good",
+        "bin.exe": "junk",
+        "image.png": "binary-stub",
+    })
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 0
+    assert "Unsupported (not staged)" in result.stdout
+    assert "bin.exe" in result.stdout
+    assert "image.png" in result.stdout
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    files = [p.name for p in inputs.iterdir()]
+    assert files == ["source_001_ok.md"]
+
+
+def test_materials_empty_src_dir_exits_2(tmp_path: Path) -> None:
+    """An empty source dir is an error — there's nothing to stage."""
+    ws = _init_workspace(tmp_path)
+    src = tmp_path / "src"
+    src.mkdir()
+    result = _run_cli(["-w", str(ws), "materials", str(src)])
+    assert result.returncode == 2
+    assert "no files found" in result.stderr
+
+
+def test_materials_recursive_walks_subdirectories(tmp_path: Path) -> None:
+    """Without --recursive, subdirs are ignored; with --recursive, they
+    are walked."""
+    ws = _init_workspace(tmp_path)
+    src = tmp_path / "src"
+    sub = src / "interviews"
+    sub.mkdir(parents=True)
+    (src / "top.md").write_text("top", encoding="utf-8")
+    (sub / "deep.md").write_text("deep", encoding="utf-8")
+    flat = _run_cli(["-w", str(ws), "materials", str(src)])
+    assert flat.returncode == 0
+    assert "top.md" in flat.stdout
+    assert "deep.md" not in flat.stdout
+    deep = _run_cli(["-w", str(ws), "materials", str(src), "--recursive"])
+    assert deep.returncode == 0
+    assert "top.md" in deep.stdout
+    assert "deep.md" in deep.stdout
+
+
+def test_materials_skips_hidden_files_and_dirs(tmp_path: Path) -> None:
+    """`.DS_Store`, `.git/`, etc. must not pollute the planned set."""
+    ws = _init_workspace(tmp_path)
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / ".DS_Store").write_text("junk", encoding="utf-8")
+    (src / ".hidden.md").write_text("hidden", encoding="utf-8")
+    git = src / ".git"
+    git.mkdir()
+    (git / "config").write_text("x", encoding="utf-8")
+    (src / "real.md").write_text("real body", encoding="utf-8")
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 0
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    files = [p.name for p in inputs.iterdir()]
+    assert files == ["source_001_real.md"]
+
+
+def test_materials_pdf_unavailable_raises_with_install_hint(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When `pypdf` is not importable, _convert_pdf must raise
+    ConversionUnavailable with an install hint pointing at
+    `pip install pypdf`. We test the module helper directly because
+    subprocess-isolation prevents monkey-patching sys.modules in
+    the child via `_run_cli`."""
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from scripts.bsa_cli import _convert_pdf, ConversionUnavailable
+    finally:
+        sys.path.pop(0)
+    pdf = tmp_path / "stub.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    # Setting sys.modules['pypdf'] = None makes `import pypdf` raise
+    # ImportError inside _convert_pdf (the documented stdlib trick
+    # for masking an installed module in a single test).
+    monkeypatch.setitem(sys.modules, "pypdf", None)
+    with pytest.raises(ConversionUnavailable) as exc:
+        _convert_pdf(pdf)
+    assert "pip install pypdf" in str(exc.value)
+
+
+def test_materials_install_hint_emitted_in_summary(tmp_path: Path, monkeypatch) -> None:
+    """End-to-end: when ANY file's converter raises ConversionUnavailable,
+    cmd_materials must print the corresponding install hint in the
+    summary block (so users hit by the missing-lib trap know what to
+    install). We invoke cmd_materials in-process so we can mask
+    pypdf via sys.modules before the call."""
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from scripts.bsa_cli import cmd_materials
+    finally:
+        sys.path.pop(0)
+    ws = _init_workspace(tmp_path)
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "doc.pdf").write_bytes(b"%PDF-1.4\n")
+
+    # Mask pypdf (and an unused docx, to make sure only the relevant
+    # hint is emitted).
+    monkeypatch.setitem(sys.modules, "pypdf", None)
+
+    import argparse, io, contextlib
+    args = argparse.Namespace(
+        workspace=str(ws), src_dir=str(src),
+        commit=True, force=False, recursive=False,
+    )
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cmd_materials(args)
+    out = buf.getvalue()
+    assert rc == 1, out
+    assert "doc.pdf" in out
+    assert "pip install pypdf" in out
+    # Did NOT spuriously include the docx hint when no docx file present.
+    assert "pip install python-docx" not in out
+
+
+def test_materials_preserves_versioned_filenames(tmp_path: Path) -> None:
+    """Slug must NOT eat trailing `vN.M` version segments. Early
+    Path.stem-twice bug stripped `v4.2` to `v4`."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {
+        "Doc v4.2.md": "x",
+        "Other v10.3.5.md": "y",
+    })
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 0
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    names = sorted(p.name for p in inputs.iterdir())
+    assert "source_001_doc_v4_2.md" in names
+    assert "source_002_other_v10_3_5.md" in names
+
+
+def test_materials_refuses_when_analysis_is_symlink(tmp_path: Path) -> None:
+    """Codex round-1 HIGH: --commit must NOT follow a symlinked
+    workspace path. Even an in-tree symlink is rejected — defense in
+    depth (a future swap could redirect writes)."""
+    # Initialize a clean workspace, then replace `analysis/` with a
+    # symlink to a sibling directory. Even though the sibling is
+    # under tmp_path, the symlink itself is suspicious.
+    real = tmp_path / "real_analysis_dir"
+    real.mkdir()
+    (real / "canonical" / "core_controls").mkdir(parents=True)
+    (real / "canonical" / "core_controls" / "A48_run_context_card.md").write_text(
+        "# A48\n- `RunID`: x\n- `Mode`: direct\n- `CurrentStage`: stage1\n"
+        "- `CanonPolicyVersion`: 1.0.0\n",
+        encoding="utf-8",
+    )
+    try:
+        (tmp_path / "analysis").symlink_to(real)
+    except OSError:
+        pytest.skip("symlink unsupported on this platform")
+    src = _make_src_dir(tmp_path, {"a.md": "x"})
+    result = _run_cli(["-w", str(tmp_path), "materials", str(src), "--commit"])
+    assert result.returncode == 2
+    assert "symlink" in result.stderr.lower()
+    # Real dir was NOT written to.
+    assert not (real / "proposals").exists()
+
+
+def test_materials_slug_idempotency_without_manifest(tmp_path: Path) -> None:
+    """Codex round-1 HIGH: if source_manifest.csv is deleted but
+    inputs/ still has source_NNN_<slug>.md files, re-running must NOT
+    duplicate-stage by slug. Backstop fires from the inputs/ scan."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {"foo.md": "v1"})
+    first = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert first.returncode == 0
+    # Delete the manifest; keep inputs/.
+    manifest = ws / "analysis" / "proposals" / "stage1" / "source_manifest.csv"
+    manifest.unlink()
+    # Re-run.
+    second = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert second.returncode == 0
+    assert "Wrote 0 file(s)" in second.stdout
+    assert "same slug already staged" in second.stdout
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    files = sorted(p.name for p in inputs.iterdir())
+    assert files == ["source_001_foo.md"]  # no source_002_foo.md duplicate
+
+
+def test_materials_routes_around_existing_input_symlink_default(tmp_path: Path) -> None:
+    """Codex round-2 HIGH (default-mode case): a pre-existing
+    symlinked source_NNN_<slug>.md must NOT be overwritten via the
+    symlink. Default mode: slug-collision routing detects the
+    collision (provenance comment absent on the symlink target),
+    allocates an alternative slug, writes elsewhere — symlink
+    target file untouched."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {"foo.md": "v2"})
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    inputs.mkdir(parents=True)
+    elsewhere = tmp_path / "elsewhere.md"
+    elsewhere.write_text("PRE-EXISTING\n", encoding="utf-8")
+    try:
+        (inputs / "source_001_foo.md").symlink_to(elsewhere)
+    except OSError:
+        pytest.skip("symlink unsupported on this platform")
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 0, result.stderr
+    # Symlink target is byte-equal — write was NOT redirected.
+    assert elsewhere.read_text(encoding="utf-8") == "PRE-EXISTING\n"
+    # New file landed under an alternative slug variant.
+    files = sorted(p.name for p in inputs.iterdir() if not p.is_symlink())
+    assert any(f.startswith("source_") and f != "source_001_foo.md" for f in files)
+
+
+# Note: a "force overwrites through symlink" test would be useful
+# to pin the per-target leaf-symlink check in cmd_materials, but
+# the combination of monotonic `_next_source_id` allocation + slug-
+# collision routing means a planned target name can't actually BE a
+# pre-existing symlink in any reachable code path. The per-target
+# check stays as defense-in-depth (cheap to keep), but exercising
+# it requires monkey-patching the planner internals — out of scope
+# for chunk 4.
+
+
+def test_materials_refuses_when_manifest_is_symlink(tmp_path: Path) -> None:
+    """Same defense for source_manifest.csv itself: a symlinked
+    manifest could redirect writes outside the workspace."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {"foo.md": "x"})
+    stage1 = ws / "analysis" / "proposals" / "stage1"
+    stage1.mkdir(parents=True)
+    elsewhere = tmp_path / "fake_manifest.csv"
+    elsewhere.write_text(
+        "SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,"
+        "Priority,Language,DateOrVersion,Notes\n",
+        encoding="utf-8",
+    )
+    try:
+        (stage1 / "source_manifest.csv").symlink_to(elsewhere)
+    except OSError:
+        pytest.skip("symlink unsupported on this platform")
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 2
+    assert "symlink" in result.stderr.lower()
+    # The fake-manifest target must remain unchanged.
+    assert elsewhere.read_text(encoding="utf-8").splitlines()[0].startswith("SourceID,")
+    # Header line only — no rows appended.
+    assert len(elsewhere.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_materials_slug_collision_with_different_source_uses_unique_slug(
+    tmp_path: Path,
+) -> None:
+    """Codex round-2 MEDIUM: slug-only idempotency was a false-
+    positive guillotine — two distinct sources whose 40-char-
+    truncated slugs collide were both skipped. Round-2 fix consults
+    the existing file's provenance comment to disambiguate; if
+    Origins differ, allocate a unique slug variant."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {
+        # Two filenames that, after slugify, collide on the first 40 chars
+        # but represent legitimately different sources. The slugifier
+        # truncates to 40; both produce
+        # "the_quick_brown_fox_jumps_over_the_lazy".
+        "The Quick Brown Fox Jumps Over The Lazy DOG.md": "v1",
+        "The Quick Brown Fox Jumps Over The Lazy CAT.md": "v2",
+    })
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 0, result.stderr
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    files = sorted(p.name for p in inputs.iterdir())
+    # Both files should land under DIFFERENT target names — the second
+    # gets a hash-suffixed slug variant. Without the fix the second
+    # would have been skipped as "same slug already staged".
+    assert len(files) == 2, files
+    # Bodies preserve content from each distinct source (no clobber).
+    bodies = {f: (inputs / f).read_text(encoding="utf-8") for f in files}
+    contents = "\n".join(bodies.values())
+    assert "v1" in contents and "v2" in contents
+
+
+def test_materials_recursive_distinct_basenames_not_falsely_skipped(
+    tmp_path: Path,
+) -> None:
+    """Codex round-3 MEDIUM (reproduced as round-4 LOW notes): test
+    must actually exercise the slug-collision-via-provenance path.
+    Setup: stage team_a/foo.md FIRST so its provenance comment is on
+    disk. Then DELETE the manifest. Then add team_b/foo.md to src
+    and re-run --recursive. Round-3 invariant: the team_b file must
+    be staged under an alt slug (provenance differs); team_a file
+    skipped (provenance matches). Pre-fix, basename equality made
+    team_b a false-positive skip."""
+    ws = _init_workspace(tmp_path)
+    src = tmp_path / "src"
+    (src / "team_a").mkdir(parents=True)
+    (src / "team_a" / "foo.md").write_text("from A", encoding="utf-8")
+    # First run: stage team_a/foo.md alone.
+    first = _run_cli(["-w", str(ws), "materials", str(src),
+                      "--recursive", "--commit"])
+    assert first.returncode == 0, first.stderr
+    inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
+    assert (inputs / "source_001_foo.md").is_file()
+    # Sanity: provenance comment uses the canonical relative-path Origin.
+    body_a = (inputs / "source_001_foo.md").read_text(encoding="utf-8")
+    assert "team_a/foo.md" in body_a, body_a[:200]
+    # Delete the manifest to force the slug-collision branch on re-run
+    # (without manifest, primary Origin idempotency check sees nothing).
+    manifest = ws / "analysis" / "proposals" / "stage1" / "source_manifest.csv"
+    manifest.unlink()
+    # Add team_b/foo.md (same basename, DIFFERENT canonical Origin).
+    (src / "team_b").mkdir(parents=True)
+    (src / "team_b" / "foo.md").write_text("from B", encoding="utf-8")
+    # Re-run.
+    second = _run_cli(["-w", str(ws), "materials", str(src),
+                       "--recursive", "--commit"])
+    assert second.returncode == 0, second.stderr
+    inputs_now = sorted(p.name for p in inputs.iterdir())
+    # team_a file should be SKIPPED (provenance match: team_a/foo.md).
+    # team_b file should be STAGED under an alt slug variant.
+    # Net: 2 files in inputs/.
+    assert len(inputs_now) == 2, inputs_now
+    # The first file is unchanged (still has "from A").
+    assert "from A" in (inputs / "source_001_foo.md").read_text(encoding="utf-8")
+    # A second file exists with "from B" content. Pre-fix, this would
+    # have been false-skipped because basename "foo.md" equality
+    # match with team_a/foo.md.
+    other = [f for f in inputs_now if f != "source_001_foo.md"][0]
+    assert "from B" in (inputs / other).read_text(encoding="utf-8")
+    # That second file's provenance comment should hold team_b/foo.md.
+    assert "team_b/foo.md" in (inputs / other).read_text(encoding="utf-8")
+
+
+def test_materials_atomic_write_leaves_manifest_intact_on_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Codex round-5 MEDIUM: _upsert_draft_manifest used to call
+    write_text directly — a mid-write OSError (disk full, etc.) would
+    leave a truncated/corrupted manifest. Round-5 fix uses
+    _atomic_write_text (tempfile + os.replace), which guarantees the
+    original manifest is left untouched on failure.
+
+    We test by monkey-patching os.replace to raise OSError after the
+    tempfile has been written — the original manifest must survive
+    byte-equal."""
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from scripts.bsa_cli import _atomic_write_text
+    finally:
+        sys.path.pop(0)
+    target = tmp_path / "subdir" / "manifest.csv"
+    target.parent.mkdir()
+    target.write_text("ORIGINAL\n", encoding="utf-8")
+    snapshot = target.read_bytes()
+
+    import os as _os
+    real_replace = _os.replace
+
+    def boom(*a, **kw):
+        raise OSError("simulated mid-rename failure")
+
+    monkeypatch.setattr(_os, "replace", boom)
+    with pytest.raises(OSError, match="simulated"):
+        _atomic_write_text(target, "NEW CONTENT THAT MUST NOT LAND\n")
+    # Manifest unchanged.
+    assert target.read_bytes() == snapshot
+    # No leftover tempfiles in the dir (atomic-write cleans up on failure).
+    leftovers = [
+        p for p in target.parent.iterdir() if p.suffix == ".tmp"
+    ]
+    assert leftovers == []
+    # Restore for any later test.
+    monkeypatch.setattr(_os, "replace", real_replace)
+
+
+def test_materials_refuses_when_existing_manifest_is_readonly(
+    tmp_path: Path,
+) -> None:
+    """Codex round-6 MEDIUM: with the round-5 atomic-write change,
+    `os.replace` swaps inodes governed by parent-dir permission, not
+    the destination file's mode. A read-only manifest used to
+    refuse new writes via write_text; now it would be silently
+    replaced. Pre-flight must check W_OK and refuse."""
+    ws = _init_workspace(tmp_path)
+    stage1 = ws / "analysis" / "proposals" / "stage1"
+    stage1.mkdir(parents=True)
+    manifest = stage1 / "source_manifest.csv"
+    manifest.write_text(
+        "SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,"
+        "Priority,Language,DateOrVersion,Notes\n"
+        "S-099,document,Pre-existing,manual,readable,T2,high,en,2025-12-01,locked\n",
+        encoding="utf-8",
+    )
+    snapshot = manifest.read_bytes()
+    import os as _os
+    _os.chmod(manifest, 0o444)
+    try:
+        src = _make_src_dir(tmp_path, {"x.md": "x"})
+        result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+        assert result.returncode == 2
+        assert "not writable" in result.stderr
+        # Manifest unchanged.
+        assert manifest.read_bytes() == snapshot
+        # Inputs should NOT have been written either (pre-flight).
+        inputs = stage1 / "inputs"
+        assert not inputs.exists() or list(inputs.iterdir()) == []
+    finally:
+        _os.chmod(manifest, 0o644)
+
+
+def test_materials_atomic_write_preserves_file_mode(tmp_path: Path) -> None:
+    """Codex round-6 MEDIUM (mode-preservation half): _atomic_write_text
+    must NOT lose the original file's mode bits. Verify by chmod-ing
+    a file 0640 then writing through the helper — mode survives."""
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from scripts.bsa_cli import _atomic_write_text
+    finally:
+        sys.path.pop(0)
+    target = tmp_path / "manifest.csv"
+    target.write_text("v1\n", encoding="utf-8")
+    import os as _os
+    _os.chmod(target, 0o640)
+    pre_mode = _os.stat(target).st_mode & 0o7777
+    assert pre_mode == 0o640, f"setup failed: chmod did not stick ({oct(pre_mode)})"
+    _atomic_write_text(target, "v2\n")
+    post_mode = _os.stat(target).st_mode & 0o7777
+    assert post_mode == 0o640, (
+        f"file mode lost during atomic replace: {oct(pre_mode)} → {oct(post_mode)}"
+    )
+    assert target.read_text(encoding="utf-8") == "v2\n"
+
+
+def test_materials_manifest_path_is_directory_caught_pre_flight(
+    tmp_path: Path,
+) -> None:
+    """Codex round-3 MEDIUM: a directory at source_manifest.csv would
+    fail the late write_text() — leaving inputs orphaned. Pre-flight
+    must detect non-file existence and refuse before any input writes."""
+    ws = _init_workspace(tmp_path)
+    stage1 = ws / "analysis" / "proposals" / "stage1"
+    stage1.mkdir(parents=True)
+    # Plant a directory where the manifest file should be.
+    (stage1 / "source_manifest.csv").mkdir()
+    src = _make_src_dir(tmp_path, {"x.md": "x"})
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 2
+    assert "not a regular file" in result.stderr
+    inputs = stage1 / "inputs"
+    # CRITICAL: no input files written.
+    assert not inputs.exists() or list(inputs.iterdir()) == []
+
+
+def test_materials_drifted_header_caught_pre_flight_no_partial_write(
+    tmp_path: Path,
+) -> None:
+    """Codex round-2 MEDIUM: header-drift used to be caught AFTER
+    input files were already written, leaving a half-committed
+    state. Round-2 moved the check pre-flight; verify zero files
+    are written when drift is detected."""
+    ws = _init_workspace(tmp_path)
+    stage1 = ws / "analysis" / "proposals" / "stage1"
+    stage1.mkdir(parents=True)
+    # Plant a drifted manifest.
+    (stage1 / "source_manifest.csv").write_text(
+        "SourceID,WRONG,COLUMNS\nS-099,a,b\n", encoding="utf-8",
+    )
+    src = _make_src_dir(tmp_path, {"new1.md": "x", "new2.md": "y"})
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 2
+    assert "non-canonical header" in result.stderr
+    inputs = stage1 / "inputs"
+    # CRITICAL invariant: no input files were written despite --commit.
+    assert not inputs.exists() or list(inputs.iterdir()) == []
+
+
+def test_materials_refuses_drifted_manifest_header(tmp_path: Path) -> None:
+    """Codex round-1 HIGH: if an existing manifest has a non-canonical
+    header (manual edit, legacy shape, reordered cols), refuse to
+    append to avoid row misalignment. Exit 2 + clear stderr."""
+    ws = _init_workspace(tmp_path)
+    # Stage a manifest with a DIFFERENT (drifted) header.
+    stage1 = ws / "analysis" / "proposals" / "stage1"
+    stage1.mkdir(parents=True)
+    (stage1 / "source_manifest.csv").write_text(
+        # Reordered: SourceType moved to second-from-last; Title dropped.
+        "SourceID,Origin,AccessStatus,ReliabilityTier,Priority,Language,"
+        "DateOrVersion,Notes,SourceType\n"
+        "S-099,manually-added,readable,T2,high,en,2025-12-01,note,document\n",
+        encoding="utf-8",
+    )
+    src = _make_src_dir(tmp_path, {"new.md": "x"})
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 2
+    assert "non-canonical header" in result.stderr
+    assert "Refuse to append" in result.stderr or "refuse" in result.stderr.lower()
+
+
+def test_materials_recursive_skips_symlinked_subdirs(tmp_path: Path) -> None:
+    """Codex round-1 MEDIUM: --recursive must NOT follow symlinked
+    subdirs (would loop forever on `src/loop -> .` and could escape
+    the requested src tree)."""
+    ws = _init_workspace(tmp_path)
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "real.md").write_text("real", encoding="utf-8")
+    # Create a self-referential symlink: src/loop -> src
+    try:
+        (src / "loop").symlink_to(src)
+    except OSError:
+        pytest.skip("symlink unsupported on this platform")
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--recursive"])
+    # If we DID follow the symlink, recursion would never terminate;
+    # the test would hang. Reaching this assert at all proves the
+    # symlink check fired.
+    assert result.returncode == 0
+    assert "real.md" in result.stdout
+    # Should NOT have re-discovered real.md as some inflated count via the loop.
+    assert result.stdout.count("real.md") <= 2  # appears once in plan + once in summary
+
+
+def test_materials_install_hint_no_canonical_header_safety(tmp_path: Path) -> None:
+    """Pin: the canonical header constant in bsa_cli matches the
+    A50 schema's documented column order exactly. If a future schema
+    edit reorders A50 columns, _A50_HEADER must follow — otherwise
+    drift detection becomes a false-positive guillotine."""
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from scripts.bsa_cli import _A50_HEADER
+    finally:
+        sys.path.pop(0)
+    schema_path = REPO_ROOT / "governance" / "schemas" / "a50.schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    documented = ",".join(schema["x-bsa-csv-columns-order"]["order"])
+    assert _A50_HEADER == documented, (
+        f"_A50_HEADER drifted from a50.schema.json. "
+        f"_A50_HEADER={_A50_HEADER!r} vs documented={documented!r}. "
+        f"Update _A50_HEADER in scripts/bsa_cli.py to match."
+    )
+
+
+def test_materials_draft_manifest_validates_against_a50_schema(tmp_path: Path) -> None:
+    """The draft manifest we emit must be a valid A50 register — the
+    same schema the F5 hook would gate at promotion. Run the actual
+    write_validator against the manifest and assert clean."""
+    ws = _init_workspace(tmp_path)
+    src = _make_src_dir(tmp_path, {
+        "doc.md": "x",
+        "Interview Alex.txt": "y",
+    })
+    _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    manifest = ws / "analysis" / "proposals" / "stage1" / "source_manifest.csv"
+    # write_validator's dispatcher matches paths under
+    # analysis/canonical/core_controls/, so we don't run the full
+    # dispatcher (the manifest lives under proposals/, intentionally
+    # outside the canonical surface). Instead, we directly invoke
+    # the A50 schema validation by symlinking the manifest into the
+    # canonical surface temporarily.
+    canon = ws / "analysis" / "canonical" / "core_controls"
+    target = canon / "A50_source_register.csv"
+    target.write_text(manifest.read_text(encoding="utf-8"), encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, "-m", "governance.schemas.write_validator",
+         "analysis/canonical/core_controls/A50_source_register.csv"],
+        input=target.read_text(encoding="utf-8"),
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    assert proc.returncode == 0, (
+        f"draft source_manifest.csv failed A50 schema validation:\n"
+        f"stderr=\n{proc.stderr}"
+    )
