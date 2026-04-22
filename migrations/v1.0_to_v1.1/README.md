@@ -163,7 +163,36 @@ For a v1.0.x pilot workspace:
 
 ## Migration tool status
 
-`scripts/migrate_v1.0_to_v1.1.py` is **not yet implemented** as of v1.1.1. The migration backlog above is the spec for that script. Until it lands, operators with a v1.0.x pilot workspace must apply the mechanical steps manually (the catalog above gives the per-row mapping rules) and use the `bsa doctor` output as a checklist.
+`scripts/migrate_v1.0_to_v1.1.py` shipped in **v1.1.2** (matching the spec above). Operators apply the four mechanical fixes via flags (or `--all-mechanical`) and surface the four manual-review classes via `--report <kind>` (or `--report all-reports`). Run `scripts/migrate_v1.0_to_v1.1.py --help` for the full CLI surface.
+
+Recommended invocation sequence for a Sysco-shaped pilot workspace:
+
+```bash
+# 1. Backup
+cp -r path/to/analysis path/to/analysis.bak
+
+# 2. Capture pre-migration doctor baseline
+bsa doctor > pre_migration.txt
+
+# 3. Run v0.9 → v1.0 if not already done
+scripts/migrate_v0.9_to_v1.0.py --workspace=path/to/analysis/ --apply
+
+# 4. Apply all four v1.0 → v1.1 mechanical fixes (dry-run first, then apply)
+scripts/migrate_v1.0_to_v1.1.py --workspace=path/to/analysis/ --all-mechanical
+scripts/migrate_v1.0_to_v1.1.py --workspace=path/to/analysis/ --all-mechanical --apply
+
+# 5. Surface manual-review findings (operator handles each per the catalog above)
+scripts/migrate_v1.0_to_v1.1.py --workspace=path/to/analysis/ --report all-reports
+
+# 6. Operator manually resolves the report findings (verdict caveats, A50 AccessStatus
+#    partial, A60 header mismatch, A51 reconciliation), then bumps A48.CanonPolicyVersion
+#    to match the live .claude-plugin/plugin.json canonPolicyVersion.semver.
+
+# 7. Re-run bsa doctor — expected to be GREEN
+bsa doctor
+```
+
+Each fix run appends to `<workspace>/runtime/migration_log_v1.0_to_v1.1.jsonl` for traceability. Backup files (`.pre-v1.1.bak`) are written before any in-place edit; first run wins so re-running is idempotent.
 
 Tracking item: see [docs/pilot_validation.md](../../docs/pilot_validation.md) §Sysco workstream for the latest status.
 

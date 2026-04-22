@@ -22,14 +22,18 @@ Status, findings, and follow-up backlog from real-world pilot workspaces against
 **Closed in v1.1.1:**
 - A51 IssueType `inventory_gap` (additive enum extension; no migration needed).
 - A51 Severity `critical` (additive enum extension; no migration needed).
-- Schema-and-contract consistency drift (h1_spec.md / h4_spec.md / shared-control-surface-contracts.md / docs/architecture_overview.md / docs/workflow.md all aligned to the new closed sets).
+- A51 IssueType `cross_tier_contradiction` (internal alignment; promotes orchestrator-emitted variant from doc-only convention to first-class enum value).
+- Schema-and-contract consistency drift (h1_spec.md / h4_spec.md / shared-control-surface-contracts.md / docs/architecture_overview.md / docs/workflow.md / reliability_tier_spec.md / discovery_to_main_merge.md all aligned to the new closed sets).
+
+**Closed in v1.1.2:**
+- `scripts/migrate_v1.0_to_v1.1.py` ships with: 4 mechanical fixes (`--markers-only`, `--a50-priority`, `--a50-reliability-tier`, `--a50-source-id-prefix`, or `--all-mechanical`) + 4 report-only checks (`--report verdict-caveats|a50-access-status-partial|a60-header-mismatch|a51-reconciliation` or `--report all-reports`). Idempotent, non-destructive (`.pre-v1.1.bak` backups), JSONL-logged. Smoke-tested against the Sysco workspace — correctly classifies all 8 v1.0.x → v1.1.x drift classes.
+- 23 regression tests (`tests/test_migrate_v1_0_to_v1_1.py`) covering preflight, all 4 mechanical fixes (dry-run + apply + idempotent), all 4 report kinds, JSONL log schema, and the combined `--all-mechanical` + `--report all-reports` paths.
 
 **Open backlog (in priority order):**
 
-1. **Implement `scripts/migrate_v1.0_to_v1.1.py`** (mechanical steps + `--report` flags for manual review) — see migration spec in `migrations/v1.0_to_v1.1/README.md`. Estimated effort: Medium (1-2 days).
-2. **Operator runbook** for the manual-review steps (verdict caveats, A50 AccessStatus partial, A60 column-set mapping, A51 reconciliation). Estimated effort: Short (1-4h).
-3. **Second-round Sysco doctor pass** after the migration extension lands. Verifies the script closes the mechanical drift; identifies any unforeseen edge cases.
-4. **A60 schema-and-doc alignment**: confirm the Sysco A60 column drift is genuine schema misuse (not a draft-schema artifact). If draft-schema, note in changelog; if genuine misuse, harden the operator-facing A60 docs.
+1. **Operator runbook** for the manual-review steps (decision trees for verdict caveats, A50 AccessStatus partial, A60 column-set mapping, A51 reconciliation). Estimated effort: Short (1-4h).
+2. **Second-round Sysco doctor pass** after the operator applies the v1.1.2 migration end-to-end against the real workspace. Verifies the script closes the mechanical drift in practice; identifies any unforeseen edge cases.
+3. **A60 schema-and-doc alignment**: confirm the Sysco A60 column drift is genuine schema misuse (not a draft-schema artifact). If draft-schema, note in changelog; if genuine misuse, harden the operator-facing A60 docs.
 
 **Pilot lessons captured into the framework:**
 - The `bsa doctor` validator successfully surfaces every drift class without requiring custom Sysco-specific code — confirms the dispatcher pattern in `scripts/bsa_doctor.py` is operator-friendly.

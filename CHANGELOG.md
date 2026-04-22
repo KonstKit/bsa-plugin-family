@@ -4,6 +4,51 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.2] — 2026-04-23
+
+**Sysco mechanical migration script.** Implements `scripts/migrate_v1.0_to_v1.1.py` per the spec authored in v1.1.1. Operators can now mechanically apply four classes of v1.0.x → v1.1.x drift fixes (marker payload field renames + A50 Priority/ReliabilityTier/SourceID-prefix cleanup) AND surface four classes of manual-review findings (verdict caveats / A50 AccessStatus partial / A60 header mismatch / A51 reconciliation) via `--report` flags.
+
+**Tag target**: this commit (the v1.1.2 migration script implementation).
+**Canon policy version**: `1.1.1+hash:a5b51af8` — **unchanged** from v1.1.1 (operator-tooling addition only; canon hash is unchanged because `scripts/` is not in POLICY_GLOBS, matching the v1.0.x patch-line precedent where v1.0.0 → v1.0.4 all kept the manifest at `1.0.0`). The v1.1.2 git tag marks the operator-tooling release; the policy state is identical to v1.1.1.
+
+### Added
+
+- **`scripts/migrate_v1.0_to_v1.1.py`** (350+ LOC, stdlib-only, Python 3.9+) — the mechanical migration tool spec'd in v1.1.1's `migrations/v1.0_to_v1.1/README.md`. Mirrors the structural template of `scripts/migrate_v0.9_to_v1.0.py`:
+  - **Mechanical fixes** (apply with `--apply`):
+    - `--markers-only` — marker payload field renames (`marker`→`marker_id`, `emittedAt`→`timestamp`, `canonPolicyVersion`→`canon_policy_version`); injects `<MIGRATION_TODO_VERDICT verdict_hint=<inferred>>` when verdict is missing so the operator sees it on next `bsa doctor`.
+    - `--a50-priority` — strips Jira-style `P\d_` prefix from A50 Priority column (`P1_high`→`high`, `P2_medium`→`medium`, `P3_low`→`low`); inserts `<MIGRATION_TODO_PRIORITY_CRITICAL>` for legacy `P0_critical` (A50 Priority enum has no `critical` value — operator must escalate via A51).
+    - `--a50-reliability-tier` — strips free-text suffix from A50 ReliabilityTier (`T2_primary_notes`→`T2`); appends descriptor to Notes column (creates Notes column if missing).
+    - `--a50-source-id-prefix` — prepends canonical `S-` prefix to A50 SourceID matching `^[A-Z]{2,5}-\d{3,4}$`; rewrites every cross-reference in A58/A59/A60 SourceID columns to keep foreign keys consistent.
+    - `--all-mechanical` — runs all four mechanical fixes in one invocation.
+  - **Report-only checks** (always read-only):
+    - `--report verdict-caveats` — lists every marker with verdict NOT in the closed enum (e.g., `PASS (with caveats)`).
+    - `--report a50-access-status-partial` — lists every A50 row with AccessStatus NOT in the closed enum (e.g., `readable_partial`, `unreadable_binary`).
+    - `--report a60-header-mismatch` — prints A60 header alongside the canonical header when columns differ.
+    - `--report a51-reconciliation` — finds every A51 row with `ResolutionStatus=open` that a marker payload declares resolved/remediated (within ±80 char window of the A51Ref).
+    - `--report all-reports` — aliases all four reports.
+  - **Properties**: idempotent, non-destructive (`.pre-v1.1.bak` backups before every write), scoped to `analysis/`, JSONL log under `<workspace>/runtime/migration_log_v1.0_to_v1.1.jsonl`, dry-run by default.
+  - **Smoke-tested against the Sysco pilot workspace** (`/private/tmp/sysco-pilot-v103`): correctly classifies all 8 drift classes from the v1.0.x doctor output into mechanical-or-manual buckets, and matches the doctor's A51 reconciliation finding count (3 findings, not just 1) by delegating to the upstream auditor instead of duplicating it.
+- **`tests/test_migrate_v1_0_to_v1_1.py`** (+29 tests) — covers preflight, all 4 mechanical fixes (dry-run + apply + idempotent), all 4 report kinds, JSONL log schema, the combined `--all-mechanical` + `--report all-reports` paths, headerless-CSV detection, write-error logging, parent-workspace mode, report-only immutability, and A51 synonym parity (fixed/completed/done).
+
+### Codex review discipline
+
+- **Round-1 review (REJECT)** raised 2 release-blocking issues + 2 should-fix issues, all addressed before commit:
+  - **Must (closed)** — `report_a51_reconciliation` had hand-rolled scanning (only 5 resolution keywords, 80-char window, ignored H1-H4 handoff packets, didn't expand `A51-MISS-010/011` shorthand). v1.1.2 final delegates to `scripts/validate_a51_reconciliation.audit_workspace()` for full parity with `bsa doctor`. Verified by re-smoke on Sysco workspace (1 → 3 findings; matches doctor).
+  - **Must (closed)** — `report_a60_header_mismatch` hardcoded a stale 5-column canonical (real schema is 7: `NegEvID, SourceID, ExcerptRef, RelatedClaimID, NegativeFinding, A51Ref, Notes`). v1.1.2 final loads the canonical column set from `governance/schemas/a60.schema.json` at module-import time + uses exact-set semantics (missing OR extra columns both flagged). Stale test asserting 5-col file as canonical was rewritten.
+  - **Should (closed)** — headerless CSV inputs were silently downgraded to "no column" skips (`csv.DictReader` promotes the first data row to a header). v1.1.2 final adds `_csv_read_validated()` that raises `HeaderValidationError` when none of the expected marker columns are present; surfaces as a real error record.
+  - **Should (closed)** — SourceID-prefix phase-3 writes logged `applied` before the actual write succeeded. v1.1.2 final emits `planned` in phase 1+2 and `applied` (or `error`) per file after each phase-3 write.
+
+### Updated
+
+- **`migrations/v1.0_to_v1.1/README.md`** — marks the migration tool as IMPLEMENTED (was: spec'd, implementation pending). Recommended migration order section gains the actual command-line invocations.
+- **`docs/pilot_validation.md`** — Sysco "Open backlog" item #1 (script implementation) marked DONE; backlog now leads with the operator runbook + second-round doctor pass.
+
+### Carried forward (deferred to v1.2)
+
+- Operator runbook for the manual-review steps (decision trees for verdict caveats, A50 AccessStatus partial, A60 column-set mapping, A51 reconciliation).
+- Second-round Sysco doctor pass after operator applies the migration end-to-end.
+- A60 schema-and-doc alignment (confirm the Sysco A60 column drift is genuine misuse vs draft-schema artifact).
+
 ## [v1.1.1] — 2026-04-23
 
 **Sysco pilot enum-extension patch + internal contract alignment.** Closes the schema-extendable subset of Sysco-pilot drift via three additive A51 enum extensions, plus aligns existing internal documentation with the closed schema enums (no behavior change; doc drift had accumulated since v1.0.0).
