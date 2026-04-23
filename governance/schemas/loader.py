@@ -362,6 +362,17 @@ def iter_backlog_export_github_rows(path: Path) -> Iterator[dict[str, str]]:
     return _iter_canonical_csv("backlog_export_github", path)
 
 
+def load_live_api_response(path: Path) -> dict[str, Any]:
+    """Load + return the live_api_response.json document for a workspace.
+
+    Phase 3 Section C (v1.1.6, closes TODO-S9-LIVE-API). The response file
+    is structured (top-level object), not CSV — return as a dict for
+    callers that want to read the idempotency state without re-running
+    the full F5 schema validation pass."""
+    with path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 def _iter_canonical_csv(schema_name: str, path: Path) -> Iterator[dict[str, str]]:
     """Shared body for the iter_aNN_rows family.
 

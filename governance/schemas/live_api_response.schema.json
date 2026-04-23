@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/live_api_response.schema.json",
+  "title": "Live API response state",
+  "description": "Schema for analysis/handoff/live_api_response.json — the per-row outcome record produced by scripts/backlog_live_apply.py (Phase 3, Section C, closes TODO-S9-LIVE-API). One file per (workspace, platform) pair. Idempotency state: re-running backlog_live_apply against an unchanged export reads this file, skips already-created rows by idempotency_key, and only POSTs the missing ones. Strictly read-only with respect to canonical state. F5-validated so a malformed response file (wrong schema, missing provenance, broken idempotency key) fails the write rather than landing as a corrupt state file. Tokens are NEVER persisted here — only platform_base_url + the operator's run_id + per-row idempotency keys + created issue references.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "platform",
+    "platform_base_url",
+    "operator_run_id",
+    "source_export_path",
+    "results",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$",
+      "description": "Live-API response shape version. Bumped on breaking shape changes; consumers can pin to a known major version. Format: bare semver (no canon-policy hash; the response is downstream of canonical state, not part of it)."
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "ISO-8601 UTC timestamp when this run completed (success or partial failure). Same shape as marker.timestamp."
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["jira", "linear", "github"],
+      "description": "Platform discriminator. Tied to which export file was consumed (backlog_export_jira.json, backlog_export_linear.csv, backlog_export_github.csv)."
+    },
+    "platform_base_url": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 8,
+      "description": "Base URL of the live API instance (e.g., https://acme.atlassian.net for Jira; https://api.linear.app for Linear; https://api.github.com for GitHub). Recorded so an operator can audit which instance the export landed in. Tokens are NEVER recorded here — only the public base URL."
+    },
+    "operator_run_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]{8,64}$",
+      "description": "Operator-supplied run identifier (CLI flag --run-id=<id>, or auto-generated from timestamp + workspace name). Lets two operators distinguish their concurrent runs against the same instance. Lowercase alphanumeric + hyphen + underscore."
+    },
+    "source_export_path": {
+      "type": "string",
+      "minLength": 8,
+      "description": "Workspace-relative path to the export file consumed (e.g., 'analysis/handoff/backlog_export_jira.json'). Pin to the live canonical state at the time of run for drift detection."
+    },
+    "source_export_canon_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}$",
+      "description": "Optional. canon_policy_version hash_prefix at the time of the run. Captures which canonical policy state the export was generated from. Helpful for cross-referencing with audit_expectations on regression tests."
+    },
+    "results": {
+      "type": "array",
+      "minItems": 0,
+      "items": {"$ref": "#/$defs/result_row"},
+      "description": "One element per export row processed in this run. Empty array allowed when the export contained zero rows (early Phase-3 runs)."
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "created", "skipped", "failed"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0, "description": "Total rows in the export consumed by this run."},
+        "created": {"type": "integer", "minimum": 0, "description": "Rows that resulted in a NEW platform-side resource (HTTP 2xx)."},
+        "skipped": {"type": "integer", "minimum": 0, "description": "Rows skipped because the idempotency_key was already present in a prior live_api_response.json (re-run safety)."},
+        "failed": {"type": "integer", "minimum": 0, "description": "Rows that failed after retry budget exhausted. Each failure carries last_error in its result_row."}
+      },
+      "description": "Aggregate counts. Operator can read this without scanning the full results array. total = created + skipped + failed by invariant."
+    }
+  },
+  "$defs": {
+    "result_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["story_id", "idempotency_key", "status", "attempts"],
+      "properties": {
+        "story_id": {
+          "type": "string",
+          "pattern": "^STORY-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+          "description": "A70.StoryID this row maps to. Provenance carry-through from the export."
+        },
+        "idempotency_key": {
+          "type": "string",
+          "pattern": "^bsa-STORY-(?:[A-Z]{2,5}-)?[0-9]{3,4}-[a-f0-9]{8}$",
+          "description": "Per-row idempotency key. Format: bsa-{StoryID}-{canon_hash_prefix}. Re-runs of backlog_live_apply against the same StoryID + same canonical policy state will see the key in a prior live_api_response.json and skip. Changing the canonical state (canon hash moves) produces a new key, which the platform may treat as a new issue (operator must reconcile via platform-side dedup if needed)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["created", "skipped", "failed"],
+          "description": "Outcome. created = HTTP 2xx + platform_id captured. skipped = prior run's idempotency_key was found; no HTTP call this run. failed = retry budget exhausted; last_error populated."
+        },
+        "platform_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "not": {
+            "anyOf": [
+              {"pattern": "eyJ[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}"},
+              {"pattern": "gh[pousr]_[A-Za-z0-9]{30,}"},
+              {"pattern": "ATATT3[A-Za-z0-9]{20,}"},
+              {"pattern": "(?:[Bb][Ee][Aa][Rr][Ee][Rr]|[Bb][Aa][Ss][Ii][Cc])\\s+[A-Za-z0-9_\\-=+/.]{20,}"}
+            ]
+          },
+          "description": "Platform-side identifier of the created resource (Jira issue key 'BSA-123'; Linear issue identifier 'OPS-456'; GitHub issue number '789' as string). Empty when status=failed. Token-shaped strings (JWT, GitHub PAT, Atlassian API token, Bearer/Basic credentials) are explicitly REJECTED here — defense-in-depth against accidental token persistence (Codex v1.1.6 round-1 should-fix #2)."
+        },
+        "platform_url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 500,
+          "not": {
+            "anyOf": [
+              {"pattern": "eyJ[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}"},
+              {"pattern": "gh[pousr]_[A-Za-z0-9]{30,}"},
+              {"pattern": "ATATT3[A-Za-z0-9]{20,}"},
+              {"pattern": "(?:[Bb][Ee][Aa][Rr][Ee][Rr]|[Bb][Aa][Ss][Ii][Cc])\\s+[A-Za-z0-9_\\-=+/.]{20,}"}
+            ]
+          },
+          "description": "Optional. Browseable URL the operator can open in a browser to inspect the created resource. When platform_base_url + platform_id are both present, the script computes this from a per-platform pattern. Token-shaped strings explicitly rejected (a query-string token would be a leak)."
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Number of HTTP attempts made for this row. 0 = skipped (idempotency hit). 1 = first attempt succeeded. >1 = retry-with-backoff occurred. Capped at 10 to bound runtime against pathological 5xx loops."
+        },
+        "last_error": {
+          "type": "string",
+          "maxLength": 1000,
+          "not": {
+            "anyOf": [
+              {"pattern": "eyJ[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}"},
+              {"pattern": "gh[pousr]_[A-Za-z0-9]{30,}"},
+              {"pattern": "ATATT3[A-Za-z0-9]{20,}"},
+              {"pattern": "(?:[Bb][Ee][Aa][Rr][Ee][Rr]|[Bb][Aa][Ss][Ii][Cc])\\s+[A-Za-z0-9_\\-=+/.]{20,}"}
+            ]
+          },
+          "description": "When status=failed, the last error message captured. Tokens are SCRUBBED before recording (Authorization header values replaced with <REDACTED>) AND the schema explicitly rejects token-shaped strings here — defense-in-depth against the scrub regex missing a novel token shape (Codex v1.1.6 round-1 should-fix #2)."
+        }
+      }
+    }
+  }
+}

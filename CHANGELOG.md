@@ -4,6 +4,52 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.6] — 2026-04-23
+
+**Live API integration (Section C).** Closes `[TODO-S9-LIVE-API]`. The `bsa-backlog-bridge` skill produced static export files since v1.1.0; v1.1.6 adds `scripts/backlog_live_apply.py` which POSTs each exported row to the live platform API (Jira REST, Linear GraphQL, GitHub REST). All three platforms ship in one patch.
+
+**Tag target**: this commit (the v1.1.6 live-API integration).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — patch-line bump from 1.1.4 (semver moves with manifest; hash advanced from `bsa-backlog-bridge/SKILL.md` edit closing the TODO).
+
+### Added
+
+- **`scripts/backlog_live_apply.py`** (730+ LOC, stdlib-only Python 3.9+) — three-platform live API client with idempotency + retry + partial-failure handling.
+  - **Idempotency**: per-row key `bsa-{StoryID}-{canon_hash_prefix}`. Re-runs against an unchanged export read the prior `live_api_response.json` and skip already-created rows. Changing the canonical state (canon hash moves) yields a new key — operator must reconcile via platform-side dedup if needed.
+  - **Dry-run by default**: `--apply` to actually POST. Dry-run prints the response document to stdout without writing the live state file.
+  - **Stdlib-only HTTP**: `urllib.request` (no `requests`/`httpx` dependency). All three platforms use the same `_http_post_json` core.
+  - **Exponential backoff**: 1s → 2s → 4s → 8s → 16s on 429 (rate-limited) + 5xx (server error) + network errors. Capped at 5 attempts per row; per-row deadline 30s.
+  - **Partial-failure tolerant**: continues processing remaining rows after an individual failure. Exit code 1 only if at least one row failed; exit 0 on full success / dry-run; exit 2 on invocation error.
+  - **Token security**: env-var indirection only (`--jira-token-env=BSA_JIRA_TOKEN` etc.); tokens NEVER appear in CLI args. Authorization-header values scrubbed (`<REDACTED>`) in error messages before persistence. Per-attempt JSONL log (`live_api_log.jsonl`) records request URL + status code + attempt number — NO bodies, NO headers.
+  - **Per-platform clients**:
+    - Jira: `POST /rest/api/3/issue` with the bridge-emitted issue payload. Basic auth (email + API token, Atlassian Cloud convention).
+    - Linear: `POST /graphql` with `mutation issueCreate` (Linear has no REST surface). Bearer-style auth header. Requires `--linear-team-id`.
+    - GitHub: `POST /repos/{owner}/{repo}/issues`. Bearer auth. Issue-only — Project v2 board assignment is operator-side via `gh` CLI (still TODO-S9-03-IMPORT-DRIVER).
+- **`governance/schemas/live_api_response.schema.json`** — F5-validated structured response file at `analysis/handoff/live_api_response.json`. Schema enforces: platform enum (jira/linear/github), idempotency_key shape (`^bsa-STORY-...-[a-f0-9]{8}$`), summary cardinality (total = created + skipped + failed), and the cross-field invariants `status='created' MUST carry platform_id` + `status='failed' MUST carry last_error`. Tokens NEVER persisted here — only platform_base_url + operator_run_id + per-row idempotency state.
+- **F5 dispatcher entry** for `analysis/handoff/live_api_response.json` (new `_validate_live_api_response_json` function in `write_validator.py`).
+- **`governance.schemas.loader.load_live_api_response`** helper.
+- **`tests/test_backlog_live_apply.py`** (+43 tests after round-1 hardening) — schema-level F5 dispatch + cross-field invariants; script-behavior with mocked HTTP (all 3 platforms × success/retry/failure paths, GraphQL strict-success branches, idempotency hit, idempotency key format); subprocess end-to-end (dry-run, run-id, missing args); v1.1.6 round-1 hardening (concurrency lock, validate-before-write, strict-deadline, token-shape rejection in platform_id/platform_url/last_error, platform-filter on prior state, GraphQL soft-failure no-retry, missing-team-id fast-fail).
+
+### Round-1 Codex review hardening (round-2 fixes)
+
+Codex round-1 review (REJECT) raised 2 critical bugs + 4 should-fix items. All addressed before final commit:
+
+- **Critical (closed)** — Cross-platform state collision. Single shared `live_api_response.json` would let a sequential Jira→Linear→GitHub run skip the later platforms via stale cross-platform idempotency hits. v1.1.6 final uses **per-platform filenames** (`live_api_response_{jira,linear,github}.json`); F5 dispatcher regex narrowed to `live_api_response_(?:jira|linear|github)\.json`; `_load_prior_state_validated` hard-filters by top-level `platform` field even if the file got renamed.
+- **Critical (closed)** — Linear GraphQL "soft failure" treated as success. Any HTTP 200 was marked `created` regardless of the GraphQL `errors[]` array, `data.issueCreate.success=false`, or missing `issue.identifier`. v1.1.6 final adds `_is_linear_success()` strict check (no errors AND success=true AND non-empty identifier). Also added upfront `--linear-team-id` validation in `_build_linear_config` so missing team_id fails FAST instead of burning the retry budget.
+- **Should (closed)** — Response file written without `validate_canonical_write` pre-check. The advertised F5 guarantee was post-hoc only. v1.1.6 final calls the validator BEFORE `write_text` and exits 2 on violations.
+- **Should (closed)** — Schema didn't reject token-shaped strings in `platform_id` / `platform_url` / `last_error`. Defense-in-depth fix: each field gets a `not.anyOf` JSON-Schema clause rejecting JWT, GitHub PAT (`ghp_/gho_/ghu_/ghs_/ghr_` prefix), Atlassian API token (`ATATT3...`), and Bearer/Basic-prefixed credentials. Loader's `_load_prior_state_validated` also calls `_looks_token_shaped()` to quarantine any prior-state row that slipped past schema validation.
+- **Should (closed)** — Per-row deadline non-strict. Backoff sleep + request time could overshoot; `attempts` counter incremented even when the deadline-break path hit. v1.1.6 final tracks `sent_attempts` separately from the loop counter; caps both per-request timeout and backoff sleep by `remaining_budget`; aborts cleanly when remaining < 1s without incrementing `sent_attempts`.
+- **Should (closed)** — Concurrent runs race condition. Two `--apply` runs against the same workspace+platform could both POST. v1.1.6 final adds `_acquire_platform_lock()` using `fcntl.flock` (Unix) / existence-check (Windows fallback) on a per-platform `live_api_response_{platform}.lock` file. Second concurrent run exits 2 with a clear "lock held" message.
+
+### Updated
+
+- **`skills/bsa-backlog-bridge/SKILL.md` Open follow-ups** — `[TODO-S9-LIVE-API]` struck through with closure note; documents the operator runbook (env-var indirection, idempotency convention, per-row deadline + backoff caps, partial-failure semantics).
+
+### Carried forward (deferred to v1.2 / Section D-K)
+
+- Operator-side import drivers (`scripts/jira_import_from_export.sh`, `scripts/linear_import_from_export.sh`, `scripts/github_import_from_export.sh`) — for operators who prefer shell over Python (or cannot install Python in their CI). v1.2 candidate (Section H/J).
+- GitHub Project v2 board assignment automation (`gh project item-create` + `gh project item-edit` orchestration) — still TODO-S9-03-IMPORT-DRIVER. The live-apply script handles GitHub Issues only; Project v2 columns are set post-import by the operator's gh script.
+- Live-API dry-run preview as a separate `--preview` flag (currently the dry-run print is the response document JSON, which is verbose). Cosmetic.
+
 ## [v1.1.5] — 2026-04-23
 
 **Adversarial fixtures (B3).** Closes the three v1.2-candidate adversarial-fixture TODOs from the v1.1.0 carried-forward list — block-on-contradiction failure mode, multi-way contradictions, and tier-delta auto-resolution case. All three ship as fixture-data + integration tests; the block-on-contradiction fixture is **spec-only** (documents an unimplemented opt-in failure mode the v1.2 implementation will use as its regression baseline).

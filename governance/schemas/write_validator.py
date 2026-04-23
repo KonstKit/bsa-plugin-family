@@ -230,6 +230,57 @@ def _validate_jira_export_json(path: str, content: str) -> list[str]:
     ]
 
 
+def _validate_live_api_response_json(path: str, content: str) -> list[str]:
+    """Parse live_api_response.json + validate against live_api_response schema.
+
+    Section C v1.1.6, closes TODO-S9-LIVE-API. The response file is
+    structured (top-level object with platform discriminator + per-row
+    results array), not row-by-row CSV. Schema enforces the platform
+    enum, idempotency_key shape, summary cardinality, and security pin
+    that no token-shaped strings appear. Mirrors the Jira-export
+    validator pattern."""
+    import jsonschema  # lazy
+
+    del path  # not used for response JSON
+    try:
+        doc = json.loads(content)
+    except json.JSONDecodeError as exc:
+        return [f"<json>: invalid JSON — {exc}"]
+    schema = _loader.load_schema("live_api_response")
+    validator = jsonschema.Draft202012Validator(
+        schema, format_checker=jsonschema.FormatChecker()
+    )
+    violations = [
+        f"{'.'.join(str(p) for p in e.absolute_path) or '<root>'}: {e.message}"
+        for e in sorted(validator.iter_errors(doc), key=lambda e: list(e.absolute_path))
+    ]
+    # Cross-field invariant: summary.total == created + skipped + failed.
+    # Catches arithmetic drift the schema can't easily express via JSON
+    # Schema alone (would need conditionals).
+    if isinstance(doc, dict) and isinstance(doc.get("summary"), dict):
+        s = doc["summary"]
+        if all(isinstance(s.get(k), int) for k in ("total", "created", "skipped", "failed")):
+            if s["total"] != s["created"] + s["skipped"] + s["failed"]:
+                violations.append(
+                    f"summary: total ({s['total']}) != created+skipped+failed "
+                    f"({s['created']}+{s['skipped']}+{s['failed']}={s['created']+s['skipped']+s['failed']})"
+                )
+    # Cross-field invariant: results[].status=created MUST carry platform_id.
+    if isinstance(doc, dict) and isinstance(doc.get("results"), list):
+        for idx, row in enumerate(doc["results"]):
+            if not isinstance(row, dict):
+                continue
+            if row.get("status") == "created" and not (row.get("platform_id") or "").strip():
+                violations.append(
+                    f"results[{idx}]: status='created' requires non-empty platform_id"
+                )
+            if row.get("status") == "failed" and not (row.get("last_error") or "").strip():
+                violations.append(
+                    f"results[{idx}]: status='failed' requires non-empty last_error"
+                )
+    return violations
+
+
 def _validate_a48_markdown(path: str, content: str) -> list[str]:
     """Parse A48 markdown, validate normalized dict against schema.
 
@@ -1044,6 +1095,24 @@ _DISPATCHER: list[_DispatcherEntry] = [
         re.compile(r"(?:^|/)analysis/handoff/backlog_export_github\.csv$"),
         "backlog_export_github",
         _make_csv_validator("backlog_export_github"),
+    ),
+    # Phase 3 (Section C v1.1.6): live API response state files.
+    # Closes TODO-S9-LIVE-API. scripts/backlog_live_apply.py POSTs each
+    # exported row to the live platform API (Jira REST / Linear GraphQL /
+    # GitHub REST) and writes a per-platform state file as the per-row
+    # outcome record (idempotency state + platform IDs + retry counts).
+    # F5-validated so a malformed response file fails the write rather
+    # than landing as corrupt state. Tokens are NEVER persisted.
+    #
+    # v1.1.6 round-1 (Codex): per-platform filenames are the contract;
+    # a shared live_api_response.json would let a sequential
+    # Jira→Linear→GitHub run skip the later platforms via stale
+    # cross-platform idempotency hits. Pattern: live_api_response_<plat>.json
+    # where <plat> ∈ {jira, linear, github}.
+    (
+        re.compile(r"(?:^|/)analysis/handoff/live_api_response_(?:jira|linear|github)\.json$"),
+        "live_api_response",
+        _validate_live_api_response_json,
     ),
 ]
 
