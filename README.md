@@ -82,6 +82,7 @@ docs/                   User + maintainer documentation
 - [docs/troubleshooting.md](docs/troubleshooting.md) — common failure modes.
 - [docs/architecture_overview.md](docs/architecture_overview.md) — skill families + invariants + governance.
 - [docs/pilot_validation.md](docs/pilot_validation.md) — Pilot-1 status + framework-level pilot validation invariants.
+- [docs/pilot_2nd_pass_runbook.md](docs/pilot_2nd_pass_runbook.md) — operator runbook for the 2nd Pilot-1 doctor pass (manual-review decision trees + pre/post diff workflow). v1.1.15.
 - [docs/sidecar_inventory.md](docs/sidecar_inventory.md) — c4-plantuml + camunda-bpmn sidecar inventory + F5-boundary contract.
 - [docs/perf_baseline.md](docs/perf_baseline.md) — hot-path latency baseline + regression policy (run `python3 scripts/perf_bench.py --check` to verify).
 - [docs/phase_7_design.md](docs/phase_7_design.md) — Phase 7 self-improvement loop foundation (tunable inventory + IMMUTABLE_CONFLICT lint + safety contract). v1.1.14.

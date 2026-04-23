@@ -31,11 +31,14 @@ Status, findings, and follow-up backlog from real-world pilot workspaces against
 - `scripts/migrate_v1.0_to_v1.1.py` ships with: 4 mechanical fixes (`--markers-only`, `--a50-priority`, `--a50-reliability-tier`, `--a50-source-id-prefix`, or `--all-mechanical`) + 4 report-only checks (`--report verdict-caveats|a50-access-status-partial|a60-header-mismatch|a51-reconciliation` or `--report all-reports`). Idempotent, non-destructive (`.pre-v1.1.bak` backups), JSONL-logged. Smoke-tested against the Pilot-1 workspace — correctly classifies all 8 v1.0.x → v1.1.x drift classes.
 - 23 regression tests (`tests/test_migrate_v1_0_to_v1_1.py`) covering preflight, all 4 mechanical fixes (dry-run + apply + idempotent), all 4 report kinds, JSONL log schema, and the combined `--all-mechanical` + `--report all-reports` paths.
 
+**Closed in v1.1.15 (Section K prep):**
+
+- **Operator runbook** for the manual-review steps shipped as [docs/pilot_2nd_pass_runbook.md](pilot_2nd_pass_runbook.md): decision trees for B verdict-caveats, E A50 AccessStatus partial, G A60 column-set mapping, H A51 reconciliation; pre/post doctor diff via the new `scripts/compare_doctor_outputs.py` helper; reporting template for sending the 2nd-pass bundle back to the maintainer.
+
 **Open backlog (in priority order):**
 
-1. **Operator runbook** for the manual-review steps (decision trees for verdict caveats, A50 AccessStatus partial, A60 column-set mapping, A51 reconciliation). Estimated effort: Short (1-4h).
-2. **Second-round  Pilot-1 doctor pass** after the operator applies the v1.1.2 migration end-to-end against the real workspace. Verifies the script closes the mechanical drift in practice; identifies any unforeseen edge cases.
-3. **A60 schema-and-doc alignment**: confirm the Pilot-1 A60 column drift is genuine schema misuse (not a draft-schema artifact). If draft-schema, note in changelog; if genuine misuse, harden the operator-facing A60 docs.
+1. **Second-round Pilot-1 doctor pass** — operator-driven (operator-blocked from v1.1.x). The runbook + helper are in place; awaiting an operator running the 2nd pass against the real Pilot-1 workspace + reporting back per the runbook's Step 6 template.
+2. **A60 schema-and-doc alignment**: confirm the Pilot-1 A60 column drift is genuine schema misuse (not a draft-schema artifact). If draft-schema, note in changelog; if genuine misuse, harden the operator-facing A60 docs. Operator-blocked (depends on the 2nd-pass outcome).
 
 **Pilot lessons captured into the framework:**
 - The `bsa doctor` validator successfully surfaces every drift class without requiring custom Pilot-1-specific code — confirms the dispatcher pattern in `scripts/bsa_doctor.py` is operator-friendly.

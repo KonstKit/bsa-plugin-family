@@ -4,6 +4,54 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.15] — 2026-04-23
+
+**2nd Pilot-1 pass prep (Section K).** Closes Open Backlog #1 from `docs/pilot_validation.md` (operator runbook for manual-review steps). The actual 2nd Pilot-1 doctor pass remains operator-blocked — needs an operator with access to the real Pilot-1 workspace + signoff. v1.1.15 ships everything the framework can do without that operator action: the runbook + a pre/post doctor-output diff helper.
+
+**Tag target**: this commit (the v1.1.15 Pilot-1 prep release).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. Runbook + helper live outside POLICY_GLOBS; canon hash unchanged. Manifest version stays at 1.1.6; v1.1.15 git tag marks the prep release.
+
+### Added
+
+- **`docs/pilot_2nd_pass_runbook.md`** — operator runbook (~200 lines) covering:
+  * Pre-flight capture (`bsa doctor > pre.txt` + workspace snapshot).
+  * Step 1: mechanical migration (`migrate_v1.0_to_v1.1.py --all-mechanical --apply`).
+  * Step 2: manual reviews with decision trees for the 4 manual-review drift classes (B verdict caveats, E A50 AccessStatus partial, G A60 column-set, H A51 reconciliation).
+  * Step 3: re-run doctor + interpret the section-by-section verdict.
+  * Step 4: diff pre/post via `compare_doctor_outputs.py`.
+  * Step 5: reporting template (what bundle to send back to the maintainer).
+  * Common gotchas (idempotent re-runs, .pre-v1.1.bak handling, F5 hook rejections, gitignore).
+- **`scripts/compare_doctor_outputs.py`** — stdlib-only diff helper that classifies each doctor section: CLOSED (FAIL→OK) / NEW (OK→FAIL — regression alert) / PERSISTED (no progress) / CHANGED (partial progress with detail change) / STILL_OK / DROPPED / ADDED. Exits 1 on any NEW section so CI / operators are alerted to regressions before declaring the migration successful. Tolerates trailing content on the status line ("(3 of 22 files)") so finding-count shifts surface as CHANGED, not PERSISTED.
+- **`tests/test_compare_doctor_outputs.py`** (+24 tests) — pins:
+  * Parser correctness on all 4 status types + multi-line detail bodies + trailing-content-on-status-line.
+  * All 7 classification deltas (CLOSED / NEW / PERSISTED / CHANGED / STILL_OK / DROPPED / ADDED).
+  * Exit code 1 fires on NEW (regression).
+  * Text + JSON reporters produce non-empty output of the right shape.
+  * CLI smoke tests against tiny captured outputs (file-missing, unrecognisable input, --json flag).
+
+### Updated
+
+- **`docs/pilot_validation.md`** — Open Backlog #1 (operator runbook) marked closed with cross-ref to the new runbook. Open Backlog item count drops 3 → 2 (renumbered): #1 = 2nd Pilot-1 doctor pass (operator-blocked), #2 = A60 schema-and-doc alignment (operator-blocked, depends on 2nd-pass outcome).
+- **`README.md`** — Documentation section adds link to `docs/pilot_2nd_pass_runbook.md`.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 6 critical + 2 should-fix.
+  * **CRITICAL #1**: helper malformed-input check fired only when BOTH sides parsed empty. If exactly one side was malformed (e.g., truncated capture), the helper silently reported every section as DROPPED/ADDED — actively misleading the operator. Fixed: either-side-empty → exit 2.
+  * **CRITICAL #2**: helper detail collector only handled the standard 6-space `_indent_detail()` form, but the `content validation` block uses 4-space + 8-space directly (per `scripts/bsa_cli.py:929-931`). Result: file-count shifts (21/22 → 3/22) misclassified as PERSISTED instead of CHANGED. Fixed: collect any line indented ≥3 spaces (catches 4 / 6 / 8) + strip leading whitespace uniformly. New test `test_content_validation_count_change_classifies_as_CHANGED` pins the round-1 bug.
+  * **CRITICAL #3**: runbook Class E grounded on the wrong AccessStatus enum — said `partial → {full, restricted, none, unverified}` but the live v1.1 contract is `readable_partial → [readable, unreadable, denied, expired, missing]`. The original misleading mapping table would have actively corrupted operator decisions. Fixed: rewrote per `governance/schemas/a50.schema.json` + `migrations/v1.0_to_v1.1/README.md` Class E (2-row decision: `readable` + informational A51 OR `unreadable` + hard-block A51).
+  * **CRITICAL #4**: runbook Class G told operators to populate a `SupersedingClaimID` column that doesn't exist in v1.1 A60 (`governance/schemas/a60.schema.json`). Fixed: rewrote with the real 7-column set (`NegEvID, SourceID, ExcerptRef, RelatedClaimID, NegativeFinding, A51Ref, Notes`); supersession is recorded in A59.Notes per `reliability_tier_spec.md`, not A60.
+  * **CRITICAL #5**: runbook Class H used invalid `ResolutionStatus=remediated` (real enum is `[open, resolved, resolved_by_remediation, superseded, wontfix]`) AND referenced non-existent `IssueDescription` / `ResolutionNote` columns (real A51 columns are `A51Ref, IssueType, Severity, BlockingStatus, RaisedByStage, RelatedSourceID, RelatedClaimID, NextAction, ResolutionStatus`). Fixed: rewrote per the real schema + per-value semantics from the schema description.
+  * **CRITICAL #6**: runbook pointed at wrong migration log path (`$WORKSPACE/migration_log.jsonl`) — actual is `$WORKSPACE/runtime/migration_log_v1.0_to_v1.1.jsonl` per `scripts/migrate_v1.0_to_v1.1.py:962-973`. Fixed all 4 occurrences (3 in the main flow + 1 in the gotchas section the round-2 cleanup initially missed).
+  * **SHOULD #1**: missing tests for the 2 critical fixes (one-side-malformed + content-validation block format). Added.
+  * **SHOULD #2**: Step 5 wording was implicit about helper buckets. Rewrote to explicitly explain `OK`/`SKIP` vs `FAIL`/`ERROR` bucketing + the cross-product → 7-classification map.
+
+### Result (round-2 final)
+
+- 1527 → 1554 tests passing (+27 compare_doctor_outputs tests, including the 3 round-2 regression tests for one-side-malformed + content-validation block format).
+- The 2nd-pass operator workflow is now fully documented + tooled, AND the runbook decision trees are pinned to actual v1.1 schemas (round-1 Codex caught real schema-vs-doc drift that would have actively misled the operator). An operator can take the runbook + the migration script + the diff helper and execute the 2nd pass end-to-end without needing maintainer-side handholding.
+- Section K is **as-closed-as-it-can-be** without operator action. The remaining work (running the 2nd pass against a real Pilot-1 workspace + reporting back) is a single bullet on the open backlog.
+
 ## [v1.1.14] — 2026-04-23
 
 **Phase 7 self-improvement loop foundation (Section D).** Sets up the contract for the v1.2.x self-improvement loop without committing to a backend before there's real pilot data to drive it. Three layers:
