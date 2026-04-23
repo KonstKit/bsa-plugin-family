@@ -1,0 +1,146 @@
+name: CI
+
+# v1.1.9 (Section H): GitHub Actions CI for the BSA plugin family.
+#
+# Runs the same gates the operator's pre-commit checklist enforces locally:
+#   * pytest (1412+ tests)
+#   * scripts/fixture_runner.py --all
+#   * scripts/privacy_scan.py
+#   * scripts/compute_canon_hash.py (matches plugin.json)
+#
+# Triggers:
+#   * push to main → full validation (pytest + fixture_runner + privacy + canon hash)
+#   * pull_request → same (PR-style workflow even though the repo is solo
+#     today; ready for future contributor opening)
+#
+# The repo has been local-only through v1.1.8. This workflow is the gating
+# infrastructure for the next pilot engagement / external operator
+# adoption — when the repo lands on GitHub, it has CI day-1.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Allow manual run from the Actions tab.
+  workflow_dispatch:
+
+# Cancel in-progress runs of the same workflow + ref pair when a new
+# commit lands. Saves runner minutes during rapid-fire patch lines like
+# the v1.1.x line did (8 releases in one session).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Match the floor declared in scripts/* shebangs ("Python 3.9+").
+        # 3.11 is the modern default; 3.12 is the latest we want to track
+        # (3.13 had compatibility surprises with some stdlib changes;
+        # add it once the repo passes against it locally first).
+        python-version: ["3.9", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run pytest
+        run: |
+          # -q for compact output; -ra to surface skipped/xfailed at the
+          # bottom (helps when adding new tests that get skipped silently).
+          python -m pytest -q -ra
+
+  fixture-runner:
+    name: fixture-runner --all
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run fixture-runner against all golden fixtures
+        run: |
+          # The runner validates all 8 golden fixtures (3 happy-path + 5
+          # adversarial including 1 spec_only) in --mode=validate. Failure
+          # = drift between fixture data and current schemas.
+          python3 scripts/fixture_runner.py --all --mode=validate
+
+  privacy-scan:
+    name: privacy_scan (no PII / secrets / blockers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run privacy scan (must produce 0 blockers)
+        run: |
+          # Stdlib-only; no install needed.
+          python3 scripts/privacy_scan.py
+
+  canon-hash:
+    name: compute_canon_hash matches plugin.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify canon hash drift
+        run: |
+          # The pytest case test_manifest_canon_hash_matches_current_script_output
+          # also enforces this, but having it as a standalone job makes
+          # the failure mode obvious in the Actions UI ("hash drift" vs
+          # "test failure"). Stdlib-only.
+          declared=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['canonPolicyVersion']['hash_full'])")
+          computed=$(python3 scripts/compute_canon_hash.py)
+          if [ "$declared" != "$computed" ]; then
+            echo "::error::canon hash drift detected"
+            echo "  declared in plugin.json: $declared"
+            echo "  computed by script:       $computed"
+            echo "Run 'python3 scripts/compute_canon_hash.py' locally and update .claude-plugin/plugin.json canonPolicyVersion.hash_full."
+            exit 1
+          fi
+          echo "OK: canon hash matches ($declared)"
+
+  marker-chain:
+    name: validate_marker_chain (per-fixture)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate marker chains in every fixture
+        run: |
+          # Per-fixture marker-chain validation. Each fixture's
+          # expected_markers/ must form a gapless, monotonic, hash-
+          # consistent chain. Stdlib-only.
+          fail=0
+          for dir in fixtures/golden/*/expected_markers; do
+            if [ -d "$dir" ]; then
+              echo "--- $dir ---"
+              python3 scripts/validate_marker_chain.py "$dir" || fail=1
+            fi
+          done
+          if [ $fail -ne 0 ]; then
+            echo "::error::marker-chain validation failed for at least one fixture"
+            exit 1
+          fi

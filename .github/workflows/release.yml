@@ -1,0 +1,127 @@
+name: Release
+
+# v1.1.9 (Section H): Tag-triggered release validation.
+#
+# Runs the same validation gates as CI plus:
+#   * Verify the tag's commit has a matching CHANGELOG.md entry.
+#   * Verify the manifest version + canonPolicyVersion.semver are
+#     internally consistent (matches the test_manifest_version_and_
+#     canon_semver_agree pytest invariant).
+#   * Optional: produce a release artifact (the plugin tree as a tarball)
+#     so the operator can attach it to a GitHub Release.
+#
+# Triggered ONLY by version-tag pushes (vX.Y.Z). Does NOT run on regular
+# branch pushes (CI workflow handles those).
+
+on:
+  push:
+    tags:
+      # NOTE: GitHub Actions uses glob (not regex) for tag filters. The
+      # earlier draft used regex-looking '[0-9]+' which silently never
+      # matched, so the release workflow never fired. Glob syntax:
+      #   '*'   matches any number of chars (including none)
+      #   '?'   matches exactly one char
+      #   '[]'  character class (single char)
+      # Patterns below match the actual v1.1.x..v1.x.x release shapes
+      # while excluding non-version tags (e.g., 'phase-3-baseline').
+      - "v[0-9]*.[0-9]*.[0-9]*"        # v1.0.0, v1.1.6, v2.0.0, etc.
+      - "v[0-9]*.[0-9]*.[0-9]*-*"      # v1.1.0-rc1, v2.0.0-beta3, etc.
+
+jobs:
+  validate-tag:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need full history for tag → CHANGELOG entry lookup
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Extract tag version
+        id: tagver
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          # Strip leading 'v' for matching against CHANGELOG.md entries
+          # which use the "## [vX.Y.Z]" form (with the v).
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Tag detected: ${TAG_NAME}"
+
+      - name: Verify CHANGELOG entry exists for the tag
+        run: |
+          TAG="${{ steps.tagver.outputs.tag_name }}"
+          # CHANGELOG entries are formatted as "## [vX.Y.Z] — <date>".
+          # Match the bracketed tag form. The `--` blocks the regex
+          # from being interpreted as a flag.
+          if ! grep -E -- "^## \[${TAG}\] — " CHANGELOG.md > /dev/null; then
+            echo "::error::No CHANGELOG.md entry for ${TAG}."
+            echo "Expected a line of the form: '## [${TAG}] — YYYY-MM-DD'"
+            echo "First 30 lines of CHANGELOG for context:"
+            head -30 CHANGELOG.md
+            exit 1
+          fi
+          echo "OK: CHANGELOG.md has entry for ${TAG}"
+
+      - name: Verify pytest passes against the tag commit
+        run: python -m pytest -q
+
+      - name: Verify canon hash + manifest invariants
+        run: |
+          # Same shape as the CI workflow's canon-hash job, repeated here
+          # so a release-tag push fails fast on hash drift.
+          declared=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['canonPolicyVersion']['hash_full'])")
+          computed=$(python3 scripts/compute_canon_hash.py)
+          if [ "$declared" != "$computed" ]; then
+            echo "::error::canon hash drift on release tag"
+            echo "  declared: $declared"
+            echo "  computed: $computed"
+            exit 1
+          fi
+          # Also enforce manifest version == canonPolicyVersion.semver (the
+          # pytest invariant test_manifest_version_and_canon_semver_agree
+          # already checks this; repeated here for explicit release-time
+          # surfacing).
+          version=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")
+          semver=$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['canonPolicyVersion']['semver'])")
+          if [ "$version" != "$semver" ]; then
+            echo "::error::manifest version (${version}) != canonPolicyVersion.semver (${semver})"
+            exit 1
+          fi
+          echo "OK: canon hash + manifest invariants hold for ${{ steps.tagver.outputs.tag_name }}"
+
+      - name: Run privacy scan
+        run: python3 scripts/privacy_scan.py
+
+      - name: Build plugin tarball artifact
+        run: |
+          # Package the plugin tree (everything except CI scaffolding +
+          # tests + dev artifacts) for attaching to a GitHub Release.
+          # Operators who want to install via tarball can `tar xf` it
+          # into their plugin directory.
+          TAG="${{ steps.tagver.outputs.tag_name }}"
+          mkdir -p dist
+          tar --exclude='.git' \
+              --exclude='.github' \
+              --exclude='tests' \
+              --exclude='requirements-dev.txt' \
+              --exclude='dist' \
+              --exclude='__pycache__' \
+              --exclude='.pytest_cache' \
+              -czf "dist/bsa-full-${TAG}.tar.gz" \
+              .claude-plugin commands hooks skills scripts \
+              fixtures config governance migrations docs \
+              CHANGELOG.md CONTRIBUTING.md INSTALL.md LICENSE README.md
+          ls -lh dist/
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bsa-full-${{ steps.tagver.outputs.tag_name }}
+          path: dist/bsa-full-*.tar.gz
+          retention-days: 90

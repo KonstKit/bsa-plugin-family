@@ -10,3 +10,11 @@ pytest>=8.0,<9
 # anchor manifests) and is pinned here so CI actually runs those tests
 # rather than skipping them silently.
 jsonschema>=4.20,<5
+
+# pyyaml is a *test-only* dependency for tests/test_ci_workflows.py
+# (v1.1.9 / Section H). It validates that .github/workflows/*.yml +
+# .github/dependabot.yml stay well-formed + carry the expected jobs.
+# Imported via pytest.importorskip so the test suite still runs cleanly
+# in environments without pyyaml (the test class skips instead of
+# failing).
+PyYAML>=6.0,<7

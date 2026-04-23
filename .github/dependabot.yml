@@ -1,0 +1,46 @@
+# v1.1.9 (Section H): Dependabot config.
+#
+# Two ecosystems: pip (requirements-dev.txt) + github-actions (the
+# workflow files in .github/workflows/). Both updated weekly. The repo
+# is solo-maintained today, so dependabot opens PRs for the maintainer
+# to review/merge — the multi-Python-version pytest matrix in ci.yml
+# catches breakage from upstream version moves.
+
+version: 2
+updates:
+  # Python deps from requirements-dev.txt (pytest + jsonschema).
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Asia/Yerevan"
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    open-pull-requests-limit: 5
+    # Group all minor + patch updates into a single PR per ecosystem
+    # to reduce churn.
+    groups:
+      pip-minor-and-patch:
+        update-types: ["minor", "patch"]
+        # Major upgrades open as separate PRs (they may need code changes).
+        exclude-patterns: []
+
+  # GitHub Actions versions (uses: actions/checkout@v4, etc.) updated
+  # so we don't drift onto deprecated runner action versions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Asia/Yerevan"
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    open-pull-requests-limit: 5
+    groups:
+      gha-minor-and-patch:
+        update-types: ["minor", "patch"]

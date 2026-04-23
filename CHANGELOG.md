@@ -4,6 +4,45 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.9] — 2026-04-23
+
+**CI/CD infrastructure (Section H).** First GitHub Actions workflows for the repo. Brings the operator's pre-commit checklist into automated CI gating so that when the repo lands on a public remote, every push + PR + tag has the same validation discipline that's been local-only through v1.1.8.
+
+**Tag target**: this commit (the v1.1.9 CI/CD scaffolding).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. CI workflows live outside POLICY_GLOBS; canon hash unchanged. Manifest version stays at 1.1.6; v1.1.9 git tag marks the CI/CD release. Matches v1.0.x precedent.
+
+### Added
+
+- **`.github/workflows/ci.yml`** — main CI workflow. Triggers on push to `main`, pull_request targeting `main`, and manual dispatch. Five parallel jobs:
+  - **`pytest`** — three-Python-version matrix (3.9 / 3.11 / 3.12) running the full 1412-test suite with `-q -ra`.
+  - **`fixture-runner`** — `python3 scripts/fixture_runner.py --all --mode=validate` against all 8 golden fixtures.
+  - **`privacy-scan`** — `python3 scripts/privacy_scan.py` (must produce 0 blockers).
+  - **`canon-hash`** — verifies `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` matches the live `compute_canon_hash.py` output.
+  - **`marker-chain`** — per-fixture `validate_marker_chain.py` over every `expected_markers/` directory.
+  - Concurrency group cancels in-progress runs of the same workflow + ref pair (saves runner minutes during rapid-fire patch lines).
+- **`.github/workflows/release.yml`** — tag-triggered release validation. Triggers ONLY on `vX.Y.Z` and `vX.Y.Z-*` tag pushes. Runs:
+  - The pytest + privacy-scan + canon-hash gates from CI.
+  - Verifies the tag has a matching CHANGELOG entry (`## [vX.Y.Z] — DATE`).
+  - Verifies manifest `version` == `canonPolicyVersion.semver`.
+  - Builds a release tarball (excluding `.git`/`.github`/`tests`/`requirements-dev.txt`/cache dirs) and uploads it as a 90-day-retention artifact (operator can attach to a GitHub Release page).
+- **`.github/dependabot.yml`** — weekly dependency updates for `pip` (requirements-dev.txt) + `github-actions` (workflow `uses:` versions). Minor + patch updates grouped into a single PR per ecosystem; major updates open separately.
+- **`tests/test_ci_workflows.py`** (+12 tests) — smoke tests verifying the YAML files parse correctly and carry the expected jobs / triggers / steps. Catches drift if a maintainer edits `.github/` files without re-checking. Lazy-imports `pyyaml` via `pytest.importorskip` so the suite still runs in environments without it.
+
+### Updated
+
+- **`requirements-dev.txt`** — adds `PyYAML>=6.0,<7` (test-only dependency for `tests/test_ci_workflows.py`).
+
+### Round-1 Codex review hardening
+
+- **Critical (closed)** — `.github/workflows/release.yml` tag filters used regex-looking syntax (`v[0-9]+.[0-9]+.[0-9]+`), but GitHub Actions tag filters are **glob**, not regex. As-written, NO real version tag would have matched, so the release workflow would have silently never fired. v1.1.9 final uses correct glob (`v[0-9]*.[0-9]*.[0-9]*` + `v[0-9]*.[0-9]*.[0-9]*-*`).
+- **Should (closed)** — workflow smoke tests in `tests/test_ci_workflows.py` only checked for pattern-string presence, not whether real tags would actually match. v1.1.9 final uses `fnmatch` (the same engine GitHub Actions uses internally) to verify: real released tags (v1.0.0, v1.0.4, v1.1.0..v1.1.9) MUST match; pre-release tags (v1.1.0-rc1) MUST match; non-version tags (`phase-3-baseline`, `snapshot`, `main`) MUST NOT match. Also added `test_release_yml_action_versions_current` guarding against drift onto deprecated `actions/checkout@v3` / `actions/setup-python@v4` / `actions/upload-artifact@v3`.
+
+### Result
+
+- 1412 → 1425 tests passing (+13 CI workflow regression tests including 1 round-1 hardening regression).
+- First automated CI surface for the repo. Ready for public remote / external contributor PRs.
+- Solo-maintainer + AI-assist workflow preserved: CI is gating, not blocking — the operator still reviews + commits via the local `pytest` + `codex exec` flow.
+
 ## [v1.1.8] — 2026-04-23
 
 **Documentation polish (Section E).** Refreshes operator-facing docs that had drifted significantly during the v1.1.x feature line. README, getting_started, FAQ, CONTRIBUTING, and INSTALL all updated to reflect the current release shape.
