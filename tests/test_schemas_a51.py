@@ -269,6 +269,23 @@ def test_all_golden_fixture_rows_validate(
             "NextAction": "Reconcile tier-delta ≤ 1 contested claim pair (T1 vs T2) — neither wins automatically",
             "ResolutionStatus": "open",
         },
+        {
+            # v1.2.1 (T2 — TODO-S8-02-LINK-STRENGTH-OVERRIDE): A51 row
+            # annotating an A72 LinkStrength override. The default
+            # formula (T1/T2 → high; T3 → medium; T4/T5 → low) is
+            # overridable by the operator; the A51 row carries the
+            # rationale. BlockingStatus=informational because the
+            # override is annotation, not a gate.
+            "A51Ref": "A51-LSO-001",
+            "IssueType": "link_strength_override",
+            "Severity": "low",
+            "BlockingStatus": "informational",
+            "RaisedByStage": "stage8",
+            "RelatedSourceID": "S-099",
+            "RelatedClaimID": "C-099",
+            "NextAction": "LinkStrength manually raised from 'low' (T4 default) to 'medium' — independent observation by ops lead corroborates the source despite tier",
+            "ResolutionStatus": "resolved",
+        },
     ],
     ids=[
         "minimal-numeric-ref",
@@ -280,6 +297,7 @@ def test_all_golden_fixture_rows_validate(
         "v1_1_1-issue-type-inventory-gap",
         "v1_1_1-severity-critical",
         "v1_1_1-issue-type-cross-tier-contradiction",
+        "v1_2_1-issue-type-link-strength-override",
     ],
 )
 def test_representative_rows_validate(

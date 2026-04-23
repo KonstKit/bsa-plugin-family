@@ -34,6 +34,7 @@ Examples from the v1.1.x line:
 | v1.1.18 | 1.1.6 | `ac63a8c3` | Sidecar common config schema + registry (Sprint 1 / S1+S2). |
 | v1.1.19 | 1.1.6 | `ac63a8c3` | Anonymization regression test (Sprint 1 / H4). |
 | v1.2.0 | 1.2.0 | `5d8ae8b6` | First canon bump since v1.1.6 — added one-line cross-ref `governance/immutable_invariants.md` → `docs/phase_7_design.md` (H2). Establishes the v1.2.x line; manifest version + canon hash both move. |
+| v1.2.1 | 1.2.1 | `6821009d` | A51 IssueType enum extension `link_strength_override` (T2; closes TODO-S8-02-LINK-STRENGTH-OVERRIDE). Schema + shared-control-surface-contracts.md + bsa-traceability-matrix SKILL.md updated in lockstep. |
 
 ## Pre-release checklist
 

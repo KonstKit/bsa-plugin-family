@@ -4,6 +4,39 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.1] — 2026-04-23
+
+**A72 LinkStrength override via A51 IssueType (Sprint 2 / T2).** Closes `TODO-S8-02-LINK-STRENGTH-OVERRIDE` from `skills/bsa-traceability-matrix/SKILL.md`. Adds the missing piece of the A72 LinkStrength contract: the operator-override path. Pre-v1.2.1 the SKILL.md said "operator may explicitly override (raise OR lower) with A51 rationale" but no specific `IssueType` existed for that purpose — operators had to reuse `decision_needed` or `uncertainty`, both of which downstream KPI tooling treats as different signals. v1.2.1 introduces a dedicated `link_strength_override` enum value so override annotations are filterable separately.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.1+hash:6821009d` — **bumps from 1.2.0+hash:5d8ae8b6** (A51 schema + shared-control-surface-contracts.md + bsa-traceability-matrix SKILL.md all in POLICY_GLOBS; canon hash necessarily moves).
+
+### Updated
+
+- **`governance/schemas/a51.schema.json`** — `IssueType` enum extended with `link_strength_override` (now 8 values, was 7). Description block expanded with operator workflow + distinction from generic `decision_needed`.
+- **`skills/bsa-orchestrator/references/shared-control-surface-contracts.md`** — A51 minimal-columns reference updated to list the new enum value (in lockstep per the schema's own description requirement).
+- **`skills/bsa-traceability-matrix/SKILL.md`** — `[TODO-S8-02-LINK-STRENGTH-OVERRIDE]` marked CLOSED with the operator workflow + cross-ref.
+- **`tests/test_schemas_a51.py`** (+1 representative-row test) — pins a v1.2.1 row with `IssueType=link_strength_override` + `BlockingStatus=informational` (the recommended posture; override is annotation, not gate).
+- **`.claude-plugin/plugin.json`** — version 1.2.0 → 1.2.1; canonPolicyVersion fields updated to 6821009d.
+- **`docs/RELEASING.md`** — table entry added.
+- **`README.md`, `INSTALL.md`, `docs/getting_started.md`, `docs/faq.md`** — current-release lines refreshed to 1.2.1.
+
+### Operator workflow
+
+When emitting an A72 row whose `LinkStrength` differs from the default formula (T1/T2 → high; T3 → medium; T4/T5 → low):
+
+1. Create an A51 row with `IssueType=link_strength_override`. Recommended `BlockingStatus=informational` (override is annotation, not a promotion gate).
+2. The A51 row's `NextAction` carries the rationale (e.g., `"LinkStrength manually raised from 'low' (T4 default) to 'medium' — independent observation by ops lead corroborates the source despite tier"` or `"LinkStrength lowered from 'high' (T2 default) to 'medium' — source applies only partially to this story scope"`).
+3. Populate the A72 row's `A51Ref` with the new A51's ref. Schema enforcement at hook time (existing A51-ref validity check) catches typos.
+
+### Codex review trail
+
+Review pending — will run + append round findings when complete.
+
+### Result
+
+- 1635 → 1636 tests passing (+1 representative-row test for the new enum value).
+- A72 LinkStrength override now has a first-class A51 IssueType. Downstream KPI / H4 packet / orphan-report tooling can filter overrides separately to detect a class of fixture-shape drift.
+
 ## [v1.2.0] — 2026-04-23
 
 **First canon-bump since v1.1.6 (Sprint 2 / H2 — reverse cross-ref to Phase 7 design).** Establishes the v1.2.x line. Single deliberate edit: `governance/immutable_invariants.md` §"Scope of self-improvement" now opens with a `**See `docs/phase_7_design.md`**` cross-ref to the v1.1.14 foundation. v1.1.14 deferred this edit explicitly because invariants.md is in POLICY_GLOBS — touching it bumps the canon hash and breaks the v1.1.x manifest-stable discipline. v1.2.0 is the right release to land it: the canon bump is intended (this is the first of the v1.2.x line) and minimal (one line).
