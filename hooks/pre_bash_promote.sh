@@ -180,4 +180,56 @@ if [ "${#missing[@]}" -gt 0 ]; then
   exit 1
 fi
 
+# v1.1.16 (Sprint 1 / T6): --strict-on-hard-a51 opt-in pre-flight check.
+# Two activation paths (CLI flag OR env-var); either triggers the
+# scripts/promote_strict_preflight.py invocation. Default permissive
+# mode skips this check entirely (zero overhead when not opted in).
+#
+# The preflight refuses canonical write when ANY A51 row has
+# BlockingStatus=hard AND ResolutionStatus=open AND no H4 waiver in
+# the `## Decisions Required` section. See
+# fixtures/golden/adversarial_block_on_contradiction_001/ for the spec.
+strict_mode=0
+if [ "${BSA_STRICT_ON_HARD_A51:-0}" = "1" ]; then
+  strict_mode=1
+fi
+# v1.1.16 round-1 (Codex): flag detection must be boundary-aware.
+# Earlier substring match via `*--strict-on-hard-a51*` silently
+# activated on e.g. `--strict-on-hard-a51-EXTRA` or `foo=--strict-
+# on-hard-a51-disabled`. We now require a word boundary on BOTH
+# sides: preceded by start-of-string OR whitespace, AND followed
+# by end-of-string OR whitespace OR `=`. Claude Code passes the
+# full command line as a single argv element, so we scan each
+# arg with bash regex.
+for arg in "$@"; do
+  if [[ "${arg}" =~ (^|[[:space:]])--strict-on-hard-a51($|[[:space:]]|=) ]]; then
+    strict_mode=1
+  fi
+done
+
+if [ "${strict_mode}" = "1" ]; then
+  if [ -x "${PLUGIN_REPO}/scripts/promote_strict_preflight.py" ]; then
+    set +e
+    python3 "${PLUGIN_REPO}/scripts/promote_strict_preflight.py" --workspace "${CWD}" >&2
+    preflight_rc=$?
+    set -e
+    if [ ${preflight_rc} -ne 0 ]; then
+      # The preflight already wrote a structured BLOCKED diagnostic to
+      # stderr; we just propagate the exit code. exit 1 = real block;
+      # exit 2 = invocation/parse error (operator misconfig).
+      exit ${preflight_rc}
+    fi
+  else
+    cat >&2 <<EOF
+[bsa-full / pre_bash_promote] BLOCKED: --strict-on-hard-a51 requested but
+the preflight script is missing or not executable:
+  ${PLUGIN_REPO}/scripts/promote_strict_preflight.py
+
+Either restore the script (this is part of the plugin distribution)
+or drop --strict-on-hard-a51 to use default permissive mode.
+EOF
+    exit 2
+  fi
+fi
+
 exit 0

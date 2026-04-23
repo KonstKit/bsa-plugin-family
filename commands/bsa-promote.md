@@ -10,11 +10,12 @@ Promote `analysis/proposals/<stage>/` to `analysis/canonical/<stage>/` under the
 ## Usage
 
 ```
-/bsa-promote [--dry-run] [--verbose]
+/bsa-promote [--dry-run] [--verbose] [--strict-on-hard-a51]
 ```
 
 - `--dry-run` — **Non-mutating preview**. Show exactly which files would be promoted, which markers would be emitted, which A51 rows would be flagged. Does NOT touch any file under `analysis/canonical/`. Run this before every real promotion.
 - `--verbose` — emit full trace: marker check results, lock acquisition, per-file copy operations.
+- `--strict-on-hard-a51` (v1.1.16) — opt-in **block-on-contradiction** failure mode. Refuses canonical write when ANY A51 row has `BlockingStatus=hard` AND `ResolutionStatus=open` AND no H4 waiver in `## Decisions Required`. Default mode (without this flag) is permissive: surface contradictions as A51 routes, do not block promotion. Equivalent activation via env: `BSA_STRICT_ON_HARD_A51=1`. See [`docs/strict_a51_mode.md`](../docs/strict_a51_mode.md) for the full contract + escape hatches.
 
 ## What this command does
 
@@ -26,7 +27,7 @@ Delegate to `bsa-orchestrator`:
    - Evidence-binding gate: every A59 row has `SourceID+ExcerptID` or `A51Ref`.
    - Required audit markers present for the stage (from `run-profile-gates.md`).
    - No parallel-ledger violations (`A48/A50/A51` single-source).
-   - No unresolved hard-blocking A51 items covering this promotion scope.
+   - **(opt-in only, v1.1.16)** No unresolved hard-blocking A51 items when `--strict-on-hard-a51` (or `BSA_STRICT_ON_HARD_A51=1`) is set. Default posture: surface hard-blockers as A51 routes but DO NOT block promotion. See [`docs/strict_a51_mode.md`](../docs/strict_a51_mode.md) for the escape hatches + contract.
    - Merge lock can be acquired.
    - Discovery → main merge step completed with no hard-blocking events (if `discovery_then_bsa` mode + `discovery.go`).
 3. If `--dry-run`: print the planned actions and STOP. Nothing changes on disk.

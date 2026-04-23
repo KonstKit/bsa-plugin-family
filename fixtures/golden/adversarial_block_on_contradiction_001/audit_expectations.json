@@ -1,7 +1,8 @@
 {
   "fixture_id": "adversarial_block_on_contradiction_001",
-  "scenario": "Spec-as-fixture for an opt-in failure mode the chain does not yet implement: under --strict-on-hard-a51, /bsa-promote MUST refuse to land canonical when any A51 row with BlockingStatus=hard + ResolutionStatus=open exists without an H4 waiver. The fixture's canonical state has exactly one such row (A51-CONFL-003) so the proposed strict-mode pre-flight check would fire.",
-  "spec_only": true,
+  "scenario": "Regression baseline for the --strict-on-hard-a51 opt-in failure mode (implemented in v1.1.16, Sprint 1 / T6 via scripts/promote_strict_preflight.py + hooks/pre_bash_promote.sh). Under --strict-on-hard-a51, /bsa-promote MUST refuse to land canonical when any A51 row with BlockingStatus=hard + ResolutionStatus=open exists without an H4 waiver. The fixture's canonical state has exactly one such row (A51-CONFL-003) so the strict-mode pre-flight check fires.",
+  "spec_only": false,
+  "_spec_only_history": "Was true through v1.1.15 (orchestrator did not honor --strict-on-hard-a51). Flipped to false in v1.1.16 when the implementation landed.",
   "expected_a51_count": 1,
   "expected_a51_routes": ["A51-CONFL-003"],
   "expected_a51_issue_types_present": ["contradiction"],
@@ -24,7 +25,7 @@
     "ClaimStrength=0.0 on both contradicted claims (same-tier neutralization)"
   ],
   "expected_negative_invariants": [
-    "There is NO orchestrator code today that honors --strict-on-hard-a51 — the fixture's expected_strict_mode_verdict is the spec for the v1.2-candidate implementation, not the current behavior.",
-    "Default-mode promote on this fixture would PASS the F5/identity hooks (contradicted claims are correctly captured); the BLOCK is opt-in only."
+    "Default-mode promote on this fixture PASSES the F5/identity hooks (contradicted claims are correctly captured); the BLOCK is opt-in only.",
+    "Removing --strict-on-hard-a51 (or unsetting BSA_STRICT_ON_HARD_A51) MUST drop back to default permissive mode — pinned by tests/test_promote_strict_preflight.py::test_hook_default_mode_skips_preflight."
   ]
 }

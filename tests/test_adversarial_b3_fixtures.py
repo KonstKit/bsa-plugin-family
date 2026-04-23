@@ -186,10 +186,17 @@ class TestBlockOnContradictionSpec:
     def test_fixture_directory_exists(self) -> None:
         assert self.FIXTURE.is_dir()
 
-    def test_metadata_marks_spec_only(self) -> None:
+    def test_metadata_marks_spec_only_false_post_v1_1_16(self) -> None:
+        """v1.1.16 (Sprint 1 / T6) flipped spec_only from true → false
+        when scripts/promote_strict_preflight.py landed. The fixture
+        is now a live regression baseline, not a documented-only spec.
+        See fixture_metadata.json::_spec_only_history for the full
+        provenance."""
         meta = _load_metadata(self.FIXTURE)
-        assert meta.get("spec_only") is True, (
-            "this fixture documents an unimplemented contract; spec_only flag REQUIRED"
+        assert meta.get("spec_only") is False, (
+            "v1.1.16 implements --strict-on-hard-a51; spec_only must be false. "
+            "If you intentionally reverted the implementation, also revert this "
+            "test pin + fixture_metadata.json::_spec_only_history."
         )
 
     def test_canonical_state_has_one_hard_blocking_open_a51(self) -> None:
@@ -209,40 +216,54 @@ class TestBlockOnContradictionSpec:
         assert row["A51Ref"] == "A51-CONFL-003"
 
     def test_proposed_strict_mode_preflight_blocks_on_open_hard_a51(self) -> None:
-        """Mocks the proposed --strict-on-hard-a51 pre-flight check.
-        Asserts the BLOCKED-message shape so that when the real
-        implementation lands (v1.2), this regression baseline already
-        exists. Implementation: a future patch adds
-        scripts/promote_strict_preflight.py that this test will switch
-        to invoking directly."""
-        a51_path = self.FIXTURE / "expected_outputs/canonical/core_controls/A51_issue_route_register.csv"
-        _, rows = _read_csv(a51_path)
-        # Proposed pre-flight logic (mocked here, lives in the
-        # orchestrator at v1.2): scan for hard+open rows, emit BLOCKED
-        # message with each ref.
-        blockers = [
-            r for r in rows
-            if r["BlockingStatus"] == "hard" and r["ResolutionStatus"] == "open"
-        ]
-        assert blockers, "fixture canonical state must trigger the pre-flight check"
-        # BLOCKED message shape (proposed):
-        message_keywords = ["BLOCKED", blockers[0]["A51Ref"], "BlockingStatus=hard", "ResolutionStatus=open"]
-        proposed_message = (
-            f"BLOCKED: /bsa-promote --strict-on-hard-a51 refused canonical write — "
-            f"{len(blockers)} unresolved hard-blocking A51 row(s):\n"
-        )
-        for r in blockers:
-            proposed_message += (
-                f"  {r['A51Ref']} ({r['IssueType']}, Severity={r['Severity']}, "
-                f"BlockingStatus=hard, ResolutionStatus=open) — NextAction: "
-                f"{r['NextAction'][:80]}...\n"
+        """Switched from mock to direct invocation in v1.1.16 (Sprint 1
+        / T6) — the proposed --strict-on-hard-a51 pre-flight check is
+        now implemented in scripts/promote_strict_preflight.py. This
+        test materialises a synthetic workspace from the fixture's
+        expected_outputs/canonical/ tree and asserts the real script
+        produces the spec'd BLOCKED message."""
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
+        repo_root = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "analysis" / "canonical" / "core_controls").mkdir(
+                parents=True, exist_ok=True,
             )
-        for kw in message_keywords:
-            assert kw in proposed_message, f"BLOCKED message missing keyword {kw}"
+            shutil.copy(
+                self.FIXTURE / "expected_outputs/canonical/core_controls/A51_issue_route_register.csv",
+                workspace / "analysis/canonical/core_controls/A51_issue_route_register.csv",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(repo_root / "scripts" / "promote_strict_preflight.py"),
+                    "--workspace", str(workspace),
+                ],
+                capture_output=True, text=True, timeout=15,
+            )
+        # Spec contract from audit_expectations.json:
+        #   exit_code = 1
+        #   blocked_a51_refs = ["A51-CONFL-003"]
+        #   stderr keywords: BLOCKED, A51-CONFL-003, BlockingStatus=hard,
+        #                    ResolutionStatus=open
+        assert result.returncode == 1, (
+            f"expected exit 1 (block); got {result.returncode}. "
+            f"stderr: {result.stderr!r}"
+        )
+        for kw in ("BLOCKED", "A51-CONFL-003", "BlockingStatus=hard", "ResolutionStatus=open"):
+            assert kw in result.stderr, (
+                f"BLOCKED message missing keyword {kw!r}. "
+                f"Full stderr: {result.stderr!r}"
+            )
 
     def test_audit_expectations_capture_proposed_strict_verdict(self) -> None:
         exp = _load_audit_expectations(self.FIXTURE)
-        assert exp.get("spec_only") is True
+        assert exp.get("spec_only") is False, (
+            "v1.1.16 flipped spec_only to false; see _spec_only_history in audit_expectations.json"
+        )
         assert exp["expected_strict_mode_verdict"]["exit_code"] == 1
         assert "A51-CONFL-003" in exp["expected_strict_mode_verdict"]["blocked_a51_refs"]
         assert exp["expected_default_mode_verdict"]["exit_code"] == 0

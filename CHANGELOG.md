@@ -4,6 +4,52 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.16] — 2026-04-23
+
+**`--strict-on-hard-a51` opt-in mode (Sprint 1 / T6).** Closes the v1.1.5 spec-as-fixture (`adversarial_block_on_contradiction_001`) by implementing the proposed opt-in failure mode. Default `/bsa-promote` posture is unchanged (permissive — surface contradictions as A51, do not block). When the operator opts in via `--strict-on-hard-a51` (or `BSA_STRICT_ON_HARD_A51=1`), the orchestrator hook runs a pre-flight check BEFORE acquiring the canonical merge lock and refuses the write if any A51 row has `BlockingStatus=hard` AND `ResolutionStatus=open` AND no H4 waiver in `## Decisions Required`.
+
+**Tag target**: this commit. **Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. New script + new hook branch + new doc all live outside POLICY_GLOBS; manifest stays at 1.1.6.
+
+### Added
+
+- **`scripts/promote_strict_preflight.py`** — stdlib-only preflight (~210 lines). Scans both main + discovery A51 registers for `BlockingStatus=hard + ResolutionStatus=open` rows; collects H4 waivers from `## Decisions Required` sections; emits structured BLOCKED message on stderr matching the format pinned by `tests/test_adversarial_b3_fixtures.py`. Exit codes: 0 (clean / waivered), 1 (block), 2 (invocation error).
+- **`docs/strict_a51_mode.md`** — operator-facing contract: what it does, why opt-in, escape hatches, BLOCKED message shape, exit codes, when to use / not use.
+- **`tests/test_promote_strict_preflight.py`** (+21 tests; 17 round-1 + 3 round-2 boundary + malformed-CSV + 1 round-3 overflow) — pins:
+  * Classification logic (only `BlockingStatus=hard + ResolutionStatus=open` blocks; soft / informational / closed-status rows pass).
+  * Discovery-zone A51 register also scanned.
+  * H4 waiver detection: only `## Decisions Required` references count; mentions in `Open Items Digest` / `Suggested Owners` do NOT.
+  * Partial waiver: 2 blockers + 1 waivered → still blocks on the other.
+  * Edge cases: missing workspace → exit 2, no A51 file → exit 0, empty A51Ref → exit 2 (no silent block-bypass).
+  * Spec-fixture end-to-end: synthetic workspace built from `adversarial_block_on_contradiction_001/` produces the exact BLOCKED message format.
+  * `format_blocked_message()` truncates long NextAction to 80 chars + `...`.
+  * Hook integration: both `--strict-on-hard-a51` flag AND `BSA_STRICT_ON_HARD_A51=1` env activate the preflight; default mode (no flag/env) skips the preflight entirely.
+
+### Updated
+
+- **`hooks/pre_bash_promote.sh`** — added strict-mode branch after the existing marker check. Detects flag OR env; invokes preflight script; propagates exit code. Default mode is zero-overhead.
+- **`commands/bsa-promote.md`** — documented `--strict-on-hard-a51` flag with cross-ref to `docs/strict_a51_mode.md`.
+- **`docs/faq.md`** — moved `--strict-on-hard-a51` from "Still deferred" to "Closed in v1.1.16" with cross-ref.
+- **`fixtures/golden/adversarial_block_on_contradiction_001/`** — `spec_only` flipped from `true` → `false` (in both `fixture_metadata.json` + `audit_expectations.json`); README updated to reflect the v1.1.16 implementation; `_spec_only_history` field added documenting the transition.
+- **`tests/test_adversarial_b3_fixtures.py`** — `test_metadata_marks_spec_only` renamed → `test_metadata_marks_spec_only_false_post_v1_1_16` and pin inverted (`is True` → `is False`); `test_proposed_strict_mode_preflight_blocks_on_open_hard_a51` switched from mock to real-script invocation against synthetic workspace.
+- **`README.md`** — Documentation section adds link to `docs/strict_a51_mode.md`.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 2 critical + 3 should-fix.
+  * **CRITICAL #1 (HIGH)**: hook substring match `*--strict-on-hard-a51*` falsely activated on `--strict-on-hard-a51-EXTRA` / any arg containing the flag as a substring. Fixed: bash regex with word boundaries: preceded by start-of-string OR whitespace, followed by end-of-string OR whitespace OR `=`. New test `test_hook_boundary_aware_flag_does_not_activate_on_suffixed_token` pins the fix.
+  * **CRITICAL #2 (HIGH)**: preflight fail-opened on malformed CSV — typoed `ResolutionStatus` header or truncated row silently classified every row as non-blocking (a real hard+open blocker would slip through strict mode). Fixed: pre-check that ALL required columns are present in the header AND no cell is None (csv.DictReader pads missing with None for short rows); any violation surfaces as exit-2 parse error (fail-CLOSED). New `REQUIRED_A51_COLUMNS` constant + 2 tests (`test_malformed_csv_missing_header_column_exits_2`, `test_malformed_csv_truncated_row_exits_2`).
+  * **SHOULD #1 (MEDIUM)**: fixture README still said "proposed", "spec_only: true", "deferred to v1.2" in 5 places. Fixed: rewrote sections "Block-on-contradiction contract" (→ "live as of v1.1.16"), "Files" list (→ `spec_only: false` note), "What this fixture does NOT cover" (→ cross-refs to test file), "Synthetic vs live-run" (→ direct-invocation description).
+  * **SHOULD #2 (MEDIUM)**: `commands/bsa-promote.md` listed "No unresolved hard-blocking A51 items" as a general precondition — contradicted the opt-in-only design. Fixed: annotated as "(opt-in only, v1.1.16)" with cross-ref to `docs/strict_a51_mode.md`.
+  * **SHOULD #3 (LOW)**: CHANGELOG test-count math claimed "+19 new − 2 reorganised"; reality was 17 new + renames (not removals). Fixed with accurate math in the final Result section.
+
+- **Round 3**: REJECT — 1 new HIGH (unflagged extra-field CSV overflow fail-open). Fixed: added `overflow = row.get(None)` check after the missing-cell check; any row with content past the last named column surfaces as exit-2 parse error with an RFC-4180 quoting hint. New test `test_malformed_csv_extra_field_overflow_exits_2` pins the fail-CLOSED path for unescaped commas in text fields.
+
+### Result
+
+- 1554 → 1575 tests passing (+17 round-1 + 3 round-2 + 1 round-3 = 21 new in test_promote_strict_preflight.py; test_adversarial_b3_fixtures.py had 2 renames/body rewrites for the spec_only flip, no net +/-).
+- The v1.1.5 spec-as-fixture is now a live regression baseline. Any future drift in the BLOCKED message format or strict-mode contract will fail at CI.
+- The `--strict-on-hard-a51` flag is operator-controllable and CI-controllable (`BSA_STRICT_ON_HARD_A51=1`) — engagements that want zero-open-blockers as a release gate can flip it without orchestrator-side changes.
+
 ## [v1.1.15] — 2026-04-23
 
 **2nd Pilot-1 pass prep (Section K).** Closes Open Backlog #1 from `docs/pilot_validation.md` (operator runbook for manual-review steps). The actual 2nd Pilot-1 doctor pass remains operator-blocked — needs an operator with access to the real Pilot-1 workspace + signoff. v1.1.15 ships everything the framework can do without that operator action: the runbook + a pre/post doctor-output diff helper.

@@ -1,16 +1,16 @@
 # Fixture `adversarial_block_on_contradiction_001` — Block-on-Hard-A51 Failure-Mode Spec
 
-Synthetic adversarial fixture for v1.1.5 (B3). **Spec-as-fixture** for an opt-in failure mode the chain does not yet implement: when the operator passes `--strict-on-hard-a51` (or sets the equivalent env), the orchestrator's `/bsa-promote` MUST refuse to land canonical state if any A51 row with `BlockingStatus=hard` is unresolved (`ResolutionStatus=open` AND not waivered via H4 `## Decisions Required`).
+Synthetic adversarial fixture authored in v1.1.5 (B3) as **spec-as-fixture** for an opt-in failure mode the chain did not implement at the time. **As of v1.1.16 (Sprint 1 / T6) the contract is live** — `scripts/promote_strict_preflight.py` + the `pre_bash_promote.sh` hook honor `--strict-on-hard-a51` (and the equivalent `BSA_STRICT_ON_HARD_A51=1` env). The orchestrator's `/bsa-promote` refuses canonical state if any A51 row has `BlockingStatus=hard` AND `ResolutionStatus=open` AND no H4 waiver in the `## Decisions Required` section. This fixture is now the canonical regression baseline for the BLOCKED message shape (see `docs/strict_a51_mode.md` for the operator-facing contract).
 
 ## Why this fixture exists
 
 The default contract is "surface contradictions as A51, do not block the pipeline" — operators can ship a handoff with hard-blocking A51s open if they choose, knowing those items are flagged for the steering / sponsor track. Real-world engagements sometimes want the **opposite** posture: refuse to ship anything until all hard-blockers are closed. That's a valid but distinct contract — opt-in, not default.
 
-This fixture documents the EXPECTED behavior of that opt-in mode so when it lands (v1.2 candidate), the implementation has a regression baseline already in place. Today the fixture is **spec-only** (the orchestrator does not honor `--strict-on-hard-a51`) — the integration test for this fixture asserts the spec via mock, not against the live `/bsa-promote` invocation.
+This fixture documented the EXPECTED behavior of that opt-in mode so when it landed (v1.1.16, Sprint 1 / T6), the implementation had a regression baseline already in place. v1.1.5–v1.1.15: spec-only, integration test asserted the spec via mock. v1.1.16+: implementation lives at `scripts/promote_strict_preflight.py` + `hooks/pre_bash_promote.sh`; the integration test invokes the real script against a synthetic workspace built from this fixture.
 
-## Block-on-contradiction contract (proposed)
+## Block-on-contradiction contract (live as of v1.1.16)
 
-When the operator runs `/bsa-promote --strict-on-hard-a51` (or `BSA_STRICT_ON_HARD_A51=1`), the orchestrator MUST:
+When the operator runs `/bsa-promote --strict-on-hard-a51` (or `BSA_STRICT_ON_HARD_A51=1`), the orchestrator hook:
 
 1. **Pre-flight check** — before acquiring the canonical write lock, scan `analysis/canonical/core_controls/A51_issue_route_register.csv` (or the equivalent under discovery) for any row matching:
    - `BlockingStatus = hard`
@@ -32,7 +32,7 @@ Two T2 sources contradicting on a hard-blocking measurable target (same shape as
 - ONE A51 row: `A51-CONFL-003`, `IssueType=contradiction`, `Severity=critical`, `BlockingStatus=hard`, `ResolutionStatus=open`.
 - NO H4 waiver covering A51-CONFL-003.
 
-Per the proposed contract, `/bsa-promote --strict-on-hard-a51` against this fixture MUST fail (exit 1, BLOCKED message naming A51-CONFL-003).
+Per the v1.1.16 contract, `/bsa-promote --strict-on-hard-a51` against this fixture fails (exit 1, BLOCKED message naming A51-CONFL-003).
 
 ## Files
 
@@ -42,17 +42,15 @@ Per the proposed contract, `/bsa-promote --strict-on-hard-a51` against this fixt
 - `expected_outputs/canonical/core_controls/A51_issue_route_register.csv` — 1 hard-blocking unresolved contradiction.
 - `expected_outputs/canonical/core_controls/A58_evidence_excerpts.csv` — 2 excerpts.
 - `expected_outputs/canonical/core_controls/A59_claim_register.csv` — 2 contradicted claims.
-- `audit_expectations.json` — declarative spec including the proposed `bsa_promote_strict` verdict.
-- `fixture_metadata.json` — provenance + `spec_only: true` flag.
+- `audit_expectations.json` — declarative spec including the `bsa_promote_strict` verdict.
+- `fixture_metadata.json` — provenance + `spec_only: false` flag (v1.1.16+; was `true` in v1.1.5-v1.1.15).
 
 ## What this fixture does NOT cover
 
-- The actual orchestrator implementation of `--strict-on-hard-a51` (deferred to v1.2 — fixture exists to anchor the regression test once the implementation lands).
-- Soft / informational A51 rows — those NEVER block, even in strict mode.
-- Multi-A51 blockers — the message-format spec for "list all blockers" is documented in the README but not pinned in fixture data.
+- Soft / informational A51 rows — those NEVER block, even in strict mode (covered by `tests/test_promote_strict_preflight.py::test_open_soft_row_does_not_block`).
+- Multi-A51 blockers — the BLOCKED-message shape for N rows is documented in `docs/strict_a51_mode.md` and pinned by `tests/test_promote_strict_preflight.py::test_multiple_blockers_all_listed_in_message`, but not by fixture data.
+- H4 waiver unblock path (covered by `tests/test_promote_strict_preflight.py::test_h4_waiver_in_decisions_required_unblocks`).
 
-## Synthetic vs live-run + spec-only flag
+## Synthetic vs live-run
 
-`authoring_mode = synthetic_adversarial`. `fixture_metadata.json.spec_only = true` flags this fixture as documenting an unimplemented contract. The test (`tests/test_adversarial_b3_fixtures.py::TestBlockOnContradictionSpec`) asserts the canonical state matches the schema (so the fixture itself is consumable today) AND mocks the proposed orchestrator strict-mode pre-flight check to validate the BLOCKED message shape.
-
-When `--strict-on-hard-a51` lands (v1.2), this fixture will be the regression baseline; the test will switch from mocked-pre-flight to direct-invocation assertions.
+`authoring_mode = synthetic_adversarial`. `fixture_metadata.json.spec_only = false` since v1.1.16 — the orchestrator hook now honors `--strict-on-hard-a51` via `scripts/promote_strict_preflight.py`. The test (`tests/test_adversarial_b3_fixtures.py::TestBlockOnContradictionSpec::test_proposed_strict_mode_preflight_blocks_on_open_hard_a51`) invokes the real preflight script against a synthetic workspace built from this fixture's canonical state and asserts the BLOCKED-message shape + exit code.
