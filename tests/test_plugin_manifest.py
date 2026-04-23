@@ -108,5 +108,52 @@ def test_manifest_author_has_name() -> None:
     assert author.get("name"), "author.name must be set"
 
 
+def test_manifest_license_matches_license_file() -> None:
+    """v1.1.10 (Section J): the manifest 'license' field MUST match the
+    actual LICENSE file contents. Pre-v1.1.10 the manifest declared
+    'MIT' while the LICENSE file said 'All rights reserved' / 'TBD' —
+    that mismatch is exactly the kind of distribution-readiness bug a
+    public-remote operator would call out."""
+    from pathlib import Path
+    data = _load_manifest()
+    declared = (data.get("license") or "").strip()
+    assert declared, "manifest 'license' field must be set"
+    license_path = Path(__file__).resolve().parent.parent / "LICENSE"
+    body = license_path.read_text(encoding="utf-8")
+    if declared == "MIT":
+        # Sanity-check the LICENSE actually carries an MIT clause.
+        assert "MIT License" in body or "MIT" in body.split("\n")[0], (
+            f"manifest declares license=MIT but LICENSE file does not start with "
+            f"'MIT License' — drift between declared license and actual file"
+        )
+        # MIT permission grant clause must be present (canonical phrasing).
+        assert "Permission is hereby granted, free of charge" in body, (
+            "manifest declares license=MIT but LICENSE file is missing the "
+            "canonical MIT permission grant clause — likely still a placeholder"
+        )
+    # Reject the legacy 'TBD' / 'All rights reserved' content explicitly.
+    assert "All rights reserved" not in body or "MIT License" in body, (
+        "LICENSE file appears to be the pre-v1.1.10 'All rights reserved' "
+        "placeholder — pick an actual license"
+    )
+
+
+def test_manifest_distribution_metadata_present() -> None:
+    """v1.1.10 (Section J): packaging-readiness contract — the manifest
+    MUST carry homepage / repository / bugs slots so when the repo
+    lands on a public remote, dependant tooling can find the canonical
+    URLs without a follow-up patch."""
+    data = _load_manifest()
+    assert "homepage" in data, "manifest 'homepage' slot missing"
+    assert "repository" in data, "manifest 'repository' slot missing"
+    assert "bugs" in data, "manifest 'bugs' slot missing"
+    repo = data["repository"]
+    assert isinstance(repo, dict)
+    assert repo.get("type") == "git"
+    assert isinstance(repo.get("url"), str) and repo["url"].endswith(".git"), (
+        "manifest repository.url must be a git URL ending in .git"
+    )
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

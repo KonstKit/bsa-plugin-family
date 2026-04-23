@@ -1,11 +1,19 @@
 {
   "name": "bsa-full",
   "version": "1.1.6",
-  "description": "Business/Systems Analysis plugin family: 28 skills for evidence-bound claim-layer authoring, anti-hallucination audits, sidecar-assisted diagrams, H1-H4 handoff packaging, and Phase-3 dev-handoff (NFRs / stories / test scenarios / traceability matrix / backlog-bridge to Jira/Linear/generic). Directly consumed by Claude Code.",
+  "description": "Business/Systems Analysis plugin family: 28 skills for evidence-bound claim-layer authoring, anti-hallucination audits, sidecar-assisted diagrams, H1-H4 handoff packaging, and Phase-3 dev-handoff (NFRs / stories / test scenarios / traceability matrix / backlog-bridge to Jira / Linear / generic / GitHub Projects v2 with optional live-API mode). Directly consumed by Claude Code.",
   "author": {
     "name": "Konstantin Kitanin"
   },
   "license": "MIT",
+  "homepage": "https://github.com/<owner>/bsa-plugin-family",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/<owner>/bsa-plugin-family.git"
+  },
+  "bugs": {
+    "url": "https://github.com/<owner>/bsa-plugin-family/issues"
+  },
   "keywords": [
     "bsa",
     "business-analysis",
@@ -16,7 +24,12 @@
     "audit",
     "discovery",
     "bpmn",
-    "c4-plantuml"
+    "c4-plantuml",
+    "phase-3",
+    "dev-handoff",
+    "jira",
+    "linear",
+    "github-projects-v2"
   ],
   "canonPolicyVersion": {
     "semver": "1.1.6",

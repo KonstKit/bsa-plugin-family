@@ -4,6 +4,37 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.10] — 2026-04-23
+
+**Distribution / packaging polish (Section J).** Brings the repo to public-remote / external-contributor readiness. Closes the longstanding LICENSE-vs-manifest contradiction (manifest declared `MIT` while the LICENSE file said "All rights reserved" / "TBD"); adds the packaging metadata (`homepage` / `repository` / `bugs`) that downstream tooling expects; ships the issue + PR templates that activate when contributors land; codifies the release procedure that's been ad-hoc through 9 prior tagged releases.
+
+**Tag target**: this commit (the v1.1.10 packaging release).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. Packaging metadata + LICENSE + templates + release docs all live outside POLICY_GLOBS. Manifest version stays at 1.1.6; v1.1.10 git tag marks the packaging release.
+
+### Changed
+
+- **`LICENSE`** — was a 5-line "All rights reserved / TBD pending public release decision" placeholder. Now a full **MIT License** (matching what the manifest already declared as `"license": "MIT"`). Resolves the longstanding contradiction. Also adds a third-party-content notes section documenting upstream-derived skill provenance + test-only library licenses.
+- **`.claude-plugin/plugin.json`** — added `homepage`, `repository` (`{type: "git", url: ...}`), and `bugs` (`{url: ...}`) slots with placeholder `<owner>` URLs (operator fills in at first public push). Description now mentions GitHub Projects v2 + live-API mode (was stuck at v1.1.0 wording). Keywords expanded with `phase-3`, `dev-handoff`, `jira`, `linear`, `github-projects-v2`.
+
+### Added
+
+- **`.github/PULL_REQUEST_TEMPLATE.md`** — template activates when a contributor opens a PR. Includes the pre-merge checklist (pytest, fixture-runner, privacy-scan, canon-hash, CHANGELOG, invariant-touch rules, anonymization compliance, token-handling regressions), Codex review status block, change-type classification, and linked-context section.
+- **`.github/ISSUE_TEMPLATE/bug_report.md`** — bug template with plugin-version block, workspace-state block, repro steps, expected/actual behavior, affected-artifacts checklist (A48..A72 + marker chain + handoff + backlog export), privacy/anonymization checkbox.
+- **`.github/ISSUE_TEMPLATE/feature_request.md`** — feature template with scope-classification checkboxes (additive enum extension / new SKILL / new invariant / new artifact / new platform export / operator tool / docs), acceptance-criteria template, carry-forward / TODO-marker reference.
+- **`docs/RELEASING.md`** — operator-facing release procedure. Codifies the two-semver pattern (manifest version vs git tag) with a worked-example table for v1.1.0..v1.1.9; pre-release checklist; release commit + tag template; post-release CI behavior (release.yml triggers); release-tarball verification; rollback procedure; future marketplace-publication notes.
+
+### Updated
+
+- **`tests/test_plugin_manifest.py`** — 2 new tests:
+  - `test_manifest_license_matches_license_file` — catches the LICENSE-vs-manifest drift that v1.1.10 closes (LICENSE must contain `MIT License` + the canonical permission grant clause when manifest declares `MIT`; rejects the legacy `All rights reserved` placeholder).
+  - `test_manifest_distribution_metadata_present` — enforces `homepage` / `repository` / `bugs` slots are present and `repository.url` ends in `.git` (catches drift where a future maintainer might delete a slot).
+
+### Result
+
+- 1425 → 1427 tests passing (+2 manifest distribution tests).
+- LICENSE / manifest / packaging metadata all internally consistent.
+- Public-remote-ready: contributor templates + release procedure + signed MIT LICENSE in place.
+
 ## [v1.1.9] — 2026-04-23
 
 **CI/CD infrastructure (Section H).** First GitHub Actions workflows for the repo. Brings the operator's pre-commit checklist into automated CI gating so that when the repo lands on a public remote, every push + PR + tag has the same validation discipline that's been local-only through v1.1.8.

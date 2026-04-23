@@ -1,5 +1,35 @@
-Copyright (c) 2026 BSA Plugin Family contributors.
+MIT License
 
-All rights reserved. License terms are TBD pending public release decision (Phase 8 marketplace planning). Until formal license is chosen, this codebase is private and not distributed. Source skills imported from `~/.codex/skills/` retain their original licensing from upstream sources (OpenAI Codex skills, third-party contributions) — see individual skill directories for any SKILL-specific license notes.
+Copyright (c) 2026 BSA Plugin Family contributors
 
-For the period of private development (Phase 0-2), contributors agree that all contributions may be re-licensed under an OSI-approved license of the maintainer's choice prior to public v1.0.0 release.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## Notes on third-party content
+
+Some skills under `skills/` were derived from upstream sources (e.g.,
+[oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) by
+[@code-yeongyu](https://github.com/code-yeongyu)). Where derived,
+attribution is preserved in the individual SKILL.md headers. Those
+upstream sources are themselves MIT-or-similar permissive — the
+re-licensing under MIT here is consistent with their terms.
+
+For test-only third-party libraries (`pytest`, `jsonschema`, `PyYAML`),
+see the relevant project's own license terms (all MIT or BSD).
