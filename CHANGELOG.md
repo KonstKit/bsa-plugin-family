@@ -4,6 +4,47 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.11] — 2026-04-23
+
+**Security workstream (Section G).** First explicit security posture for the repo. Adds threat model + automated security audit + CI integration + SECURITY.md disclosure flow. Especially valuable post-v1.1.6 (live API client introduced real token handling), now with multiple defense-in-depth layers documented and pinned by tests.
+
+**Tag target**: this commit (the v1.1.11 security release).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. Security tooling lives outside POLICY_GLOBS; canon hash unchanged. Manifest version stays at 1.1.6; v1.1.11 git tag marks the security release.
+
+### Added
+
+- **`SECURITY.md`** — root-level security disclosure policy (GitHub-standard convention). Covers: vulnerability reporting flow, supported versions, threat-model summary, automated audit description, pre-merge security gates, anonymization policy, cryptographic implementation notes, supply-chain notes.
+- **`docs/threat_model.md`** — explicit attack-surface inventory + per-vector mitigations + open risks. Sections: scope, threat actors, 7 attack-surface domains (token handling, INV-02 single-writer, cross-artifact validator, migration script, hook scripts, schema-drift bypass, privacy/PII leakage), defense-in-depth pattern, out-of-scope threats, mitigation drift detection.
+- **`scripts/security_audit.py`** (450 LOC, stdlib-only) — automated drift detection complementing `privacy_scan.py`. Five scan categories:
+  1. **Token-shape detection** — JWT, GitHub PAT, Atlassian API token, Bearer/Basic credentials, AWS access keys, Slack bot tokens. Catches hardcoded creds in committed files (CRITICAL severity).
+  2. **Insecure subprocess** — `subprocess shell=True`, `os.system`, `subprocess.call shell=True` without `# nosec` justification. (HIGH).
+  3. **Dangerous Python builtins** — bare `eval()`, `exec()`, `compile()` without attribute access (`re.compile`, `ast.literal_eval` correctly NOT flagged via `(?<![A-Za-z_.])` lookbehind). (HIGH).
+  4. **Path-traversal heuristic** — `Path()` constructions from operator input without normalization. (MEDIUM).
+  5. **Scrub-required check** — verifies `scripts/backlog_live_apply.py` actually carries the `_scrub_secrets` call (defense-in-depth pin against accidental scrub removal). (HIGH).
+  Self-introspection skip + `tests/` skip prevent the audit from self-reporting on its own pattern definitions and on test data that intentionally contains sample patterns. `# nosec: <reason>` comment within ±2 lines suppresses individual findings with justification.
+- **`tests/test_security_audit.py`** (+22 tests) — coverage for: live-repo regression baseline (zero CRITICAL+HIGH), CLI exit codes, `--quiet` mode, every detection category (positive sample fires), false-positive suppression (`re.compile`, `ast.literal_eval`, `# nosec` comment, exemption files), self-introspection (audit doesn't fire on its own docstring), scrub-required files exist + carry the call.
+- **`.github/workflows/ci.yml`** — new `security-audit` job runs `python3 scripts/security_audit.py` on every push (must produce 0 CRITICAL + 0 HIGH).
+
+### Updated
+
+- **`CONTRIBUTING.md`** — pre-commit checklist gains `python3 scripts/security_audit.py` (0 CRITICAL + 0 HIGH); validation tooling table adds the new script.
+- **`tests/test_ci_workflows.py::test_ci_yml_has_required_jobs`** — expected job set extends from 5 to 6 (adds `security-audit`).
+
+### Round-1 Codex review hardening (round-2 fixes)
+
+Codex round-1 review (REJECT) raised 2 critical bugs + 2 should-fix. All addressed before final commit:
+
+- **Critical (closed)** — `PATH_TRAVERSAL_PATTERNS` was defined but **never invoked** by `run_audit()`. SECURITY.md + `docs/threat_model.md` advertised path-traversal scanning as one of the audit categories, but the function wasn't wired in. v1.1.11 final adds `_scan_path_traversal()` + invocation from `run_audit()`. Also tightened the regex to actually match the typical sink shape `(Path(base) / user_input).write_text(...)` (the earlier regex would have missed it even if invoked). Added 3 new regression tests pinning detection + suppression.
+- **Critical (closed)** — Same regex was too narrow. v1.1.11 final uses two patterns: `Path() / identifier → .write_text/.write_bytes/.open/.read_text/.read_bytes/.mkdir/.touch/.rename/.symlink_to/.hardlink_to`, plus a literal `..` heuristic for `open("../...")` paste artifacts.
+- **Should (closed)** — Bearer/Basic credential detector required 30+ chars; runtime quarantine in `backlog_live_apply.py::_TOKEN_SHAPE_RE` and the schema's `not.anyOf` clauses fire at 20+. v1.1.11 final aligns the audit threshold to 20+ chars so CI doesn't have a stricter-then-runtime gap.
+- **Should (closed)** — `--repo-root` was only partially honored. `_scan_scrub_required` used the global `REPO_ROOT` (script-checkout-anchored), so a `--repo-root <other>` invocation would silently inherit the current checkout's allowlist. v1.1.11 final factors out `_scrub_required_for(repo_root)` and rebases all paths on the runtime root. Added regression test pinning the isolation.
+
+### Result
+
+- 1427 → 1453 tests passing (+26 security audit regressions including 4 round-1 hardening regressions + 1 CI workflow job-set update).
+- Public-distribution security posture in place: explicit threat model, automated drift detection (5 scan categories all wired in), contributor-facing security policy.
+- Zero outstanding CRITICAL or HIGH findings against the live repo HEAD.
+
 ## [v1.1.10] — 2026-04-23
 
 **Distribution / packaging polish (Section J).** Brings the repo to public-remote / external-contributor readiness. Closes the longstanding LICENSE-vs-manifest contradiction (manifest declared `MIT` while the LICENSE file said "All rights reserved" / "TBD"); adds the packaging metadata (`homepage` / `repository` / `bugs`) that downstream tooling expects; ships the issue + PR templates that activate when contributors land; codifies the release procedure that's been ad-hoc through 9 prior tagged releases.

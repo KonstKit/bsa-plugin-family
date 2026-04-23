@@ -25,6 +25,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 - `pytest tests/` — full test suite must pass (1412 tests as of v1.1.7; the exact count grows with each release — the invariant is "all pass", not a hardcoded number).
 - `python3 scripts/fixture_runner.py --all` — all 8 fixtures (3 happy-path: `project_0001`/`0002`/`0003` + 5 adversarial: `prompt_injection`, `nfr_claim_contradiction`, `multi_way_contradiction`, `tier_delta_auto_resolution`, `block_on_contradiction` — last one is `spec_only=true`) must validate.
 - `python3 scripts/privacy_scan.py` — 0 blockers.
+- `python3 scripts/security_audit.py` — 0 CRITICAL + 0 HIGH (drift detection for token leakage / insecure subprocess / dangerous builtins; v1.1.11).
 - `python3 scripts/compute_canon_hash.py` — output must match `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` (the `test_manifest_canon_hash_matches_current_script_output` pytest case also enforces this).
 - Manifest test (`test_manifest_version_and_canon_semver_agree`) — `version` MUST equal `canonPolicyVersion.semver`.
 - Every commit references the relevant US-ID from the sprint plan (or the section letter — `A2`, `B1`, `C`, etc. — for v1.1.x patch-line work).
@@ -64,6 +65,7 @@ This matches the v1.0.x precedent (manifest stayed at 1.0.0 through v1.0.4 tags)
 | `scripts/migrate_v1.0_to_v1.1.py` | v1.0 → v1.1 workspace migration (4 mechanical fixes + 4 report kinds) |
 | `scripts/backlog_live_apply.py` | Phase-3 live API client (Jira REST + Linear GraphQL + GitHub REST) |
 | `scripts/bsa_cli.py` | Operator-facing read-only workspace status / next-step / doctor / materials-staging CLI |
+| `scripts/security_audit.py` | Token-shape leak + insecure subprocess + dangerous builtin drift detection (v1.1.11; complements `privacy_scan.py`) |
 
 Every validator is a mandatory pre-commit check; they all run locally as part of the checklist above. There is no CI — the repo is local-only.
 

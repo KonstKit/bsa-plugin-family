@@ -42,11 +42,15 @@ def test_ci_yml_parses(yaml_module) -> None:
 
 
 def test_ci_yml_has_required_jobs(yaml_module) -> None:
-    """The CI workflow MUST run all 5 gates the operator's pre-commit
-    checklist enforces locally."""
+    """The CI workflow MUST run all 6 gates the operator's pre-commit
+    checklist enforces locally (5 from v1.1.9 + security-audit added
+    in v1.1.11)."""
     doc = _load(WORKFLOWS_DIR / "ci.yml", yaml_module)
     jobs = doc.get("jobs", {})
-    expected = {"pytest", "fixture-runner", "privacy-scan", "canon-hash", "marker-chain"}
+    expected = {
+        "pytest", "fixture-runner", "privacy-scan", "canon-hash",
+        "marker-chain", "security-audit",
+    }
     actual = set(jobs.keys())
     assert expected.issubset(actual), (
         f"CI workflow missing required jobs. Expected {expected}, got {actual}."

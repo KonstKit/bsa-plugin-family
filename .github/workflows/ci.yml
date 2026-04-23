@@ -95,6 +95,21 @@ jobs:
           # Stdlib-only; no install needed.
           python3 scripts/privacy_scan.py
 
+  security-audit:
+    name: security_audit (token-shape + insecure subprocess + dangerous builtins)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run security audit (must produce 0 CRITICAL + 0 HIGH)
+        run: |
+          # Stdlib-only; no install needed. Section G v1.1.11 — drift
+          # detection complementing privacy_scan.py. See SECURITY.md +
+          # docs/threat_model.md for the full coverage matrix.
+          python3 scripts/security_audit.py
+
   canon-hash:
     name: compute_canon_hash matches plugin.json
     runs-on: ubuntu-latest
