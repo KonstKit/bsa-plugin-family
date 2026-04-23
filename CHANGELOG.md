@@ -4,6 +4,44 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.12] — 2026-04-23
+
+**Sidecar polish (Section I).** Both diagram sidecars (`c4-plantuml-from-context` + `camunda-bpmn-from-context`) had zero open TODO markers and were already well-tested individually. v1.1.12 codifies the F5-boundary contract that's been implicit since v1.0.0 and adds an operator-facing inventory doc.
+
+**Tag target**: this commit (the v1.1.12 sidecar release).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. Sidecar inventory + boundary tests live outside POLICY_GLOBS; canon hash unchanged. Manifest version stays at 1.1.6; v1.1.12 git tag marks the sidecar polish release.
+
+### Added
+
+- **`docs/sidecar_inventory.md`** — operator-facing summary: at-a-glance comparison table (c4 vs bpmn), per-sidecar status block (skill location, what it does, operating modes, validators, optional deps), F5-boundary explainer (why sidecar paths under `analysis/views/` are explicitly outside the canonical single-writer set), operator-side usage examples for both standalone and orchestrated modes, and post-v1.1.x open follow-ups (common SidecarConfig schema, sidecar registry, end-to-end orchestrator-with-sidecar fixture, future DBML / sequence-diagram sidecars).
+- **`tests/test_sidecar_f5_boundary.py`** (+21 tests) — pins:
+  * F5 dispatcher MUST NOT match any sidecar output path (`analysis/views/c4/*.puml`, `analysis/views/c4/anchor_manifest.json`, `analysis/views/bpmn/*.bpmn`, `analysis/views/bpmn/anchor_manifest.json`, `analysis/views/bpmn/preview.svg`). A drift here would silently break the sidecars' writer-agnostic discipline (only `bsa-orchestrator` could emit, breaking standalone mode).
+  * `validate_canonical_write` returns `(True, [])` (pass-through) for sidecar anchor-manifest paths — the canonical contract.
+  * Both sidecars have `SKILL.md` + `references/integration-contract.md` + `references/anchor_manifest.schema.json` (catches accidental rename/move).
+  * Both sidecars have `scripts/test_*.py` files AND those tests appear in the global pytest collection (defense-in-depth: a future pytest config change excluding sidecar dirs would lose ~80 sidecar tests).
+  * `docs/sidecar_inventory.md` exists and references both sidecars + the F5-boundary section (catches doc drift if a future commit touches the inventory).
+
+### Updated
+
+- **`README.md`** — Documentation section adds link to `docs/sidecar_inventory.md`.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 1 critical (subprocess-based pytest collection test was brittle: shelled to nested `pytest --collect-only`, never checked returncode, treated collection failure as "tests missing", false-failed on no-tmp-dir env) + 3 should-fix (inventory drift: validator description claimed anchor-manifest mapping enforcement that doesn't exist; counts said 12 test modules + 11 production scripts but reality is 14 + 12; "15 references" but reality is 21) + 1 doc-drift (faq.md said standalone sidecars "still expect" anchor_manifest.json, contradicting both integration contracts).
+- **Round 2 fixes**: replaced subprocess test with importlib-based discovery check (now also handles `unittest.TestCase` subclasses — sidecar style with names like `BackendSelectorTests` is not `Test*` prefixed, which the first round-2 draft missed); corrected the 4 inventory drift items; rewrote faq.md "Can I use a sidecar standalone?" answer to clarify standalone mode does NOT require anchor_manifest.json.
+- **Round 2 follow-up**: APPROVE with 1 non-blocking SHOULD — the importlib smoke test only spot-checked the FIRST `test_*.py` per sidecar, making the docstring overclaim what the test catches. Final v1.1.12 iterates over ALL test files (~30 modules total, <1s on import) so a single broken module is caught — not just a sidecar-wide regression.
+
+### Updated (round-2 doc fixes)
+
+- **`docs/faq.md`** — "Can I use a sidecar standalone?" answer corrected: standalone mode does NOT require `anchor_manifest.json`; the heuristic for which mode is intended (path under `analysis/...` ⇒ orchestrated) is now spelled out.
+- **`docs/sidecar_inventory.md`** — corrected BPMN counts (14 test modules + 12 production scripts; 21 references); removed false claim that `validate_c4_plantuml.py` enforces anchor-manifest mapping (that's the orchestrator's promotion contract, per integration-contract.md).
+
+### Result
+
+- 1453 → 1474 tests passing (+21 sidecar boundary regressions).
+- Sidecar contract is now executable (not just documented in individual SKILL.md files).
+- Operator-facing summary lets a new operator understand sidecar capabilities + boundaries without reading the full SKILL.md + references for each.
+
 ## [v1.1.11] — 2026-04-23
 
 **Security workstream (Section G).** First explicit security posture for the repo. Adds threat model + automated security audit + CI integration + SECURITY.md disclosure flow. Especially valuable post-v1.1.6 (live API client introduced real token handling), now with multiple defense-in-depth layers documented and pinned by tests.

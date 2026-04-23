@@ -82,6 +82,7 @@ docs/                   User + maintainer documentation
 - [docs/troubleshooting.md](docs/troubleshooting.md) — common failure modes.
 - [docs/architecture_overview.md](docs/architecture_overview.md) — skill families + invariants + governance.
 - [docs/pilot_validation.md](docs/pilot_validation.md) — Pilot-1 status + framework-level pilot validation invariants.
+- [docs/sidecar_inventory.md](docs/sidecar_inventory.md) — c4-plantuml + camunda-bpmn sidecar inventory + F5-boundary contract.
 - [docs/faq.md](docs/faq.md) — FAQ.
 - [migrations/v1.0_to_v1.1/README.md](migrations/v1.0_to_v1.1/README.md) — v1.0.x → v1.1.x workspace migration guide.
 - [CHANGELOG.md](CHANGELOG.md) — full release notes.

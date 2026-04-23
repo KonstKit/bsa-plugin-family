@@ -68,7 +68,9 @@ Workers write to `analysis/proposals/`, which has no such lock. `/bsa-promote` i
 
 ## Can I use a sidecar (PlantUML / BPMN) standalone without the main pipeline?
 
-Yes. Each sidecar skill has a "standalone mode" documented in its `integration-contract.md`. The sidecar still expects an `anchor_manifest.json` input, but you can construct that manually instead of relying on the orchestrator to emit it from A61.
+Yes. Each sidecar skill has a "standalone mode" documented in its `integration-contract.md`. **In standalone mode the anchor manifest is NOT required** — the emitted `.puml` / `.bpmn` is informational only and carries no BSA governance weight (per `skills/c4-plantuml-from-context/references/integration-contract.md` and `skills/camunda-bpmn-from-context/references/integration-contract.md`). Only orchestrated mode requires `anchor_manifest.json`.
+
+The sidecar uses a heuristic to decide which mode is intended: if the output path falls under any directory containing `analysis/`, an adjacent `anchor_manifest.json` is required (orchestrated intent); otherwise standalone mode is assumed and no manifest is emitted. See `docs/sidecar_inventory.md` for the operator-facing summary + usage examples for both modes.
 
 See [../skills/c4-plantuml-from-context/references/integration-contract.md](../skills/c4-plantuml-from-context/references/integration-contract.md) and [../skills/camunda-bpmn-from-context/references/integration-contract.md](../skills/camunda-bpmn-from-context/references/integration-contract.md).
 
