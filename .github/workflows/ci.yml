@@ -159,3 +159,24 @@ jobs:
             echo "::error::marker-chain validation failed for at least one fixture"
             exit 1
           fi
+
+  perf-bench:
+    name: perf_bench (no p95 regression > 2x baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run perf benchmarks + check against baseline
+        run: |
+          # Section F (v1.1.13). Baseline is recorded on the maintainer's
+          # laptop (Apple Silicon, macOS); GitHub Actions Linux runners
+          # are typically 1.5–3× slower per operation. The 2× regression
+          # threshold accommodates this — see docs/perf_baseline.md for
+          # the full regression policy.
+          #
+          # Stdlib-only. Total wall time ~6s on dev hardware, ~12s on CI.
+          # If this job starts taking >60s, something has regressed
+          # significantly and the --check should already have caught it.
+          python3 scripts/perf_bench.py --check --quiet

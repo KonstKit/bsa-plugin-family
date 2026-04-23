@@ -4,6 +4,57 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.13] — 2026-04-23
+
+**Performance / scale validation (Section F).** Establishes a hot-path latency baseline + automated regression detection. The plugin family was already fast (full pytest suite in ~115s; canon hash in ~25ms; F5 dispatcher per-call in single-digit microseconds), but had no codified baseline — so an O(n) → O(n²) regression on the F5 hot path could ship unnoticed. v1.1.13 closes that gap with a stdlib-only bench harness + committed baseline doc + CI regression check.
+
+**Tag target**: this commit (the v1.1.13 perf release).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. Bench harness + baseline doc live outside POLICY_GLOBS; canon hash unchanged. Manifest version stays at 1.1.6; v1.1.13 git tag marks the perf-validation release (matches the v1.1.7..v1.1.12 cadence).
+
+### Added
+
+- **`scripts/perf_bench.py`** — stdlib-only benchmark harness (mirrors the structure of `scripts/security_audit.py` + `scripts/privacy_scan.py`). Five categories:
+  * **F5 dispatcher** (`_dispatch()` per-call regex scan over the dispatcher table; matching + non-matching paths). Hot path: fires on every canonical write.
+  * **validate_canonical_write** (full F5 pipeline on a representative A59 CSV, ~10 rows from project_0001).
+  * **canon hash** (`compute_canon_hash.py` end-to-end — POLICY_GLOBS scan + sha256).
+  * **fixture_runner** (`fixture_runner.py --all --mode=validate` over 8 fixtures).
+  * **CI scan budget** (combined `privacy_scan.py` + `security_audit.py`, ~436 files each).
+  * Records p50 / p95 / p99 / min / max / mean across N iterations (per-category default; configurable). Discards a warm-up iteration. CLI flags: `--report=<path>` (overwrite baseline), `--check` (compare current vs baseline + fail if any p95 ≥ 2.0× baseline), `--quiet` / `--json` / `--category` / `--iterations`.
+- **`docs/perf_baseline.md`** — committed baseline. Maintainer's laptop (Apple Silicon, macOS) numbers; the 2× regression threshold accommodates GitHub Actions Linux runners (typically 1.5–3× slower).
+- **`tests/test_perf_bench.py`** (+22 tests) — pins:
+  * `_percentile()` math on edge cases: single sample, q=0, q out of [0,1], NIST nearest-rank on N=100 samples 1..100 (p95 → 95.0, p99 → 99.0, p50 → 50.0), empty raises.
+  * `BenchResult` properties (p50/p95/p99/min/max/mean) compute via `_percentile` on recorded samples (catches drift if someone refactors to `statistics.quantiles` linear-interpolation).
+  * `format_table` / `format_baseline_doc` round-trip cleanly through `parse_baseline_doc` (catches markdown-format drift between writer + reader).
+  * Fast benches (`bench_dispatcher`, `bench_validate_canonical_write`) end-to-end runnable.
+  * `_time_callable_ms()` discards warm-up + rejects iterations < 2.
+  * `check_against_baseline()` PASS / FAIL on regression / FAIL on renamed bench / FAIL on removed bench / missing-doc paths.
+  * Committed baseline doc exists, parses, and contains a row for every category (catches the case where someone bumps the bench list but forgets to re-record).
+
+### Updated
+
+- **`.github/workflows/ci.yml`** — added `perf-bench` job (7th parallel job alongside pytest matrix, fixture-runner, privacy-scan, security-audit, canon-hash, marker-chain). Runs `scripts/perf_bench.py --check --quiet`. Total wall time on GitHub Actions: ~12s (~6s on dev hardware).
+- **`tests/test_ci_workflows.py`** — `test_ci_yml_has_required_jobs` updated for the 7-job set (was 6).
+- **`README.md`** — Documentation section adds link to `docs/perf_baseline.md`.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 1 critical + 3 should-fix.
+  * **CRITICAL**: `_percentile()` was off-by-one. The earlier impl used `int(round(q*N + 0.5)) - 1` and Python's banker's rounding (`round(95.5) → 96` for N=100, q=0.95) returned index 95 → sample 96 instead of the NIST nearest-rank correct index 94 → sample 95. The all-same-value test fixture masked the bug. Fixed: now uses `math.ceil(q*N) - 1` (NIST §1.3.5.6 exactly) + a dedicated test pinning the result on samples 1..100.
+  * **SHOULD #1**: `--check` passed when a current bench was missing from the baseline (renamed / added without re-recording). CI could go green while a bench was silently no longer compared. Fixed: now hard-fails on either side (current-not-in-baseline OR baseline-not-in-current). Operators must explicitly re-record via `--report=docs/perf_baseline.md` after a list change.
+  * **SHOULD #2**: `tests/test_ci_workflows.py::test_ci_yml_has_required_jobs` still expected 6 jobs, would not catch a future removal of the v1.1.13 perf-bench job. Fixed: bumped to 7 jobs.
+  * **SHOULD #3**: bench label said `--all --validate` (5 places) but the actual CLI is `--all --mode=validate`. Fixed all 5: `scripts/perf_bench.py` (×3), `docs/perf_baseline.md`, `CHANGELOG.md` (×2).
+
+### Result
+
+- 1474 → 1497 tests passing (+22 perf-bench tests +1 ci_workflows update).
+- Hot-path latencies are now committed as a baseline (not just measured ad-hoc).
+- CI catches any p95 regression ≥ 2× baseline automatically (the threshold that catches algorithmic regressions like O(n) → O(n²) without flagging single-digit-percent noise).
+- F5 dispatcher per-call latency: p95 < 5µs (matching path) / p95 < 2µs (non-matching). Sub-microsecond margin even on the busiest write path.
+- `validate_canonical_write` (full F5 pipeline on A59 CSV): p95 < 1ms.
+- `compute_canon_hash.py` end-to-end: p95 < 30ms.
+- `fixture_runner.py --all --mode=validate`: p95 < 50ms.
+- `privacy_scan + security_audit` (CI scan budget): p95 < 1s.
+
 ## [v1.1.12] — 2026-04-23
 
 **Sidecar polish (Section I).** Both diagram sidecars (`c4-plantuml-from-context` + `camunda-bpmn-from-context`) had zero open TODO markers and were already well-tested individually. v1.1.12 codifies the F5-boundary contract that's been implicit since v1.0.0 and adds an operator-facing inventory doc.
