@@ -1,12 +1,16 @@
-"""Schema-conformance tests for the three Sprint 9 backlog export
-schemas (governance/schemas/backlog_export_{jira,linear,generic}.schema.json).
+"""Schema-conformance tests for the four backlog export schemas
+(governance/schemas/backlog_export_{jira,linear,generic,github}.schema.json).
 
-Sprint 9 US-S9-01..03 — first F5 dispatcher entries under
-analysis/handoff/ rather than canonical/. Pattern mirrors the
-Phase-3 canonical-artifact tests (test_schemas_a62.py / a70 / a71 /
-a72): meta-validity, positive cases, negative regression guards,
-write_validator dispatch integration, marker-schema sync, H-sec-4
-binding for the two new terminal markers.
+Sprint 9 US-S9-01..03 introduced the Jira/Linear/generic exports
+(first F5 dispatcher entries under analysis/handoff/ rather than
+canonical/). v1.1.4 (B2) extended Jira with optional `customfield_mapping`,
+extended Linear with `Project` + `Cycle` columns, and added a brand-new
+GitHub Projects v2 export (`backlog_export_github.csv`).
+
+Pattern mirrors the Phase-3 canonical-artifact tests
+(test_schemas_a62.py / a70 / a71 / a72): meta-validity, positive cases,
+negative regression guards, write_validator dispatch integration,
+marker-schema sync, H-sec-4 binding for the two new terminal markers.
 """
 
 from __future__ import annotations
@@ -100,6 +104,11 @@ def _sample_linear_row() -> dict:
         "StoryID": "STORY-001",
         "SourceClaimIDs": "C-003;C-007",
         "RelatedNFRIDs": "NFR-PERF-001",
+        # v1.1.4: Linear projects/cycles (TODO-S9-02-LINEAR-PROJECTS).
+        # Empty strings preserve pre-v1.1.4 default (team's default
+        # project, no cycle). Operator can populate per-row.
+        "Project": "",
+        "Cycle": "",
     }
 
 
@@ -538,15 +547,16 @@ def test_linear_labels_membership_enforced_via_lookahead() -> None:
     cases."""
     from governance.schemas.write_validator import validate_canonical_write
 
+    # v1.1.4: Project + Cycle columns required (empty values OK).
     base_csv = (
         "Title,Description,Status,Priority,Labels,Estimate,StoryID,"
-        "SourceClaimIDs,RelatedNFRIDs\n"
+        "SourceClaimIDs,RelatedNFRIDs,Project,Cycle\n"
     )
 
     # Only bsa-export — missing level + invest.
     bad_only_provenance = base_csv + (
         '"On-call paged","body",Todo,1,"bsa-export",'
-        "3,STORY-001,C-003,NFR-PERF-001\n"
+        "3,STORY-001,C-003,NFR-PERF-001,,\n"
     )
     ok, _msgs = validate_canonical_write(
         "analysis/handoff/backlog_export_linear.csv", bad_only_provenance
@@ -559,7 +569,7 @@ def test_linear_labels_membership_enforced_via_lookahead() -> None:
     # bsa-export + level only, no invest.
     bad_no_invest = base_csv + (
         '"On-call paged","body",Todo,1,"bsa-export,level-1",'
-        "3,STORY-001,C-003,NFR-PERF-001\n"
+        "3,STORY-001,C-003,NFR-PERF-001,,\n"
     )
     ok, _msgs = validate_canonical_write(
         "analysis/handoff/backlog_export_linear.csv", bad_no_invest
@@ -569,7 +579,7 @@ def test_linear_labels_membership_enforced_via_lookahead() -> None:
     # bsa-export + invest only, no level.
     bad_no_level = base_csv + (
         '"On-call paged","body",Todo,1,"bsa-export,invest-pass",'
-        "3,STORY-001,C-003,NFR-PERF-001\n"
+        "3,STORY-001,C-003,NFR-PERF-001,,\n"
     )
     ok, _msgs = validate_canonical_write(
         "analysis/handoff/backlog_export_linear.csv", bad_no_level
@@ -579,7 +589,7 @@ def test_linear_labels_membership_enforced_via_lookahead() -> None:
     # Out-of-vocab invest tier.
     bad_invest_vocab = base_csv + (
         '"On-call paged","body",Todo,1,"bsa-export,level-1,invest-something",'
-        "3,STORY-001,C-003,NFR-PERF-001\n"
+        "3,STORY-001,C-003,NFR-PERF-001,,\n"
     )
     ok, _msgs = validate_canonical_write(
         "analysis/handoff/backlog_export_linear.csv", bad_invest_vocab
@@ -589,7 +599,7 @@ def test_linear_labels_membership_enforced_via_lookahead() -> None:
     # All three tags + extras → passes.
     good_extras = base_csv + (
         '"On-call paged","body",Todo,1,"bsa-export,level-1,invest-pass,team-on-call",'
-        "3,STORY-001,C-003,NFR-PERF-001\n"
+        "3,STORY-001,C-003,NFR-PERF-001,,\n"
     )
     ok, msgs = validate_canonical_write(
         "analysis/handoff/backlog_export_linear.csv", good_extras
@@ -605,15 +615,16 @@ def test_linear_labels_singularity_enforced_via_negative_lookahead() -> None:
     silently ambiguous."""
     from governance.schemas.write_validator import validate_canonical_write
 
+    # v1.1.4: Project + Cycle columns required (empty values OK).
     base_csv = (
         "Title,Description,Status,Priority,Labels,Estimate,StoryID,"
-        "SourceClaimIDs,RelatedNFRIDs\n"
+        "SourceClaimIDs,RelatedNFRIDs,Project,Cycle\n"
     )
 
     # Two priority tiers.
     bad_two_levels = base_csv + (
         '"Page","body",Todo,1,"bsa-export,level-1,level-2,invest-pass",'
-        "3,STORY-001,C-003,NFR-PERF-001\n"
+        "3,STORY-001,C-003,NFR-PERF-001,,\n"
     )
     ok, _msgs = validate_canonical_write(
         "analysis/handoff/backlog_export_linear.csv", bad_two_levels
@@ -624,7 +635,7 @@ def test_linear_labels_singularity_enforced_via_negative_lookahead() -> None:
     # because there's no separate INVESTStatus column.
     bad_two_invest = base_csv + (
         '"Page","body",Todo,1,"bsa-export,level-1,invest-pass,invest-needs-estimation",'
-        "3,STORY-001,C-003,NFR-PERF-001\n"
+        "3,STORY-001,C-003,NFR-PERF-001,,\n"
     )
     ok, _msgs = validate_canonical_write(
         "analysis/handoff/backlog_export_linear.csv", bad_two_invest
@@ -638,7 +649,7 @@ def test_linear_labels_singularity_enforced_via_negative_lookahead() -> None:
     # Duplicate bsa-export.
     bad_two_provenance = base_csv + (
         '"Page","body",Todo,1,"bsa-export,bsa-export,level-1,invest-pass",'
-        "3,STORY-001,C-003,NFR-PERF-001\n"
+        "3,STORY-001,C-003,NFR-PERF-001,,\n"
     )
     ok, _msgs = validate_canonical_write(
         "analysis/handoff/backlog_export_linear.csv", bad_two_provenance
@@ -731,11 +742,30 @@ def test_write_validator_blocks_jira_export_with_drifted_format() -> None:
 def test_write_validator_accepts_valid_linear_csv() -> None:
     from governance.schemas.write_validator import validate_canonical_write
 
+    # v1.1.4: Project + Cycle columns are required; empty values
+    # preserve the pre-v1.1.4 default (team's default project, no cycle).
     content = (
         "Title,Description,Status,Priority,Labels,Estimate,StoryID,"
-        "SourceClaimIDs,RelatedNFRIDs\n"
+        "SourceClaimIDs,RelatedNFRIDs,Project,Cycle\n"
         '"On-call paged","As an On-call...",Todo,1,"bsa-export,invest-pass,level-1",'
-        "3,STORY-001,C-003;C-007,NFR-PERF-001\n"
+        "3,STORY-001,C-003;C-007,NFR-PERF-001,,\n"
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_linear.csv", content
+    )
+    assert ok, msgs
+
+
+def test_write_validator_accepts_valid_linear_csv_with_project_and_cycle() -> None:
+    """v1.1.4: Linear export can explicitly set Project and Cycle to
+    group imported stories (TODO-S9-02-LINEAR-PROJECTS)."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        "Title,Description,Status,Priority,Labels,Estimate,StoryID,"
+        "SourceClaimIDs,RelatedNFRIDs,Project,Cycle\n"
+        '"On-call paged","As an On-call...",Todo,1,"bsa-export,invest-pass,level-1",'
+        "3,STORY-001,C-003;C-007,NFR-PERF-001,Platform Q2 Roadmap,Cycle 12\n"
     )
     ok, msgs = validate_canonical_write(
         "analysis/handoff/backlog_export_linear.csv", content
@@ -846,3 +876,290 @@ def test_h_sec_4_binds_pipeline_phase3_complete_marker() -> None:
         json.dumps(correct),
     )
     assert ok, msgs
+
+
+# ---- v1.1.4 B2: Jira customfields (TODO-S9-01-JIRA-CUSTOMFIELDS) ------
+
+
+def test_jira_customfield_mapping_optional_none_passes() -> None:
+    """customfield_mapping is optional. Pre-v1.1.4 exports without it
+    must continue to pass."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    export = _sample_jira_export()
+    assert "customfield_mapping" not in export
+    ok, msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_jira.json", json.dumps(export)
+    )
+    assert ok, msgs
+
+
+def test_jira_customfield_mapping_valid_keys_pass() -> None:
+    """Operator-supplied customfield_mapping with the 4 recognized BSA
+    logical keys (nfr_ids, source_claim_ids, story_id, a51_refs)
+    pointing at canonical Jira customfield IDs (customfield_NNNNN)
+    passes validation."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    export = _sample_jira_export()
+    export["customfield_mapping"] = {
+        "nfr_ids": "customfield_10042",
+        "source_claim_ids": "customfield_10043",
+        "story_id": "customfield_10044",
+        "a51_refs": "customfield_10045",
+    }
+    ok, msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_jira.json", json.dumps(export)
+    )
+    assert ok, msgs
+
+
+def test_jira_customfield_mapping_unknown_key_blocks_write() -> None:
+    """customfield_mapping has additionalProperties:false so a typo
+    ('nfr_id' vs 'nfr_ids') surfaces immediately."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    export = _sample_jira_export()
+    export["customfield_mapping"] = {"nfr_id": "customfield_10042"}  # typo
+    ok, msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_jira.json", json.dumps(export)
+    )
+    assert not ok
+    assert any("nfr_id" in m or "additionalProperties" in m or "Additional properties" in m for m in msgs), msgs
+
+
+def test_jira_customfield_mapping_bad_id_format_blocks_write() -> None:
+    """customfield IDs must match the canonical 'customfield_NNNNN' (4-6
+    digits) shape — ad-hoc IDs ('cf_42', 'customfield_X') are rejected."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    for bad_id in ("cf_42", "customfield_X", "customfield_", "10042"):
+        export = _sample_jira_export()
+        export["customfield_mapping"] = {"nfr_ids": bad_id}
+        ok, _msgs = validate_canonical_write(
+            "analysis/handoff/backlog_export_jira.json", json.dumps(export)
+        )
+        assert not ok, f"customfield ID {bad_id!r} should be rejected"
+
+
+# ---- v1.1.4 B2: Linear Project + Cycle (TODO-S9-02-LINEAR-PROJECTS) ----
+
+
+def test_linear_project_overlong_name_blocks_write() -> None:
+    """Project name max length is 80 chars per the schema pattern."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    overlong = "x" * 81
+    content = (
+        "Title,Description,Status,Priority,Labels,Estimate,StoryID,"
+        "SourceClaimIDs,RelatedNFRIDs,Project,Cycle\n"
+        '"Page","body",Todo,1,"bsa-export,level-1,invest-pass",'
+        f"3,STORY-001,C-003,NFR-PERF-001,{overlong},\n"
+    )
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_linear.csv", content
+    )
+    assert not ok, "Project name > 80 chars must be rejected"
+
+
+def test_linear_project_bad_chars_blocks_write() -> None:
+    """Project name pattern rejects characters outside [A-Za-z0-9 _-]."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        "Title,Description,Status,Priority,Labels,Estimate,StoryID,"
+        "SourceClaimIDs,RelatedNFRIDs,Project,Cycle\n"
+        '"Page","body",Todo,1,"bsa-export,level-1,invest-pass",'
+        '3,STORY-001,C-003,NFR-PERF-001,"Project!With!Bangs",\n'
+    )
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_linear.csv", content
+    )
+    assert not ok
+
+
+# ---- v1.1.4 B2: GitHub Projects v2 (TODO-S9-03-GITHUB-PROJECTS) -------
+
+
+def _sample_github_csv(
+    title: str = "Page on H/Crit",
+    body: str = "Body text",
+    status: str = "Backlog",
+    priority: str = "P1",
+    size: str = "M",
+    labels: str = "bsa-export,level-1,invest-pass",
+    story_id: str = "STORY-001",
+    source_claim_ids: str = "C-003",
+    related_nfr_ids: str = "NFR-PERF-001",
+) -> str:
+    header = (
+        "Title,Body,Status,Priority,Size,Labels,StoryID,"
+        "SourceClaimIDs,RelatedNFRIDs\n"
+    )
+    row = f'"{title}","{body}",{status},{priority},{size},"{labels}",{story_id},{source_claim_ids},{related_nfr_ids}\n'
+    return header + row
+
+
+def test_github_baseline_row_passes() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    ok, msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_github.csv", _sample_github_csv()
+    )
+    assert ok, msgs
+
+
+def test_github_dispatcher_routes_to_correct_schema() -> None:
+    from governance.schemas.write_validator import _dispatch
+
+    dispatch = _dispatch("analysis/handoff/backlog_export_github.csv")
+    assert dispatch is not None
+    schema_name, _fn = dispatch
+    assert schema_name == "backlog_export_github"
+
+
+def test_github_priority_p0_round_trip_passes() -> None:
+    """The schema intentionally accepts P0 in the enum so that an
+    operator who manually escalates a story to P0 post-import can
+    re-export the canonical state without the schema rejecting their
+    upgraded priority. The bridge itself never emits P0 (P0 escalation
+    is a sponsor decision routed via A51, not a derived export shape)."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    ok, msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_github.csv",
+        _sample_github_csv(priority="P0"),
+    )
+    assert ok, msgs
+
+
+def test_github_priority_invalid_value_blocks_write() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_github.csv",
+        _sample_github_csv(priority="P99"),
+    )
+    assert not ok
+
+
+def test_github_size_invalid_value_blocks_write() -> None:
+    from governance.schemas.write_validator import validate_canonical_write
+
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_github.csv",
+        _sample_github_csv(size="HUGE"),
+    )
+    assert not ok
+
+
+def test_github_size_empty_string_passes() -> None:
+    """Size='' is the explicit 'no hint' value (A70.EstimationHint='unknown')."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    ok, msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_github.csv",
+        _sample_github_csv(size=""),
+    )
+    assert ok, msgs
+
+
+def test_github_labels_missing_invest_blocks_write() -> None:
+    """Same labels regex as Linear — invest-N tag required."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_github.csv",
+        _sample_github_csv(labels="bsa-export,level-1"),
+    )
+    assert not ok
+
+
+def test_github_labels_two_invest_tiers_blocks_write() -> None:
+    """Negative lookahead: contradictory invest-* duplicates must fail
+    (mirrors Linear)."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_github.csv",
+        _sample_github_csv(labels="bsa-export,level-1,invest-pass,invest-needs-estimation"),
+    )
+    assert not ok
+
+
+def test_github_provenance_rule_at_least_one_required() -> None:
+    """x-bsa-provenance-rules: at_least_one_of_non_empty SourceClaimIDs
+    or RelatedNFRIDs."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_github.csv",
+        _sample_github_csv(source_claim_ids="", related_nfr_ids=""),
+    )
+    assert not ok
+
+
+def test_github_loader_iter_function_present() -> None:
+    """v1.1.4 added iter_backlog_export_github_rows to the loader."""
+    from governance.schemas import loader
+    assert hasattr(loader, "iter_backlog_export_github_rows")
+
+
+def test_github_known_paths_registered() -> None:
+    from governance.schemas.write_validator import list_known_paths
+    paths = list_known_paths()
+    assert any("backlog_export_github" in p for p in paths)
+
+
+# ---- v1.1.4 round-1 review: edge-case pins (Codex nice-to-have) -------
+
+
+def test_jira_customfield_mapping_non_string_value_blocks_write() -> None:
+    """customfield_mapping values must be strings (not numbers / objects).
+    Pins what runtime already enforces via JSON Schema type:string."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    # Numeric value
+    export = _sample_jira_export()
+    export["customfield_mapping"] = {"nfr_ids": 10042}  # int, not string
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_jira.json", json.dumps(export)
+    )
+    assert not ok, "numeric customfield_mapping value must be rejected"
+
+    # Nested object
+    export = _sample_jira_export()
+    export["customfield_mapping"] = {"nfr_ids": {"id": "customfield_10042"}}
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_jira.json", json.dumps(export)
+    )
+    assert not ok, "object customfield_mapping value must be rejected"
+
+
+def test_linear_project_accepts_real_world_name_with_spaces_and_digits() -> None:
+    """Pins what the regex `^[A-Za-z0-9 _\\-]{0,80}$` already accepts —
+    'Q2 2026 Roadmap' is a typical Linear project name shape."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    content = (
+        "Title,Description,Status,Priority,Labels,Estimate,StoryID,"
+        "SourceClaimIDs,RelatedNFRIDs,Project,Cycle\n"
+        '"Page","body",Todo,1,"bsa-export,level-1,invest-pass",'
+        '3,STORY-001,C-003,NFR-PERF-001,"Q2 2026 Roadmap","Cycle 12"\n'
+    )
+    ok, msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_linear.csv", content
+    )
+    assert ok, msgs
+
+
+def test_github_labels_duplicate_bsa_export_blocks_write() -> None:
+    """Negative lookahead: duplicate bsa-export tags must fail (mirrors
+    Linear). Pins the regex's anti-duplicate guard for GitHub."""
+    from governance.schemas.write_validator import validate_canonical_write
+
+    ok, _msgs = validate_canonical_write(
+        "analysis/handoff/backlog_export_github.csv",
+        _sample_github_csv(labels="bsa-export,level-1,invest-pass,bsa-export"),
+    )
+    assert not ok, "duplicate bsa-export tag in GitHub Labels must be rejected"

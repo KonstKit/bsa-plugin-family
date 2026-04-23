@@ -4,6 +4,28 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.4] — 2026-04-23
+
+**Platform export polish (B2).** Closes the three remaining v1.2-candidate TODOs from the v1.1.0 carried-forward list — `[TODO-S9-01-JIRA-CUSTOMFIELDS]`, `[TODO-S9-02-LINEAR-PROJECTS]`, `[TODO-S9-03-GITHUB-PROJECTS]` — by extending the existing Jira + Linear export schemas and adding a brand-new GitHub Projects v2 export schema. All three additions are backward-compatible (new fields/columns are optional or default to empty so pre-v1.1.4 exports still validate after operators add the new columns).
+
+**Tag target**: this commit (the v1.1.4 platform-export polish).
+**Canon policy version**: `1.1.4+hash:eefb7204` — patch-line bump from 1.1.3 (additive schema extensions; canon hash advanced from `bsa-backlog-bridge/SKILL.md` edits marking the three TODOs CLOSED).
+
+### Added
+
+- **Jira `customfield_mapping`** (`governance/schemas/backlog_export_jira.schema.json`) — OPTIONAL top-level object documenting four recognized BSA logical fields → Jira customfield IDs (`nfr_ids`, `source_claim_ids`, `story_id`, `a51_refs`). When present, the bridge populates the named customfields in each `issue.fields` with the corresponding `bsa_provenance` value (joined with `;` for arrays). When omitted, pre-v1.1.4 description-footer-only behavior preserved. `additionalProperties:false` on the mapping object catches typos at hook time (`nfr_id` vs `nfr_ids` rejected immediately). Customfield IDs validated against the canonical `^customfield_NNNNN$` shape (4-6 digits) so ad-hoc IDs (`cf_42`, `customfield_X`) fail.
+- **Linear `Project` + `Cycle` columns** (`governance/schemas/backlog_export_linear.schema.json`) — TWO new required CSV columns (empty-string default preserves pre-v1.1.4 behavior of "team's default project, no cycle"). Project name pattern accepts Linear's character set (`[A-Za-z0-9 _-]{0,80}`); Cycle uses the same shape. Operators populate via `--linear-project` / `--linear-cycle` at bridge invocation OR per-story via A70 metadata.
+- **GitHub Projects v2 export** (`governance/schemas/backlog_export_github.schema.json`) — brand-new CSV schema for `analysis/handoff/backlog_export_github.csv`. CSV-based because GitHub Projects v2 has no native bulk import; an operator-side `gh` script (or GitHub Actions workflow) consumes the rows to call `gh issue create` + `gh project item-create` + `gh project item-edit`. Columns: Title, Body, Status (Backlog/Todo/In Progress/Done), Priority (P0-P3), Size (XS-XL or empty), Labels (same regex as Linear: bsa-export + level-N + invest-N membership enforced via 3 positive + 3 negative lookaheads), StoryID, SourceClaimIDs, RelatedNFRIDs. F5 dispatcher entry registered at `/analysis/handoff/backlog_export_github.csv`. Loader gains `iter_backlog_export_github_rows`. Reuses the existing `_apply_provenance_rules` handler (INV-08 carries through identically to Linear/generic exports).
+- **`tests/test_schemas_backlog_export.py`** (+17 tests, total 63) — covers Jira `customfield_mapping` (optional → pass; valid keys → pass; unknown key → block; bad ID format → block), Linear Project/Cycle (overlong name → block; bad chars → block; project + cycle populated → pass), and GitHub export end-to-end (baseline → pass; dispatcher routing; P0 round-trip; invalid Priority/Size → block; empty Size → pass; missing invest label → block; two-invest labels → block; provenance rule → block when both empty; loader iter function present; dispatcher path registered).
+
+### Updated
+
+- **`skills/bsa-backlog-bridge/SKILL.md` Outputs + Open follow-ups** — three TODO closure notes (struck through with closure detail); Outputs section adds `backlog_export_github.csv` next to existing three platforms; Jira + Linear entries note their v1.1.4 capability additions.
+
+### Carried forward (deferred to v1.3 / Section C)
+
+- `[TODO-S9-LIVE-API]` — optional live-API mode (POST to Jira / Linear / GitHub directly instead of static file output). Higher risk surface (auth, rate limits, partial failures); v1.3 candidate.
+
 ## [v1.1.3] — 2026-04-23
 
 **Cross-artifact validator at the F5 hook layer (B1).** Closes the two declared v1.2-candidate TODOs from the v1.1.0 carried-forward list — `[TODO-S8-01-X-ARTIFACT-NFR-COVERAGE]` (A71 NFR-coverage rule) + `[TODO-S8-02-X-ARTIFACT-FK]` (A72 foreign-key + claim-source consistency). Both rules were documentary at the schema layer + skill-self-validated through v1.1.2; v1.1.3 makes them executable at the F5 hook layer so any writer (orchestrator, skill, operator manual edit) is gated.

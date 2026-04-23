@@ -1036,6 +1036,15 @@ _DISPATCHER: list[_DispatcherEntry] = [
         "backlog_export_generic",
         _make_csv_validator("backlog_export_generic"),
     ),
+    # Phase 3 (Sprint 9 v1.1.4 polish): GitHub Projects v2 export.
+    # Closes TODO-S9-03-GITHUB-PROJECTS — operator-side `gh` script
+    # (or GitHub Actions workflow) consumes this CSV to gh issue create
+    # + gh project item-create + gh project item-edit per row.
+    (
+        re.compile(r"(?:^|/)analysis/handoff/backlog_export_github\.csv$"),
+        "backlog_export_github",
+        _make_csv_validator("backlog_export_github"),
+    ),
 ]
 
 

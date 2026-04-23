@@ -357,6 +357,11 @@ def iter_backlog_export_generic_rows(path: Path) -> Iterator[dict[str, str]]:
     return _iter_canonical_csv("backlog_export_generic", path)
 
 
+def iter_backlog_export_github_rows(path: Path) -> Iterator[dict[str, str]]:
+    """Yield GitHub Projects v2 backlog-export rows (Phase 3, US-S9-03 v1.1.4)."""
+    return _iter_canonical_csv("backlog_export_github", path)
+
+
 def _iter_canonical_csv(schema_name: str, path: Path) -> Iterator[dict[str, str]]:
     """Shared body for the iter_aNN_rows family.
 

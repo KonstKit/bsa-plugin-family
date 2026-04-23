@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/backlog_export_github.schema.json",
+  "title": "GitHub Projects v2 backlog export row",
+  "description": "Schema for one row of analysis/handoff/backlog_export_github.csv produced by bsa-backlog-bridge (Phase 3, US-S9-03). GitHub Projects v2 has no native bulk CSV import; the bridge emits a CSV that an operator-side script or GitHub Actions workflow consumes to (1) `gh issue create` an underlying issue, then (2) `gh project item-create` + `gh project item-edit` to associate it with a Project v2 board and set its custom-field values. (No bridge-shipped script today — operator owns the import driver. Future v1.2+ candidate: ship a sample `scripts/github_projects_import.sh` per [TODO-S9-03-IMPORT-DRIVER].) Column set mirrors Linear (TODO-S9-03-GITHUB-PROJECTS, closed in v1.1.4) with two GitHub-specific additions: Body (markdown body the issue carries — Linear uses Description, GitHub APIs use Body) + Size (Project v2 single-select 'Size' field; XS/S/M/L/XL convention). Strictly read-only with respect to canonical state. Schema-enforced via F5 dispatcher entry under analysis/handoff/backlog_export_github.csv.",
+  "type": "object",
+  "required": [
+    "Title",
+    "Body",
+    "Status",
+    "Priority",
+    "Size",
+    "Labels",
+    "StoryID",
+    "SourceClaimIDs",
+    "RelatedNFRIDs"
+  ],
+  "properties": {
+    "Title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "GitHub issue title. Sourced from A70.Title. GitHub allows titles up to 256 chars; A70 caps at 120 so this column inherits that ceiling."
+    },
+    "Body": {
+      "type": "string",
+      "minLength": 1,
+      "description": "GitHub Markdown body. A70.StoryText followed by an 'Acceptance criteria' bulleted list, then a BSA provenance footer (StoryID + SourceClaimIDs + RelatedNFRIDs). GitHub renders Markdown natively."
+    },
+    "Status": {
+      "type": "string",
+      "enum": ["Backlog", "Todo", "In Progress", "Done"],
+      "description": "GitHub Projects v2 'Status' single-select option. Bridge defaults to 'Backlog' for INVEST-deferred stories (INVESTStatus != 'pass') and 'Todo' for INVEST-pass stories. 'In Progress' / 'Done' are accepted in the schema for round-trip but the bridge never emits them (downstream tooling owns lifecycle post-import)."
+    },
+    "Priority": {
+      "type": "string",
+      "enum": ["P0", "P1", "P2", "P3"],
+      "description": "GitHub Projects v2 'Priority' single-select option. Maps from A70.Priority: level-1 → P1, level-2 → P2, level-3 → P3. P0 reserved for operator post-import escalation (bridge never emits P0 — that's a manual sponsor decision via A51, not a derived export shape)."
+    },
+    "Size": {
+      "type": "string",
+      "enum": ["XS", "S", "M", "L", "XL", ""],
+      "description": "GitHub Projects v2 'Size' single-select option. Maps from A70.EstimationHint verbatim (xs/s/m/l/xl uppercased; unknown → empty string). Empty string is the explicit 'no hint' value."
+    },
+    "Labels": {
+      "type": "string",
+      "pattern": "^(?=(?:[^,]+,)*bsa-export(?:,|$))(?=(?:[^,]+,)*level-[1-3](?:,|$))(?=(?:[^,]+,)*invest-(?:pass|needs-splitting|needs-estimation|needs-testable-acceptance|needs-negotiation|escalate)(?:,|$))(?!(?:[^,]+,)*bsa-export(?:,[^,]+)*,bsa-export(?:,|$))(?!(?:[^,]+,)*level-[1-3](?:,[^,]+)*,level-[1-3](?:,|$))(?!(?:[^,]+,)*invest-(?:pass|needs-splitting|needs-estimation|needs-testable-acceptance|needs-negotiation|escalate)(?:,[^,]+)*,invest-(?:pass|needs-splitting|needs-estimation|needs-testable-acceptance|needs-negotiation|escalate)(?:,|$))[a-z0-9_\\-]+(?:,[a-z0-9_\\-]+)*$",
+      "description": "Comma-separated GitHub issue labels. Same regex as Linear: 3 positive + 3 negative lookaheads enforce EXACTLY ONE 'bsa-export' tag + EXACTLY ONE 'level-N' tier + EXACTLY ONE 'invest-N' tier. Per-tag character class is GitHub-label-friendly (lowercase + alphanumeric + hyphen + underscore). Operators may add extra labels post-import."
+    },
+    "StoryID": {
+      "type": "string",
+      "pattern": "^STORY-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Provenance: A70.StoryID. The operator-side import script can place this in a 'BSA Story' Project v2 text field for back-traceability into canonical."
+    },
+    "SourceClaimIDs": {
+      "type": "string",
+      "pattern": "^(?:C-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]C-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Provenance: A70.SourceClaimIDs verbatim. Empty allowed when RelatedNFRIDs is non-empty (mirrors A70 INV-08)."
+    },
+    "RelatedNFRIDs": {
+      "type": "string",
+      "pattern": "^(?:NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
+      "description": "Provenance: A70.RelatedNFRIDs verbatim. Empty allowed when SourceClaimIDs is non-empty."
+    }
+  },
+  "additionalProperties": true,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for diff stability. GitHub-import-required columns first (Title, Body), then Project v2 single-select fields (Status, Priority, Size, Labels), then BSA provenance (StoryID, SourceClaimIDs, RelatedNFRIDs).",
+    "order": [
+      "Title",
+      "Body",
+      "Status",
+      "Priority",
+      "Size",
+      "Labels",
+      "StoryID",
+      "SourceClaimIDs",
+      "RelatedNFRIDs"
+    ]
+  },
+  "x-bsa-provenance-rules": {
+    "_comment": "INV-08 carries through to the export — every row MUST carry non-empty SourceClaimIDs OR RelatedNFRIDs (mirrors A70 schema's same-named extension). Reuses the generalized _apply_provenance_rules handler in write_validator.py — same hook-time enforcement as Linear and generic exports.",
+    "at_least_one_of_non_empty": ["SourceClaimIDs", "RelatedNFRIDs"],
+    "rationale": "An export row with both provenance fields empty would be a backlog item the consumer can't trace back to a claim or NFR — defeats the whole point of the bridge. Schema-enforced at write time so a bridge bug emitting empty provenance fails the F5 hook."
+  }
+}

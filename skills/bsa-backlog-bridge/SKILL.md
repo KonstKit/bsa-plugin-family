@@ -31,9 +31,10 @@ Out of scope:
 
 ## Outputs
 
-- `analysis/handoff/backlog_export_jira.json` (when --platform includes jira)
-- `analysis/handoff/backlog_export_linear.csv` (when --platform includes linear)
+- `analysis/handoff/backlog_export_jira.json` (when --platform includes jira; v1.1.4 supports optional `customfield_mapping` block)
+- `analysis/handoff/backlog_export_linear.csv` (when --platform includes linear; v1.1.4 added `Project` + `Cycle` columns)
 - `analysis/handoff/backlog_export_generic.csv` (when --platform includes generic)
+- `analysis/handoff/backlog_export_github.csv` (when --platform includes github; v1.1.4 — operator-side `gh` script consumes this for `gh issue create` + `gh project item-create` + `gh project item-edit`)
 - `analysis/handoff/backlog_export_report.md` — counts, format choices, the `--jira-project` key used, A70 stories with INVESTStatus != 'pass' that surfaced as deferred backlog items.
 
 After successful write of all requested platform files + report, emits:
@@ -160,7 +161,7 @@ Downstream consumers:
 
 ## Open follow-ups
 
-- `[TODO-S9-01-JIRA-CUSTOMFIELDS]` — explicit support for mapping A62 NFR IDs into Jira custom fields. Today the bridge stores them in description footers + bsa_provenance; operator can post-process if their Jira instance has dedicated NFR-link customfields. v1.2 polish.
-- `[TODO-S9-02-LINEAR-PROJECTS]` — Linear projects / cycles assignment. Today everything goes into the team's default project; operator can re-assign post-import. v1.2 polish.
-- `[TODO-S9-03-GITHUB-PROJECTS]` — GitHub Projects v2 export format (issues + project board fields). Out of v1.1.0 scope; candidate for v1.2 once a real engagement requests it.
-- `[TODO-S9-LIVE-API]` — optional live-API mode (POST to Jira / Linear directly instead of static file output). Higher risk surface (auth, rate limits, partial failures); v1.3 candidate.
+- ~~`[TODO-S9-01-JIRA-CUSTOMFIELDS]`~~ — **CLOSED in v1.1.4.** Jira export schema gains an OPTIONAL top-level `customfield_mapping` object documenting four recognized BSA logical fields → Jira customfield IDs (`nfr_ids`, `source_claim_ids`, `story_id`, `a51_refs`). When set, the bridge populates the named customfields in `issue.fields` per row; when omitted, pre-v1.1.4 description-footer-only behavior preserved. `additionalProperties:false` on the mapping object catches typos at hook time.
+- ~~`[TODO-S9-02-LINEAR-PROJECTS]`~~ — **CLOSED in v1.1.4.** Linear export schema gains two required columns (`Project`, `Cycle`). Empty values preserve pre-v1.1.4 behavior (team default project, no cycle); non-empty values let the bridge associate stories with a named Linear project + cycle.
+- ~~`[TODO-S9-03-GITHUB-PROJECTS]`~~ — **CLOSED in v1.1.4.** New `analysis/handoff/backlog_export_github.csv` schema (`backlog_export_github.schema.json`) for GitHub Projects v2. CSV-based — operator-side `gh` script (or GitHub Actions workflow) consumes the CSV to call `gh issue create` + `gh project item-create` + `gh project item-edit` per row. Columns mirror Linear (Title/Body/Status/Priority/Size/Labels/StoryID/SourceClaimIDs/RelatedNFRIDs); same Labels regex enforces `bsa-export` + `level-N` + `invest-N` membership. F5 dispatcher entry registered.
+- `[TODO-S9-LIVE-API]` — optional live-API mode (POST to Jira / Linear / GitHub directly instead of static file output). Higher risk surface (auth, rate limits, partial failures); v1.3 candidate (Section C).

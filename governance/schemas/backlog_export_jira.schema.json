@@ -18,6 +18,17 @@
       "const": "jira",
       "description": "Discriminator. Must be exactly 'jira' for this schema. Other exporters (linear, generic) carry their own discriminator value."
     },
+    "customfield_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nfr_ids": {"type": "string", "pattern": "^customfield_[0-9]{4,6}$", "description": "Optional Jira customfield ID to receive A62 NFR IDs (joined by ';') from each issue's bsa_provenance.related_nfr_ids. Example: 'customfield_10042'."},
+        "source_claim_ids": {"type": "string", "pattern": "^customfield_[0-9]{4,6}$", "description": "Optional Jira customfield ID to receive A59 ClaimIDs (joined by ';') from each issue's bsa_provenance.source_claim_ids."},
+        "story_id": {"type": "string", "pattern": "^customfield_[0-9]{4,6}$", "description": "Optional Jira customfield ID to receive the A70 StoryID (single value). Useful when the receiving project has a dedicated 'BSA Story' customfield for back-traceability into canonical."},
+        "a51_refs": {"type": "string", "pattern": "^customfield_[0-9]{4,6}$", "description": "Optional Jira customfield ID to receive A51Refs from rows whose INVESTStatus is not 'pass' (joined by ';')."}
+      },
+      "description": "OPTIONAL operator-supplied mapping of BSA logical fields → Jira customfield IDs (TODO-S9-01-JIRA-CUSTOMFIELDS, closed in v1.1.4). When set, bsa-backlog-bridge populates the named customfields in each issue.fields with the corresponding bsa_provenance values (joined with ';' for arrays). When omitted, bridge falls back to description-footer + bsa_provenance only (pre-v1.1.4 behavior). Keys are recognized BSA logical names; values are Jira customfield IDs in the canonical 'customfield_NNNNN' shape (4-6 digit). Unknown keys are rejected at hook time so a typo ('nfr_id' vs 'nfr_ids') surfaces immediately rather than silently producing an unpopulated customfield."
+    },
     "export_format_version": {
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$",

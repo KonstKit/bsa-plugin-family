@@ -13,7 +13,9 @@
     "Estimate",
     "StoryID",
     "SourceClaimIDs",
-    "RelatedNFRIDs"
+    "RelatedNFRIDs",
+    "Project",
+    "Cycle"
   ],
   "properties": {
     "Title": {
@@ -61,11 +63,21 @@
       "type": "string",
       "pattern": "^(?:NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]NFR-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
       "description": "Provenance: A70.RelatedNFRIDs verbatim. Empty allowed when SourceClaimIDs is non-empty."
+    },
+    "Project": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9 _\\-]{0,80}$",
+      "description": "Linear project name (TODO-S9-02-LINEAR-PROJECTS, closed in v1.1.4). Empty string = use the team's default project (pre-v1.1.4 behavior preserved). Non-empty = bridge associates the imported issue with the named Linear project. Operator supplies via --linear-project at bridge invocation OR per-story via A70 metadata. Pattern accepts Linear's project-name character set (alphanumeric + space + underscore + hyphen, ≤ 80 chars)."
+    },
+    "Cycle": {
+      "type": "string",
+      "pattern": "^(?:[A-Za-z0-9 _\\-]{0,80})?$",
+      "description": "Linear cycle name (TODO-S9-02-LINEAR-PROJECTS, closed in v1.1.4). Empty string = no cycle assignment (operator schedules later). Non-empty = bridge places the imported issue in the named cycle. Pattern matches Project; empty allowed to keep pre-v1.1.4 imports working unchanged."
     }
   },
   "additionalProperties": true,
   "x-bsa-csv-columns-order": {
-    "_comment": "Canonical column order for diff stability. Linear-import-required columns first (Title..Estimate), BSA provenance columns after. Re-running the bridge produces byte-identical output (apart from the source A70 timestamp embedded in any free-text bodies the operator added).",
+    "_comment": "Canonical column order for diff stability. Linear-import-required columns first (Title..Estimate), BSA provenance columns next, optional Linear-grouping columns (Project, Cycle) last so legacy v1.1.x exports that lack them are easy to compare side-by-side. Re-running the bridge produces byte-identical output.",
     "order": [
       "Title",
       "Description",
@@ -75,7 +87,9 @@
       "Estimate",
       "StoryID",
       "SourceClaimIDs",
-      "RelatedNFRIDs"
+      "RelatedNFRIDs",
+      "Project",
+      "Cycle"
     ]
   },
   "x-bsa-provenance-rules": {
