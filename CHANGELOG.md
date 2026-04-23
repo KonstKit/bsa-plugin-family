@@ -4,6 +4,60 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.2] — 2026-04-23
+
+**A72 incremental-matrix diff helper (Sprint 2 / T1).** Closes `TODO-S8-02-INCREMENTAL-MATRIX` from `skills/bsa-traceability-matrix/SKILL.md`. For engagements with thousands of triples, a full A72 matrix re-build on every `bsa-dev-handoff` invocation is wasteful. v1.2.2 ships an operator-side helper that computes per-row hashes of A70/A59/A50/A62 inputs and outputs a diff classifying each upstream row as `added` / `modified` / `removed` / `unchanged`. The skill uses the diff to scope its A72 re-emission — `unchanged` rows carry forward; added/modified/removed trigger recomputation for their triples only.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.2+hash:66e2004f` — **bumps from 1.2.1+hash:6821009d** (bsa-traceability-matrix SKILL.md is in POLICY_GLOBS; TODO-closure edit moves the canon hash).
+
+### Added
+
+- **`scripts/a72_incremental_diff.py`** (~240 lines, stdlib-only) — per-row hash diff helper. Walks 4 TRACKED_ARTIFACTS (A70/A59/A50/A62), hashes each row via `sha256(json.dumps(row, sort_keys=True))` (stable across key-order permutations), compares to cache. Writes cache atomically via tmpfile in same dir + `os.replace` (same-FS atomicity guarantee). CLI flags: `--force-rebuild` (exit 1 to signal full rebuild), `--update-cache` (refresh after run), `--json` (machine-readable output for downstream tooling).
+- **`analysis/canonical/.a72_incremental_state.json`** — operator-side cache format. NOT canonical state; NOT F5-validated; NOT in POLICY_GLOBS. Safe to delete — deletion forces a full rebuild on next `bsa-dev-handoff`. Cache version field (`cache_version: "1.0"`) gates forward-compat — mismatch → empty prior → full rebuild.
+- **`tests/test_a72_incremental_diff.py`** (+20 tests) — pins:
+  * `_hash_row` stable across key-order permutations.
+  * Diff classification (added / modified / removed / unchanged).
+  * `needs_full_rebuild` false only when ZERO changes.
+  * Cache round-trip (write → read same hashes).
+  * Cache version mismatch → empty prior.
+  * Cache malformed-JSON → empty prior (silent fallback to full rebuild).
+  * Atomic write: tmpfile in same dir as cache (monkey-patched tempfile.mkstemp to spy on the dir argument).
+  * `collect_current_hashes` walks ALL TRACKED_ARTIFACTS even when some are missing.
+  * CLI: missing workspace → exit 2; `--force-rebuild` → exit 1; `--update-cache` writes file; `--json` emits parseable JSON.
+
+### Updated
+
+- **`skills/bsa-traceability-matrix/SKILL.md`** — `TODO-S8-02-INCREMENTAL-MATRIX` marked CLOSED with the operator workflow, cache-file semantics (non-canonical, safe to delete), and CLI-flag reference.
+- **`.claude-plugin/plugin.json`** — version 1.2.1 → 1.2.2; canonPolicyVersion fields updated to 66e2004f.
+- **`docs/RELEASING.md`** — table entry added.
+- **`README.md`, `INSTALL.md`, `docs/getting_started.md`, `docs/faq.md`** — current-release lines refreshed to 1.2.2.
+
+### Operator workflow
+
+For workspaces with thousands of A72 triples (large engagements):
+
+1. After each `bsa-dev-handoff` stage (or before), run:
+   ```
+   python3 scripts/a72_incremental_diff.py --workspace <ws> --update-cache
+   ```
+2. Use the `--json` output to scope the LLM's A72 rebuild: consume `needs_full_rebuild`, `added`/`modified`/`removed` counts, and per-row diffs.
+3. The `bsa-traceability-matrix` skill reads the same cache on its next invocation and only recomputes A72 rows whose upstream (A70/A59/A50/A62) changed.
+4. If the cache file is ever suspect, delete it: `rm analysis/canonical/.a72_incremental_state.json`. The next run reverts to a full rebuild + repopulates the cache.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 1 MEDIUM + 2 LOW.
+  * **MEDIUM**: `_load_cache()` silently partial-loaded JSON-valid but schema-invalid caches (filtered bad sub-trees / non-string entries to `{}` instead of rejecting the whole cache). This let `compute_diff` emit `unchanged` rows from a malformed cache, defeating the documented fail-CLOSED model. **Fixed**: any structural violation (top-level not dict, `row_hashes` not dict, artifact sub-tree not dict, mixed-type values inside sub-tree) now rejects the whole cache → empty prior → full rebuild. Missing-but-not-malformed sub-trees ARE tolerated (forward-compat for caches written before a tracked artifact was added). 5 new regression tests pin each failure mode.
+  * **LOW**: docstring exit-code spec was inconsistent — said "exit 1: cache missing OR corrupt OR --force-rebuild" but the implementation only exits 1 for `--force-rebuild`. **Fixed**: docstring corrected to clarify that cache-missing/cache-corrupt cases silently fall back to empty-prior-diff (exit 0), and exit 1 is reserved for the explicit `--force-rebuild` opt-in.
+  * **LOW**: missing regression coverage for JSON-valid but wrong-shape cache payloads. **Fixed**: 5 new tests covering top-level-not-dict, row_hashes-not-dict, artifact-subtree-not-dict, non-string-hash-value, and missing-artifact-subtree-tolerated cases.
+- **Round 2**: APPROVE with one non-blocking LOW (module-level docstring still described the cache as a flat `<artifact>:<row_id>` map with "no schema enforcement" — stale after the round-1 hardening). **Fixed**: docstring rewritten to describe the actual nested shape + the strict-on-malformed contract.
+
+### Result
+
+- 1636 → 1661 tests passing (+25 a72_incremental_diff tests; 20 round-1 + 5 round-2 cache-shape regressions).
+- TODO-S8-02-INCREMENTAL-MATRIX closed. Large-engagement workspaces can now scope A72 rebuilds instead of eating the full JOIN cost on every invocation. Cache loader is fail-CLOSED on every schema-invalid shape (force full rebuild instead of silent partial load).
+- Canon hash: 6821009d → 66e2004f.
+
 ## [v1.2.1] — 2026-04-23
 
 **A72 LinkStrength override via A51 IssueType (Sprint 2 / T2).** Closes `TODO-S8-02-LINK-STRENGTH-OVERRIDE` from `skills/bsa-traceability-matrix/SKILL.md`. Adds the missing piece of the A72 LinkStrength contract: the operator-override path. Pre-v1.2.1 the SKILL.md said "operator may explicitly override (raise OR lower) with A51 rationale" but no specific `IssueType` existed for that purpose — operators had to reuse `decision_needed` or `uncertainty`, both of which downstream KPI tooling treats as different signals. v1.2.1 introduces a dedicated `link_strength_override` enum value so override annotations are filterable separately.
@@ -30,7 +84,7 @@ When emitting an A72 row whose `LinkStrength` differs from the default formula (
 
 ### Codex review trail
 
-Review pending — will run + append round findings when complete.
+- **Round 1**: APPROVE. Lockstep edits across schema + shared-control + SKILL.md + CHANGELOG all consistent; `link_strength_override` appended last in enum; new representative row uses same shape as existing positive cases; canon hash matches live compute output; 1636 tests pass. Zero critical issues.
 
 ### Result
 
