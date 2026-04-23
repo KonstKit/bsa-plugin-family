@@ -24,6 +24,16 @@ Examples from the v1.1.x line:
 | v1.1.8 | 1.1.6 | `ac63a8c3` | Documentation polish. |
 | v1.1.9 | 1.1.6 | `ac63a8c3` | CI/CD scaffolding (`.github/`). |
 | v1.1.10 | 1.1.6 | `ac63a8c3` | Distribution / packaging polish (LICENSE + manifest metadata + templates + RELEASING.md). |
+| v1.1.11 | 1.1.6 | `ac63a8c3` | Security workstream (Section G) — threat model + security_audit.py + SECURITY.md. |
+| v1.1.12 | 1.1.6 | `ac63a8c3` | Sidecar polish (Section I) — inventory doc + F5-boundary regression tests. |
+| v1.1.13 | 1.1.6 | `ac63a8c3` | Performance / scale validation (Section F) — perf_bench.py + baseline + CI gate. |
+| v1.1.14 | 1.1.6 | `ac63a8c3` | Phase 7 self-improvement loop foundation (Section D) — tunables.yaml + lint. |
+| v1.1.15 | 1.1.6 | `ac63a8c3` | 2nd Pilot-1 pass operator runbook + diff helper (Section K prep). |
+| v1.1.16 | 1.1.6 | `ac63a8c3` | `--strict-on-hard-a51` opt-in promote mode (Sprint 1 / T6). |
+| v1.1.17 | 1.1.6 | `ac63a8c3` | Operator shell import drivers (Sprint 1 / T5) — Jira / Linear / GitHub. |
+| v1.1.18 | 1.1.6 | `ac63a8c3` | Sidecar common config schema + registry (Sprint 1 / S1+S2). |
+| v1.1.19 | 1.1.6 | `ac63a8c3` | Anonymization regression test (Sprint 1 / H4). |
+| v1.2.0 | 1.2.0 | `5d8ae8b6` | First canon bump since v1.1.6 — added one-line cross-ref `governance/immutable_invariants.md` → `docs/phase_7_design.md` (H2). Establishes the v1.2.x line; manifest version + canon hash both move. |
 
 ## Pre-release checklist
 

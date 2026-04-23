@@ -7,7 +7,7 @@
 ```
 /plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
 /plugin install bsa-full@bsa-marketplace
-/plugin list       # expect bsa-full@1.1.6
+/plugin list       # expect bsa-full@1.2.0 (v1.2.x line; manifest may lag git tag during canon-neutral patch releases)
 ```
 
 Full install / uninstall / upgrade (including session-only `claude --plugin-dir` path): [INSTALL.md](INSTALL.md).
@@ -31,7 +31,7 @@ Each `/bsa-stage N` invocation runs the stage's full worker chain (worker + any 
 
 ## Status
 
-**v1.1.8** — current release. The v1.1.x line is a substantial feature + hardening expansion over v1.0.x:
+**v1.2.0** — current release; first of the v1.2.x line. The v1.2.x line opens with a one-line cross-ref edit that legitimately bumps the canon hash for the first time since v1.1.6 (which had been stable across v1.1.7..v1.1.19, all canon-neutral operator-tooling releases). v1.1.x background:
 
 - **v1.1.0** (Phase-3 close) — full Phase-3 dev-handoff: 5 new skills (`bsa-nfr-collector`, `bsa-story-writer`, `bsa-test-scenario-builder`, `bsa-traceability-matrix`, `bsa-backlog-bridge`); 4 new canonical artifacts (A62 NFR register, A70 story register, A71 test scenarios, A72 traceability matrix); 3 new platform-specific export shapes (Jira REST v3 JSON, Linear CSV, generic CSV); 3 new immutable invariants (INV-08, INV-09, INV-10).
 - **v1.1.1** — A51 enum extensions (`inventory_gap` + `cross_tier_contradiction` + `Severity=critical`) for the first external pilot drift bundle, plus internal contract alignment across 6 docs/SKILL.md files.
@@ -41,7 +41,7 @@ Each `/bsa-stage N` invocation runs the stage's full worker chain (worker + any 
 - **v1.1.5** — Three new adversarial fixtures: multi-way (3-source) contradiction (atomic A51), tier-delta auto-resolution (T1 vs T4 → no A51), block-on-contradiction (spec-only baseline for the proposed `--strict-on-hard-a51` opt-in mode).
 - **v1.1.6** — Live API integration (`scripts/backlog_live_apply.py`): Jira REST + Linear GraphQL + GitHub REST clients with idempotency, exponential backoff, partial-failure tolerance, per-platform state files, fcntl-based concurrency lock, and defense-in-depth token-shape rejection in the F5-validated response file (closes `[TODO-S9-LIVE-API]`).
 - **v1.1.7** — Pilot anonymization across the active surface (the original first-pilot client name was scrubbed from schemas/scripts/docs/tests/hooks; the universal alias `Pilot-1` is used throughout).
-- **v1.1.8** — Documentation polish (this release): refreshed README, getting_started, FAQ, CONTRIBUTING, INSTALL to reflect the v1.1.x reality after the rapid-fire v1.1.0..v1.1.7 release line.
+- **v1.1.8** — Documentation polish: refreshed README, getting_started, FAQ, CONTRIBUTING, INSTALL to reflect the v1.1.x reality after the rapid-fire v1.1.0..v1.1.7 release line.
 
 28 skills (9 main-cycle workers + 5 discovery workers + 5 auditors + 5 Phase-3 workers + 2 sidecars + 1 orchestrator + 1 meta) • 6 slash-commands + 1 Phase-3 composite (`/bsa-dev-handoff`) • 3 safety hooks • 8 golden fixtures (3 happy-path: `project_0001`/`0002`/`0003` + 5 adversarial: `prompt_injection`, `nfr_claim_contradiction`, `multi_way_contradiction`, `tier_delta_auto_resolution`, `block_on_contradiction` — last one is `spec_only`, documenting an opt-in failure mode the v1.2 implementation will use as its regression baseline) • 1412 unit tests (the exact count grows with each release; the invariant is "all pass") • evidence-bound claim layer (INV-01) • closed `ClaimType` enum (INV-07) • tier-aware weighted coverage (KPI-001) • two-key promotion • no-new-claims gate • Phase-3 story-claim provenance (INV-08) + NFR measurability (INV-09) + test-scenario provenance (INV-10).
 

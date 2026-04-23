@@ -153,6 +153,8 @@ Governance anchor for future Phase 7 self-improvement loop.
 
 ## Scope of self-improvement (Phase 7 L1/L2)
 
+**See [`docs/phase_7_design.md`](../docs/phase_7_design.md)** for the v1.1.14 foundation: formal `config/tunables.yaml` inventory + `scripts/phase_7_lint.py` IMMUTABLE_CONFLICT detector + safety contract.
+
 The future Phase 7 self-improvement loop may tune:
 - Severity thresholds (e.g., `EpistemicInsufficiency` trigger bounds)
 - KPI targets within adjustable bounds (e.g., KPI-001 target 0.70..0.95)

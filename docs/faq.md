@@ -2,7 +2,7 @@
 
 ## Is this ready for production use?
 
-Current release: **`bsa-full@1.1.6` manifest** with `v1.1.8` git tag on top (v1.1.7 anonymization + v1.1.8 docs polish are operator-tooling-only patches that don't change the canon state). Phase 0-2 (MVP) closed at v1.0.0 (Sprint 4.5); Phase 3 (dev-handoff) closed at v1.1.0 (Sprint 9). The v1.1.x patch line through v1.1.8 added: cross-artifact validator at the F5 hook layer (v1.1.3), platform export polish (v1.1.4 — Jira customfields / Linear projects / GitHub Projects v2), three new adversarial fixtures (v1.1.5), live-API integration (v1.1.6 — Jira REST + Linear GraphQL + GitHub REST clients), pilot anonymization (v1.1.7), and docs polish (v1.1.8).
+Current release: **`bsa-full@1.2.0` manifest** with `v1.2.0` git tag — first canon-bumping release of the v1.2.x line. The v1.1.x line ran from v1.1.0 (Phase 3 close) through v1.1.19 (anonymization regression test), with the manifest stable at 1.1.6 from v1.1.6 onwards (v1.1.7..v1.1.19 were all canon-neutral operator-tooling releases — anonymization, docs, CI/CD, security audit, perf bench, Phase 7 foundation, sidecar polish, strict-on-hard-A51 mode, shell import drivers, sidecar registry, anonymization regression test). v1.2.0 opens the v1.2.x line with a one-line cross-ref edit in `governance/immutable_invariants.md` → `docs/phase_7_design.md` (the long-deferred reverse cross-ref to the v1.1.14 Phase 7 foundation). Phase 0-2 (MVP) closed at v1.0.0 (Sprint 4.5); Phase 3 (dev-handoff) closed at v1.1.0 (Sprint 9).
 
 It is **not** certified for regulated domains (fintech, healthcare, etc.) — those need a future Phase-5 pack layer and Phase-8 certification framework.
 

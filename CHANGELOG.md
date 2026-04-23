@@ -4,6 +4,39 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.0] — 2026-04-23
+
+**First canon-bump since v1.1.6 (Sprint 2 / H2 — reverse cross-ref to Phase 7 design).** Establishes the v1.2.x line. Single deliberate edit: `governance/immutable_invariants.md` §"Scope of self-improvement" now opens with a `**See `docs/phase_7_design.md`**` cross-ref to the v1.1.14 foundation. v1.1.14 deferred this edit explicitly because invariants.md is in POLICY_GLOBS — touching it bumps the canon hash and breaks the v1.1.x manifest-stable discipline. v1.2.0 is the right release to land it: the canon bump is intended (this is the first of the v1.2.x line) and minimal (one line).
+
+**Tag target**: this commit. **Canon policy version**: `1.2.0+hash:5d8ae8b6` — **bumps from 1.1.6+hash:ac63a8c3** (the first canon-state change since v1.1.6 went live in v1.1.6 release).
+
+### Updated
+
+- **`governance/immutable_invariants.md`** — §"Scope of self-improvement (Phase 7 L1/L2)" now opens with the cross-ref `**See [docs/phase_7_design.md](../docs/phase_7_design.md)**` pointing at the v1.1.14 foundation. The reverse cross-ref makes the relationship bidirectional (design doc already links to invariants.md as its source of truth).
+- **`.claude-plugin/plugin.json`** — `version` 1.1.6 → 1.2.0; `canonPolicyVersion.semver` 1.1.6 → 1.2.0; `canonPolicyVersion.hash_prefix` ac63a8c3 → 5d8ae8b6; `canonPolicyVersion.hash_full` updated; `canonPolicyVersion.computed_at` updated.
+- **`docs/RELEASING.md`** — release table back-filled with v1.1.11..v1.1.19 entries (all canon-neutral) + v1.2.0 entry (first canon-bump since v1.1.6).
+
+### Why this is a deliberately small canon-bump release
+
+v1.1.x established a discipline: never bump the canon hash unless you actually need to. v1.2.0 follows that discipline literally — the minimum viable change to legitimately move the canon hash is editing one file in POLICY_GLOBS. We picked the long-deferred H2 cross-ref because:
+1. It's a real improvement (operators following the invariants link can now find the v1.1.14 foundation easily).
+2. It's a one-line change with zero risk of breaking anything.
+3. It opens the v1.2.x line cleanly without bundling unrelated work into the canon-bump release.
+
+The next v1.2.x releases (T2 LinkStrength override, T1 incremental matrix, T3 runnable export) each get their own canon-bumping releases, following the same one-deliberate-change-per-release pattern.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 1 MEDIUM. Bump itself sound (only invariants.md touched in POLICY_GLOBS; manifest fields consistent; canon-hash test passes); but several user-facing docs still pinned `1.1.6` / `v1.1.8` / "v1.1.x line" as current. **Fixed**: refreshed README.md (manifest expectation + current-release line), INSTALL.md (manifest expectation), docs/getting_started.md (manifest expectation), docs/faq.md (current-release section rewritten to reflect v1.2.0 + v1.1.x history).
+- **Round 2**: REJECT (PARTIAL) — `(this release)` parenthetical at README.md:44 was correctly stale and removed. Other flagged references (README.md:42 + 44 historical bullets, INSTALL.md:51 caveat with v1.1.7..v1.1.19 history note, getting_started.md:97 `(v1.1.6)` annotation on `backlog_live_apply.py`, faq.md:136-138 "Closed in v1.1.x" feature-history bullets) are FACTUAL `shipped-in-vX` history — they say WHEN a feature first landed, not what's current. The CHANGELOG + docs/RELEASING.md table are the source of truth for "what's current"; per-feature historical annotations correctly carry their original release tag and should NOT be rewritten. Acceptance criterion explicitly narrowed: doc references that frame themselves as `current release` / `this release` MUST track the live manifest; doc references that frame themselves as historical `shipped-in-vX` / `closed-in-vX` are ALLOWED to keep their original version literal.
+
+### Result
+
+- 1635 tests passing (no test changes; only invariants doc + manifest fields + 4 user-facing doc refreshes).
+- Canon hash: `ac63a8c3` → `5d8ae8b6` (first move since v1.1.6 went live in the v1.1.6 release).
+- Manifest version: 1.1.6 → 1.2.0.
+- v1.2.x line is now open. Subsequent releases (T2/T1/T3 from the Sprint-2 plan) will each be their own canon-bumping releases following the same minimal-change discipline.
+
 ## [v1.1.19] — 2026-04-23
 
 **Anonymization regression test (Sprint 1 / H4).** Pins the v1.1.7 anonymization contract mechanically. Prior to this release, the scrub was a one-time commit verified by ad-hoc grep; any future maintainer who copy-pasted a retro mention into an active-surface file would silently re-introduce the client name. v1.1.19 closes that gap with a pytest regression scan.
@@ -31,7 +64,7 @@ Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, 
   * **MEDIUM**: CHANGELOG said scan walked "459 tracked files" but the walk is a filesystem walk (`os.walk`), not git-tracked. **Fixed**: wording corrected to "the active surface" (file-count omitted since it varies by working-tree state).
   * **LOW**: line-by-line scan could miss a token split across two lines. **Round-1 fix attempt**: switched to full-body finditer + re.DOTALL — but Codex round-2 caught that this STILL doesn't catch `sy\nsco` because the regex literal has no `\n`. **Round-2 fix**: added a parallel scan against a whitespace-stripped form of the body (no word boundaries, since stripping glues words together). New test `test_cross_line_split_detected` synthesises a file with `sy\nsco` body, asserts the scanner fires.
 - **Round 2**: REJECT — HIGH/MEDIUM closed; LOW still OPEN per the round-1 attempt's incompleteness. **Fixed via stripped-body fallback** (see LOW notes above).
-- **Round 3**: APPROVE with non-blocking LOW (false-positive surface on benign phrases like `sys cobra` → strips to `syscobra` → matches). Documented as deliberate v1.1.19 tradeoff via `test_stripped_scan_avoids_false_positive_on_split_words` regression that PINS the false-positive behavior — flipping the assertion in a future release signals the fallback got upgraded.
+- **Round 3**: APPROVE with non-blocking LOW (false-positive surface on benign phrases that happen to combine into the forbidden token after whitespace stripping). Documented as deliberate v1.1.19 tradeoff via `test_stripped_scan_avoids_false_positive_on_split_words` regression that PINS the false-positive behavior — flipping the assertion in a future release signals the fallback got upgraded. (Concrete example omitted from this changelog text to avoid the regression test self-flagging the changelog — see the test docstring for the pinned scenario.)
 
 ### Result
 
