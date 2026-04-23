@@ -4,6 +4,67 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.17] — 2026-04-23
+
+**Shell import drivers (Sprint 1 / T5).** Closes `TODO-S9-03-IMPORT-DRIVER` from `scripts/backlog_live_apply.py`. Three thin bash wrappers that consume `analysis/handoff/backlog_export_{jira,linear,github}.{json,csv}` and POST to the live platform — alternative to the Python impl for operators whose CI / environment doesn't have full Python, or who simply prefer shell.
+
+**Tag target**: this commit. **Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. Shell drivers + doc live outside POLICY_GLOBS; manifest stays at 1.1.6.
+
+### Added
+
+- **`scripts/jira_import_from_export.sh`** — Jira REST v3 driver. Uses `bash + jq + curl`. Auth via `$BSA_JIRA_EMAIL` + `$BSA_JIRA_TOKEN`. Basic-auth header. Retries on 429/5xx with exponential backoff, 5-attempt budget.
+- **`scripts/linear_import_from_export.sh`** — Linear GraphQL driver. Uses `bash + jq + curl + python3` (for RFC-4180 CSV parsing). Auth via `$BSA_LINEAR_TOKEN`. Checks `data.issueCreate.success` + `errors[]` even on HTTP 200 (Linear always returns 200 regardless of GraphQL outcome).
+- **`scripts/github_import_from_export.sh`** — GitHub Issues + Projects v2 driver. Uses `bash + gh CLI + python3` (for CSV parsing). Auth via `gh auth login` OR `$GH_TOKEN` / `$GITHUB_TOKEN`. Optional Projects v2 attach via `--project-owner` + `--project-number`.
+- **`docs/shell_import_drivers.md`** — operator-facing contract: three drivers, common dry-run / idempotency / auth / exit-code contract, comparison with the Python impl.
+- **`tests/test_shell_import_drivers.py`** (+22 tests) — pins:
+  * All three scripts exist + executable + use `#!/usr/bin/env bash` shebang.
+  * `--help` exits 0 + prints Usage.
+  * No `declare -A` usage (macOS bash 3.2 compatibility — associative arrays are bash 4+).
+  * Dry-run prints the plan against synthetic fixtures (no real API calls).
+  * `--apply` refuses without required auth env var + target arg (`--base-url` for Jira, `--team-id` for Linear, `--repo` for GitHub).
+  * Idempotency: a prior `live_api_response_jira_shell.json` (NOTE: separate path from Python's canonical `live_api_response_jira.json`; see Round 3 notes) with a matching idempotency key causes the row to be SKIPPED on the next run.
+  * Dependencies (jq, curl, gh, python3) checked early; missing dep exits 2.
+
+### Updated
+
+- **`docs/faq.md`** — moved "Operator-side import drivers" from "Still deferred to Phase 5+ / future" to "CLOSED in v1.1.17" with cross-ref.
+- **`README.md`** — Documentation section adds link to `docs/shell_import_drivers.md`.
+
+### Design notes
+
+- **Idempotency key format** — shell drivers use `bsa-{StoryID}-sh-{sha256(StoryID|Title)[:8]}` (the `sh-` infix distinguishes shell-driver keys from the Python impl's canon-hash-prefix keys). The two key spaces do NOT collide, so operators can switch between the two tracks without corrupting state.
+- **CSV parsing** — pure bash `while IFS=, read` is too fragile for Linear's `Description` column (markdown with embedded commas + RFC-4180 quotes). The drivers inline a `python3 -c "import csv; ..."` snippet. This does mean shell drivers require Python3 for CSV platforms (Linear + GitHub); pure-shell CSV parsing was rejected as a correctness liability.
+- **gh vs curl for GitHub** — the GitHub driver uses the `gh` CLI natively because (a) `gh` is universally available in GitHub-adjacent environments, (b) it handles both Issues (REST) AND Projects v2 (GraphQL) through one unified auth story, (c) the Python impl only handles Issues and defers Projects v2 to the operator — the shell driver closes that gap.
+- **macOS bash 3.2 compatibility** — early iteration used `declare -A DONE_KEYS` for idempotency tracking; this broke on macOS's default bash 3.2 (Apple doesn't ship bash 4 due to GPLv3). Rewrote to use a tmpfile + `grep -Fxq` pattern. Pinned by `test_script_avoids_declare_dash_a`.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 3 critical/high + 3 should-fix.
+  * **CRITICAL #1 (CRITICAL)**: Jira `-u email:token` and Linear `-H "Authorization: $TOKEN"` leaked credentials into curl argv (visible via `ps`/`/proc`). **Fixed**: both drivers now write a 0600-perm curl config tmpfile (`user = "..."` for Jira basic-auth, `header = "Authorization: ..."` for Linear) and pass via `-K <tmpfile>`. Tmpfile cleaned on EXIT trap. New `test_jira_auth_not_in_argv` + `test_linear_auth_not_in_argv` regression tests (look for `-u`/`-H "Authorization:"` in non-comment script body).
+  * **CRITICAL #2 (CRITICAL)**: Jira POST body shape was `.fields` directly; Jira REST v3 expects `{"fields": {...}}`. **Fixed**: jq emitter now produces `{fields: .fields}` so `raw_issue` is the full request body. New `test_jira_body_wraps_fields_correctly` pins the wrapping shape.
+  * **HIGH #3 (HIGH)**: shell drivers READ prior `live_api_response_*.json` for idempotency but never WROTE new state, so re-running the shell driver itself would re-create every row. **Fixed**: each driver now appends `OUTCOMES+=("${idem_key}|${outcome}|${story}")` per row and writes the merged state via inline `python3 - <<'PY'` (atomic tmp + mv pattern). Prior entries from Python impl OR earlier shell runs are preserved (de-dup by idempotency_key). Dry-run does NOT write state. New `test_jira_apply_without_apply_flag_does_not_write_state` + `test_jira_prior_state_preserved_on_rerun` + `test_linear_prior_state_skips_already_created`.
+  * **SHOULD #1 (MEDIUM)**: test coverage missing malformed-input + Linear/GitHub idempotency + Linear missing-auth + GitHub used Linear CSV shape. **Fixed**: added `_write_github_csv_export` with correct GitHub schema (Body/Size, not Description/Estimate); added `test_jira_malformed_json_does_not_crash`, `test_linear_malformed_csv_does_not_crash`, `test_linear_apply_refuses_without_token`.
+  * **SHOULD #2 (MEDIUM)**: Python→bash TSV handoff fragile if Title contains tabs/newlines. **Fixed**: jq's `@tsv` operator escapes embedded tabs/newlines in field values automatically (Jira); for Linear/GitHub, the Python emitter uses `\t` as separator + the schemas constrain Title to `^[^\t\n]+` shape implicitly (the F5 schema validation catches violations before export hits the driver).
+  * **SHOULD #3 (LOW)**: per-row tmpfiles only cleaned on happy path. **Fixed**: extended EXIT trap to include `/tmp/{jira,linear,github}_resp_$$.json` etc.
+
+- **Bash 3.2 process-substitution quirk**: round-1 added multi-line comments inside `done < <(jq ...)` block; bash 3.2 on macOS choked on this (FD setup failed; `/dev/fd/62: No such file or directory`). Resolved by collapsing the jq filter to a single line + moving documentation comments OUTSIDE the process substitution. Pinned by the existing dry-run smoke tests.
+
+- **Round 2**: REJECT — 3 PARTIAL (round-1 #3 state writeback, #1 test coverage, #2 TSV) + 3 NEW (HIGH cross-tool state shape mismatch, MEDIUM mktemp not in same FS, MEDIUM SIGTERM not trapped).
+  * **HIGH (cross-tool state mismatch)**: round-1 wrote `.rows[]/.outcome` shape; the canonical Python impl uses `.results[]/.status`. Cross-tool runs would NOT interoperate. **Fixed**: all 3 drivers now ACCEPT both shapes on read (transparent in-place upgrade) and ALWAYS WRITE the canonical Python shape (`.results[].status`, with `attempts` + `updated_at` + `driver: "shell"` fields). New `test_drivers_accept_canonical_results_shape` + `test_drivers_accept_legacy_rows_shape` regression tests.
+  * **MEDIUM (atomic mv)**: round-1 used `mktemp -t` which creates the tmpfile under `/tmp` — `mv` to `analysis/handoff/` may cross filesystems (non-atomic). **Fixed**: tmpfile now created in `dirname(STATE_PATH)` so `mv` is guaranteed-atomic on the same FS.
+  * **MEDIUM (signal cleanup)**: bash 3.2 doesn't run EXIT trap on untrapped SIGTERM/SIGINT — a Ctrl-C during execution could leave AUTH_TMP behind. **Fixed**: `trap cleanup_all EXIT INT TERM` in all 3 drivers.
+  * **PARTIAL (#1 test coverage)**: missing GitHub idempotency test. **Fixed**: added `test_github_prior_state_skips_already_created`.
+  * **PARTIAL (#2 TSV robustness)**: round-1 emitted raw Title/StoryID through Python→bash TSV pipe; tabs/newlines in those fields would desync. **Fixed**: inline Python parser now sanitizes `[\t\r\n]+ → space` for both StoryID and Title before emit. (jq's `@tsv` already handled this for the Jira driver.)
+
+- **Round 3**: REJECT — HIGH (cross-tool state shape) still OPEN despite round-2 attempt to mimic Python `.results[]/.status` shape. Codex correctly identified that the Python state file is F5-validated against `governance/schemas/live_api_response.schema.json` (additionalProperties:false + required `operator_run_id`/`platform_base_url`/`summary`/canon-hash-prefix idempotency keys) — shell drivers can't easily produce schema-conforming state without reimplementing the full Python contract. **Design pivot**: shell drivers now use a SEPARATE state path (`live_api_response_<platform>_shell.json`) with a simpler `.results[]/.status` shape, no F5 validation. Python and shell are independent tracks; mixing them in one workspace duplicates platform-side issues (idempotency-key formats also differ — `-sh-` infix). Documented as a deliberate design choice in `docs/shell_import_drivers.md` §"State files". New `test_drivers_use_separate_state_path_from_python` regression pins that the canonical Python state file is NEVER touched by shell-driver runs. ALSO: Codex round-3 NEW MEDIUM — trap registered AFTER AUTH_TMP creation left a small leak window. Fixed: trap now installed BEFORE AUTH_TMP population.
+
+### Result
+
+- 1575 → 1610 tests passing (+35 in test_shell_import_drivers.py: 22 round-1 + 9 round-2 + 3 round-2 cross-tool + 1 round-3 separate-state).
+- Jira / Linear / GitHub imports now have a lightweight shell alternative to the Python heavy-weight. Operators can pick the tool that fits their environment, but **must pick ONE per workspace** (shell + Python state files are independent; mixing causes platform-side duplication).
+- `TODO-S9-03-IMPORT-DRIVER` closed; the Phase-3 live-apply backlog is now down to zero open items.
+- Credentials never appear in curl argv. Trap registered before any sensitive tmpfile creation (closes pre-trap leak window). State writeback uses simpler `.results[]/.status` shape at separate `*_shell.json` path; mv is atomic (same-FS tmpfile). SIGTERM/SIGINT also trigger cleanup. Jira POST body matches REST v3.
+
 ## [v1.1.16] — 2026-04-23
 
 **`--strict-on-hard-a51` opt-in mode (Sprint 1 / T6).** Closes the v1.1.5 spec-as-fixture (`adversarial_block_on_contradiction_001`) by implementing the proposed opt-in failure mode. Default `/bsa-promote` posture is unchanged (permissive — surface contradictions as A51, do not block). When the operator opts in via `--strict-on-hard-a51` (or `BSA_STRICT_ON_HARD_A51=1`), the orchestrator hook runs a pre-flight check BEFORE acquiring the canonical merge lock and refuses the write if any A51 row has `BlockingStatus=hard` AND `ResolutionStatus=open` AND no H4 waiver in `## Decisions Required`.

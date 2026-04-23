@@ -87,6 +87,7 @@ docs/                   User + maintainer documentation
 - [docs/perf_baseline.md](docs/perf_baseline.md) — hot-path latency baseline + regression policy (run `python3 scripts/perf_bench.py --check` to verify).
 - [docs/phase_7_design.md](docs/phase_7_design.md) — Phase 7 self-improvement loop foundation (tunable inventory + IMMUTABLE_CONFLICT lint + safety contract). v1.1.14.
 - [docs/strict_a51_mode.md](docs/strict_a51_mode.md) — `/bsa-promote --strict-on-hard-a51` opt-in failure-mode contract (block-on-hard-A51). v1.1.16.
+- [docs/shell_import_drivers.md](docs/shell_import_drivers.md) — bash + jq + curl/gh alternatives to `scripts/backlog_live_apply.py` for Jira / Linear / GitHub imports. v1.1.17.
 - [docs/faq.md](docs/faq.md) — FAQ.
 - [migrations/v1.0_to_v1.1/README.md](migrations/v1.0_to_v1.1/README.md) — v1.0.x → v1.1.x workspace migration guide.
 - [CHANGELOG.md](CHANGELOG.md) — full release notes.

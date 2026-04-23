@@ -147,7 +147,7 @@ If you didn't commit per-promotion, that's a process lesson for next time. The w
 - Multi-session / concurrency handling beyond the file-lock + per-platform live-API lock.
 - Full GDPR / retention / right-to-erasure controls.
 - ~~Block-on-hard-A51 strict promote mode (`--strict-on-hard-a51`)~~ — **CLOSED in v1.1.16 (Sprint 1 / T6)**. `scripts/promote_strict_preflight.py` + the `pre_bash_promote.sh` hook honor both `--strict-on-hard-a51` and `BSA_STRICT_ON_HARD_A51=1` env. See `docs/strict_a51_mode.md` for the full operator-facing contract; `fixtures/golden/adversarial_block_on_contradiction_001/` is the live regression baseline.
-- Operator-side import drivers (`scripts/{jira,linear,github}_import_from_export.sh`) — for operators who prefer shell over Python.
+- ~~Operator-side import drivers (`scripts/{jira,linear,github}_import_from_export.sh`)~~ — **CLOSED in v1.1.17 (Sprint 1 / T5)**. All three drivers ship as bash + jq + curl/gh wrappers. See `docs/shell_import_drivers.md` for the operator-facing contract. The Python impl (`scripts/backlog_live_apply.py`) remains the canonical heavy-weight option.
 
 ## Where do I file an issue?
 
