@@ -70,7 +70,7 @@ Both land under `analysis/proposals/phase3/`. Promotion to canonical goes throug
 ## Invariants
 
 - **INV-10 (Phase 3, NEW in Sprint 8)** — `SourceStoryID` non-empty on every row. Enforced by schema (pattern + required) + write-validator at hook time.
-- **NFR-coverage rule** — when `RelatedNFRID` is non-empty, the Then-clause MUST reference the linked A62 row's `Metric` (paraphrase OK) AND contain its literal `Target` string (whatever shape A62 stored for that row). Documented in `x-bsa-nfr-coverage-rules`; enforced by this skill's own output validator (cross-artifact lookup outside F5 path-bound dispatch). Future hook-layer enforcement is filed as `[TODO-S8-01-X-ARTIFACT-NFR-COVERAGE]`.
+- **NFR-coverage rule** — when `RelatedNFRID` is non-empty, the Then-clause MUST contain the linked A62 row's literal `Target` string (whatever shape A62 stored — `< 500`, `>= 99.9`, `500 ms`, etc.) AND reference the `Metric` (relaxed: at least one significant word; paraphrase OK). Documented in `x-bsa-nfr-coverage-rules`; **executable at the F5 hook layer as of v1.1.3 via `write_validator._apply_nfr_coverage_rules` + `_SiblingArtifactCache`** (closes `[TODO-S8-01-X-ARTIFACT-NFR-COVERAGE]`). Pre-v1.1.3 the rule was skill-self-validated only.
 - **Deferral coupling** — `AutomationStatus == 'deferred'` requires non-empty `A51Ref`. Generalized version of A70's INVEST-A51 coupling; enforced by `write_validator._apply_deferral_rules`.
 - **No net-new claims** — scenarios reshape acceptance criteria into Gherkin form; they MUST NOT introduce subjects / verbs / conditions absent from upstream claims. Mirrors INV-03; checked at promotion via the no-new-stories auditor pattern.
 
@@ -104,6 +104,6 @@ A71 is consumed directly by QA tooling and human reviewers. A future runnable-te
 
 ## Open follow-ups
 
-- `[TODO-S8-01-X-ARTIFACT-NFR-COVERAGE]` — hook-layer enforcement of NFR Metric+Target embedded in Then-clause requires a cross-artifact validator (read A62 at hook time when validating A71). Currently rule is documentary at the schema layer + skill-self-validated. Land in a follow-up sprint when a cross-artifact validator pattern is established (US-S8-02 or later).
+- ~~`[TODO-S8-01-X-ARTIFACT-NFR-COVERAGE]`~~ — **CLOSED in v1.1.3.** Hook-layer enforcement landed via `governance/schemas/write_validator.py::_apply_nfr_coverage_rules` + `_SiblingArtifactCache`. Any A71 write where `RelatedNFRID` is non-empty now triggers an A62 sibling lookup at hook time and verifies (a) literal Target embed in Then-clause, (b) at least one significant Metric word in Then-clause. Pre-v1.1.3 the rule was skill-self-validated only.
 - `[TODO-S8-01-RUNNABLE-EXPORT]` — runnable test export (Cucumber `.feature` files, pytest-bdd, Jest) is a v1.2 candidate. Schema is already runnable-friendly (Gherkin shape); the export step is a small generator skill.
 - `[TODO-S8-01-NEGATIVE-PATH-HEURISTICS]` — heuristics for auto-suggesting boundary / negative scenarios when the acceptance criterion uses temporal ("within X seconds"), boundary ("at least N"), or comparison ("more than M") language.

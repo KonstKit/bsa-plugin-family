@@ -172,11 +172,20 @@ fi
 
 TARGET_PATH="$(cat "${TMPBASE}.path")"
 
+# Capture the original user-shell CWD before we cd into PLUGIN_REPO to
+# invoke the validator. The validator's _resolve_sibling_dir uses this
+# to anchor cross-artifact (FK / NFR-coverage) sibling lookups when
+# TARGET_PATH is a workspace-relative path. Without BSA_WORKSPACE_CWD
+# the validator would resolve relative paths against PLUGIN_REPO and
+# silently miss the user's real workspace — opening the FK/NFR rules
+# to bypass via relative-path writes (Codex v1.1.3 round-1 finding).
+USER_CWD="$(pwd)"
+
 # Pipe the post-image content into the validator. Validator reads
 # stdin as the proposed file content; on violation it prints
 # structured BLOCKED diagnostics on stderr and exits 1.
 set +e
-(cd "${PLUGIN_REPO}" && python3 -m governance.schemas.write_validator "${TARGET_PATH}") < "${TMPBASE}.content"
+(cd "${PLUGIN_REPO}" && BSA_WORKSPACE_CWD="${USER_CWD}" python3 -m governance.schemas.write_validator "${TARGET_PATH}") < "${TMPBASE}.content"
 VALIDATOR_RC=$?
 set -e
 

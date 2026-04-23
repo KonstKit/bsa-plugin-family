@@ -4,6 +4,45 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.3] — 2026-04-23
+
+**Cross-artifact validator at the F5 hook layer (B1).** Closes the two declared v1.2-candidate TODOs from the v1.1.0 carried-forward list — `[TODO-S8-01-X-ARTIFACT-NFR-COVERAGE]` (A71 NFR-coverage rule) + `[TODO-S8-02-X-ARTIFACT-FK]` (A72 foreign-key + claim-source consistency). Both rules were documentary at the schema layer + skill-self-validated through v1.1.2; v1.1.3 makes them executable at the F5 hook layer so any writer (orchestrator, skill, operator manual edit) is gated.
+
+**Tag target**: this commit (the v1.1.3 cross-artifact validator).
+**Canon policy version**: `1.1.3+hash:78bac137` — patch-line bump from 1.1.1 (semver matches manifest version; hash advanced from SKILL.md edits in `bsa-test-scenario-builder` + `bsa-traceability-matrix` marking the TODOs CLOSED).
+
+### Added
+
+- **`_SiblingArtifactCache`** in `governance/schemas/write_validator.py` — per-validation-run memoized loader for sibling canonical artifacts. Keyed by `(filename, key_column)` so an A72 with N rows produces exactly one A50/A59/A70 read each, not N reads. Returns `None` for missing/unreadable siblings (handlers emit a clear violation, not a silent skip).
+- **`_apply_foreign_key_rules`** — per-row handler for the `x-bsa-foreign-key-rules` schema extension. Applied to A72 today; the C2 pattern (read extension, apply per-row, emit line-numbered message) means any future schema declaring the same extension shape gets enforcement for free. Validates StoryID/ClaimID/SourceID resolution into A70/A59/A50 + the `claim_source_consistency` invariant (this row's ClaimID's A59 SourceID must equal this row's SourceID).
+- **`_apply_nfr_coverage_rules`** — per-row handler for the `x-bsa-nfr-coverage-rules` schema extension. Applied to A71 today. Validates literal Target embed in Then-clause (mechanical, deterministic) + at least one significant Metric word in Then-clause (relaxed: stripped of stopwords; paraphrase OK per schema rationale). The relaxed Metric check is anti-aspiration ("agent gets paged" instead of an actual measurement), not anti-paraphrase.
+- **`_resolve_sibling_dir`** — extracts the `analysis/canonical/core_controls/` parent dir from a write path. Returns `None` for paths outside the canonical layout AND for paths where the dir doesn't exist on disk (the latter keeps existing unit tests green; production hooks always have a real canonical dir).
+- **`tests/test_cross_artifact_validator.py`** (+22 tests, including 5 added in round-2 hardening) — covers positive case, every FK violation kind (StoryID / ClaimID / SourceID unresolved + claim-source consistency mismatch + a51-routed row still subject to FK), every NFR-coverage violation kind (missing literal Target + no Metric reference + unresolved RelatedNFRID + blank RelatedNFRID exempt), sibling-cache memoization, missing-sibling-file diagnostics, graceful no-op when the path is outside the canonical layout, AND the four round-2 hardening regressions (`BSA_WORKSPACE_CWD` env-anchor, env-precedence over process CWD, blank A59.SourceID hard-fail, multi-source A59 membership check, word-boundary Metric match preventing `rate`-in-`iterate` false positives).
+
+### Round-1 Codex review hardening (round-2 fixes)
+
+Codex round-1 review (REJECT) raised 2 critical bugs + 1 should-fix. All addressed before final commit:
+
+- **Must (closed)** — `_resolve_sibling_dir` made cross-artifact enforcement depend on the validator process CWD, but `pre_write_canonical.sh` invokes the validator from `PLUGIN_REPO`, NOT the user's workspace. Result: relative `file_path` writes silently no-op'd cross-artifact rules in production. Round-2 fix: hook script now exports `BSA_WORKSPACE_CWD="$(pwd)"` (the original user-shell CWD) before invoking the validator; `_resolve_sibling_dir` anchors relative paths there. Two regression tests pin the env-anchor (`test_workspace_cwd_env_anchors_relative_path` + `test_workspace_cwd_env_overrides_process_cwd`).
+- **Must (closed)** — `claim_source_consistency` assumed `A59.SourceID` is a single non-empty scalar, but A59 explicitly allows blank (A51-routed claim) and multi-source (joined by `;`/`/`). Result: source-less claims silently passed; legitimate split-by-source matrix rows were falsely rejected. Round-2 fix: parse `A59.SourceID` on `;`/`/`/whitespace; blank → hard-fail when matrix promises a SourceID; multi-source → membership check (matrix row picks ONE of the claim's sources). Two regression tests pin the new semantics.
+- **Should (closed)** — Metric word matching used raw substring search, so trivial overlaps (`rate` in `iterate`, `page` in `paged`) silently false-passed. Round-2 fix: switched to word-boundary regex (`\b<word>\b`); one regression test (`test_metric_match_uses_word_boundaries_not_substring`) pins the fix with the `rate`-vs-`iterate` adversarial case.
+
+### Updated
+
+- **`governance/schemas/a71.schema.json` `x-bsa-nfr-coverage-rules._comment`** — replaced "DOCUMENTARY at the F5/schema layer today" with "EXECUTABLE at the F5 hook layer as of v1.1.3"; documents the relaxed Metric match + the implementation pointer.
+- **`governance/schemas/a72.schema.json` `x-bsa-foreign-key-rules._comment`** — same alignment; documents the implementation vehicle.
+- **`skills/bsa-test-scenario-builder/SKILL.md` Invariants + Open follow-ups** — NFR-coverage rule now marked executable; `[TODO-S8-01-X-ARTIFACT-NFR-COVERAGE]` struck through with closure note.
+- **`skills/bsa-traceability-matrix/SKILL.md` Invariants + Open follow-ups** — foreign-key + claim-source-consistency rules marked executable; `[TODO-S8-02-X-ARTIFACT-FK]` struck through with closure note.
+
+### Carried forward (deferred to v1.2)
+
+- `[TODO-S8-01-RUNNABLE-EXPORT]` — runnable test export (Cucumber `.feature`, pytest-bdd, Jest).
+- `[TODO-S8-01-NEGATIVE-PATH-HEURISTICS]` — auto-suggest boundary / negative scenarios from temporal / boundary / comparison language in acceptance criteria.
+- `[TODO-S8-02-INCREMENTAL-MATRIX]` — incremental A72 rebuild instead of full re-run on every `bsa-dev-handoff`.
+- `[TODO-S8-02-LINK-STRENGTH-OVERRIDE]` — operator override of LinkStrength via designated A51 IssueType.
+- Platform export polish (`[TODO-S9-01-JIRA-CUSTOMFIELDS]` / `[TODO-S9-02-LINEAR-PROJECTS]` / `[TODO-S9-03-GITHUB-PROJECTS]`) — Section B2.
+- Adversarial fixtures (block-on-contradiction failure mode + multi-way contradictions + tier-delta auto-resolution case) — Section B3.
+
 ## [v1.1.2] — 2026-04-23
 
 **Sysco mechanical migration script.** Implements `scripts/migrate_v1.0_to_v1.1.py` per the spec authored in v1.1.1. Operators can now mechanically apply four classes of v1.0.x → v1.1.x drift fixes (marker payload field renames + A50 Priority/ReliabilityTier/SourceID-prefix cleanup) AND surface four classes of manual-review findings (verdict caveats / A50 AccessStatus partial / A60 header mismatch / A51 reconciliation) via `--report` flags.

@@ -536,6 +536,331 @@ def _apply_invest_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     ]
 
 
+# ---- Cross-artifact validators (v1.1.3) -------------------------------
+#
+# Per-row handlers above only see the row + the schema — they cannot
+# reach sibling artifacts. The two handlers below extend the C2 pattern
+# to cross-artifact rules: A72 foreign-key resolution + claim/source
+# consistency (TODO-S8-02-X-ARTIFACT-FK closed) and A71 NFR-coverage
+# enforcement (TODO-S8-01-X-ARTIFACT-NFR-COVERAGE closed). Both rules
+# were documentary at the schema layer through v1.1.2 because F5 had
+# no sibling-read capability; v1.1.3 adds ``_SiblingArtifactCache`` so
+# the handlers can resolve sibling rows at hook time.
+
+
+class _SiblingArtifactCache:
+    """Per-validation-run cache for sibling canonical artifact reads.
+
+    A row-level handler that needs to look up sibling artifacts (e.g.,
+    every A72 row needs A50 + A59 + A70 reads) would otherwise repeat
+    the same disk reads N times per write. The cache is built once per
+    ``_make_csv_validator`` invocation and shared across all rows.
+
+    Caches by ``(filename, key_column)`` because the same sibling can
+    be indexed by different columns (e.g., A59 by ClaimID for FK
+    resolution, A59 by SourceID for some future rule). Idempotent:
+    reading a missing file returns ``None`` (handlers treat None as
+    "sibling absent — emit a clear violation").
+    """
+
+    def __init__(self, base_dir: PurePosixPath):
+        self.base_dir = base_dir  # POSIX form, e.g.
+                                  # PurePosixPath("analysis/canonical/core_controls")
+        self._cache: dict[tuple[str, str], dict[str, dict[str, str]] | None] = {}
+
+    def load(
+        self, sibling_filename: str, key_column: str,
+    ) -> dict[str, dict[str, str]] | None:
+        """Return ``{key_column_value: row_dict}`` for the sibling CSV,
+        or ``None`` if the file doesn't exist / can't be read.
+
+        Reads are filesystem-backed (the hook runs after siblings have
+        been written). Caches the result so a 100-row A72 produces
+        exactly one A70 read, not 100.
+        """
+        cache_key = (sibling_filename, key_column)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        # Resolve the sibling on the actual filesystem. ``base_dir`` was
+        # extracted from a hook input path; we do NOT trust it blindly —
+        # convert to a real ``Path`` to access the filesystem.
+        from pathlib import Path as _Path
+        sibling_path = _Path(str(self.base_dir)) / sibling_filename
+        if not sibling_path.is_file():
+            self._cache[cache_key] = None
+            return None
+        try:
+            with sibling_path.open("r", encoding="utf-8", newline="") as fh:
+                reader = csv.DictReader(fh)
+                indexed: dict[str, dict[str, str]] = {}
+                for row in reader:
+                    if row is None:
+                        continue
+                    key = (row.get(key_column) or "").strip()
+                    if key:
+                        indexed[key] = row
+        except (OSError, UnicodeDecodeError, csv.Error):
+            self._cache[cache_key] = None
+            return None
+        self._cache[cache_key] = indexed
+        return indexed
+
+
+def _resolve_sibling_dir(path: str) -> PurePosixPath | None:
+    """Extract the sibling directory from a canonical-artifact path.
+
+    For ``analysis/canonical/core_controls/A72_traceability_matrix.csv``
+    returns ``PurePosixPath("analysis/canonical/core_controls")``. Two
+    return-None cases:
+
+    * Path doesn't fit the ``canonical/core_controls`` layout — sibling
+      handlers no-op silently.
+    * Path fits the layout BUT the dir doesn't exist on disk — same
+      no-op. This case covers the existing unit-test pattern where a
+      relative path is passed without setting up a full workspace tree;
+      hook-layer cross-artifact enforcement still kicks in for any
+      production write where the canonical dir is real.
+
+    Discovery layer: ``analysis/discovery/canonical/core_controls/...``
+    is also recognized.
+
+    **Path resolution discipline (v1.1.3 round-2 hardening — Codex
+    finding):** if ``path`` is relative, the validator cannot
+    independently determine the user's workspace from its own CWD —
+    the hook script runs the validator with the plugin-repo CWD, not
+    the workspace CWD, so a naive ``Path(rel).is_dir()`` would always
+    look in the plugin repo and silently miss real workspaces. Two
+    workspace anchors are honored, in order:
+
+    1. ``BSA_WORKSPACE_CWD`` env var — the hook sets this from the
+       original user-shell CWD before invoking the validator. This is
+       the production path.
+    2. Process CWD — fallback for tests that explicitly ``monkeypatch.
+       chdir(workspace)``. Production hooks always set
+       ``BSA_WORKSPACE_CWD``.
+
+    Absolute paths are used as-given. The on-disk check then runs
+    against the resolved location.
+    """
+    import os as _os
+    from pathlib import Path as _Path
+    parent_posix = PurePosixPath(_normalize_path(path)).parent
+    # Last two components must be canonical/core_controls (main or
+    # discovery). Anything else returns None.
+    parts = parent_posix.parts
+    if len(parts) < 2:
+        return None
+    if parts[-2:] != ("canonical", "core_controls"):
+        return None
+    # Resolve to a concrete on-disk path. Absolute → use as-is; relative
+    # → anchor to BSA_WORKSPACE_CWD (production hook) or process CWD
+    # (tests). _Path.is_absolute handles both Unix and POSIX-form paths.
+    parent_real = _Path(str(parent_posix))
+    if not parent_real.is_absolute():
+        anchor = _os.environ.get("BSA_WORKSPACE_CWD") or _os.getcwd()
+        parent_real = _Path(anchor) / parent_real
+    if not parent_real.is_dir():
+        return None
+    # Return the on-disk POSIX form so _SiblingArtifactCache reads from
+    # the actual location, not from a CWD-relative ghost path.
+    return PurePosixPath(parent_real.as_posix())
+
+
+def _apply_foreign_key_rules(
+    row: dict, schema: dict, row_idx: int,
+    path: str, sibling_cache: _SiblingArtifactCache | None,
+) -> list[str]:
+    """Apply A72-style ``x-bsa-foreign-key-rules`` extension.
+
+    v1.1.3 — closes TODO-S8-02-X-ARTIFACT-FK. Per-row hook-layer
+    enforcement of foreign-key resolution + claim/source consistency.
+
+    Rule shape (A72):
+      * ``applies_to_all_rows`` (bool) — gate
+      * ``story_id_resolves_in`` (str) — sibling CSV (A70_*.csv)
+      * ``claim_id_resolves_in`` (str) — sibling CSV (A59_*.csv)
+      * ``source_id_resolves_in`` (str) — sibling CSV (A50_*.csv)
+      * ``claim_source_consistency`` (bool) — when set, the row's
+          ClaimID's own SourceID (per A59) MUST equal this row's
+          SourceID. Defends against phantom traces (matrix says claim
+          X is sourced by Y, but A59 says claim X is sourced by Z).
+
+    When the sibling cache is unavailable (path outside canonical
+    layout), the handler no-ops silently — the row-level schema check
+    still applies. When a sibling file is missing, it emits a clear
+    "sibling-not-readable" violation.
+    """
+    ext = schema.get("x-bsa-foreign-key-rules", {})
+    if not isinstance(ext, dict) or not ext.get("applies_to_all_rows"):
+        return []
+    if sibling_cache is None:
+        # Path doesn't fit the canonical layout (e.g., test fixture
+        # outside analysis/canonical/core_controls/). Skip silently —
+        # tests that exercise FK semantics use a real layout.
+        return []
+    violations: list[str] = []
+
+    def _check_resolution(field_name: str, ext_key: str) -> dict[str, str] | None:
+        target_csv = ext.get(ext_key)
+        if not target_csv:
+            return None
+        value = (row.get(field_name) or "").strip()
+        if not value:
+            return None  # blank cell — schema-level required check covers it
+        sibling = sibling_cache.load(target_csv, field_name)
+        if sibling is None:
+            violations.append(
+                f"line {row_idx} {field_name}={value!r}: sibling artifact "
+                f"{target_csv} is missing or unreadable — cannot verify FK "
+                f"resolution (x-bsa-foreign-key-rules)"
+            )
+            return None
+        if value not in sibling:
+            violations.append(
+                f"line {row_idx} {field_name}={value!r}: does not resolve in "
+                f"{target_csv} (x-bsa-foreign-key-rules → {ext_key})"
+            )
+            return None
+        return sibling[value]
+
+    _check_resolution("StoryID", "story_id_resolves_in")
+    claim_row = _check_resolution("ClaimID", "claim_id_resolves_in")
+    _check_resolution("SourceID", "source_id_resolves_in")
+
+    # claim_source_consistency: this row's ClaimID, per its A59 entry,
+    # MUST be sourced by this row's SourceID. Without this rule the
+    # matrix could promise claim C-001 is sourced by S-002 while A59
+    # says C-001 is sourced by S-001 — silent disagreement.
+    #
+    # A59.SourceID rules (governance/schemas/a59.schema.json:28):
+    # * Blank → claim has no source binding (A51-routed). A blank
+    #   A59.SourceID combined with a non-blank A72 SourceID is a hard
+    #   contradiction: the matrix can't promise a source for a claim
+    #   the source register doesn't bind. Emit a violation.
+    # * Single value → equality check.
+    # * Multi-source (joined by ';' or '/') → membership check; the
+    #   matrix row is allowed to pick ONE of the claim's sources.
+    if ext.get("claim_source_consistency") and claim_row is not None:
+        a59_source_raw = (claim_row.get("SourceID") or "").strip()
+        row_source = (row.get("SourceID") or "").strip()
+        # Split A59.SourceID on the documented multi-source delimiters
+        # (';' / '/'). Whitespace is also tolerated. Empty tokens are
+        # filtered out.
+        a59_sources = [
+            tok for tok in re.split(r"[;/\s]+", a59_source_raw) if tok
+        ]
+        if not a59_sources and row_source:
+            violations.append(
+                f"line {row_idx}: claim/source consistency violation — "
+                f"row.ClaimID={row.get('ClaimID')!r} has empty A59.SourceID "
+                f"(claim is unsourced or A51-routed) but this row declares "
+                f"SourceID={row_source!r} (x-bsa-foreign-key-rules → "
+                f"claim_source_consistency)"
+            )
+        elif row_source and a59_sources and row_source not in a59_sources:
+            violations.append(
+                f"line {row_idx}: claim/source consistency violation — "
+                f"row.ClaimID={row.get('ClaimID')!r} is sourced by "
+                f"{a59_sources!r} per A59 but this row declares "
+                f"SourceID={row_source!r} (x-bsa-foreign-key-rules → "
+                f"claim_source_consistency)"
+            )
+    return violations
+
+
+def _apply_nfr_coverage_rules(
+    row: dict, schema: dict, row_idx: int,
+    path: str, sibling_cache: _SiblingArtifactCache | None,
+) -> list[str]:
+    """Apply A71-style ``x-bsa-nfr-coverage-rules`` extension.
+
+    v1.1.3 — closes TODO-S8-01-X-ARTIFACT-NFR-COVERAGE. Per-row
+    hook-layer enforcement of NFR Metric+Target embedding in the
+    Then-clause when ``RelatedNFRID`` is non-empty.
+
+    Rule semantics (per the schema description):
+      * Literal Target match — the A62 row's ``Target`` string MUST
+        appear verbatim as a substring of the row's ``Then`` clause.
+      * Metric reference — the Then-clause MUST mention at least one
+        significant word from the A62 row's ``Metric``. Paraphrase OK
+        per the schema rationale; "significant" is length≥3 and not in
+        a small stopword list. The relaxed match is intentional: the
+        rule is anti-aspiration ("agent gets paged" instead of an
+        actual measurement), not anti-paraphrase.
+
+    When ``RelatedNFRID`` is empty (functional scenario), the handler
+    no-ops. When the sibling A62 is missing, it emits a clear
+    "sibling-not-readable" violation. When ``RelatedNFRID`` doesn't
+    resolve in A62, it emits a clear "FK violation" too — same shape
+    as the FK handler so operators see one rule family.
+    """
+    ext = schema.get("x-bsa-nfr-coverage-rules", {})
+    if not isinstance(ext, dict):
+        return []
+    if not ext.get("requires_then_embeds_metric_and_target_when_nfr_set"):
+        return []
+    if sibling_cache is None:
+        return []
+    related_nfr = (row.get("RelatedNFRID") or "").strip()
+    if not related_nfr:
+        return []
+    a62_filename = ext.get("nfr_register_filename", "A62_nfr_register.csv")
+    a62_rows = sibling_cache.load(a62_filename, "NFRID")
+    if a62_rows is None:
+        return [(
+            f"line {row_idx} RelatedNFRID={related_nfr!r}: sibling artifact "
+            f"{a62_filename} is missing or unreadable — cannot verify NFR "
+            f"coverage (x-bsa-nfr-coverage-rules)"
+        )]
+    if related_nfr not in a62_rows:
+        return [(
+            f"line {row_idx} RelatedNFRID={related_nfr!r}: does not resolve "
+            f"in {a62_filename} (x-bsa-nfr-coverage-rules)"
+        )]
+    nfr_row = a62_rows[related_nfr]
+    metric = (nfr_row.get("Metric") or "").strip()
+    target = (nfr_row.get("Target") or "").strip()
+    then_clause = (row.get("Then") or "").strip()
+    violations: list[str] = []
+    # Literal Target substring check — the assertion threshold MUST be
+    # in the test's observable outcome.
+    if target and target not in then_clause:
+        violations.append(
+            f"line {row_idx}: Then-clause does not embed literal Target "
+            f"{target!r} from A62[{related_nfr}] (x-bsa-nfr-coverage-rules → "
+            f"requires_then_embeds_metric_and_target_when_nfr_set)"
+        )
+    # Relaxed Metric reference — at least one significant word, matched
+    # at WORD BOUNDARIES so trivial substring overlaps don't false-pass
+    # ("page" must not match "paged"; "rate" must not match "iterate").
+    # Codex v1.1.3 round-1 finding: substring matching let `latency`
+    # spuriously match `latencyish`, so a Then-clause with no real
+    # metric reference could slip through.
+    if metric:
+        stopwords = {"the", "and", "for", "per", "with", "from", "into", "over"}
+        words = [
+            w.lower() for w in re.split(r"[^a-zA-Z0-9]+", metric)
+            if len(w) >= 3 and w.lower() not in stopwords
+        ]
+        if words:
+            then_lower = then_clause.lower()
+            # \b is the regex word boundary. We escape each candidate
+            # word so any regex metachar in Metric (unlikely for sane
+            # NFR metrics, but still) is matched literally.
+            matched = any(
+                re.search(r"\b" + re.escape(w) + r"\b", then_lower)
+                for w in words
+            )
+            if not matched:
+                violations.append(
+                    f"line {row_idx}: Then-clause does not reference any "
+                    f"significant word from Metric {metric!r} of "
+                    f"A62[{related_nfr}] (x-bsa-nfr-coverage-rules → "
+                    f"requires_then_embeds_metric_and_target_when_nfr_set)"
+                )
+    return violations
+
+
 def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
     """Build a CSV-row validator for the named schema.
 
@@ -553,11 +878,15 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
 
     def _validate(path: str, content: str) -> list[str]:
         import jsonschema  # lazy
-        del path  # not used for CSV validation in this iteration
 
         schema = _loader.load_schema(schema_name)
         expected = schema["x-bsa-csv-columns-order"]["order"]
         validator = jsonschema.Draft202012Validator(schema)
+        # Build the sibling-artifact cache once per validation run.
+        # ``None`` when the path is outside the canonical layout — the
+        # cross-artifact handlers detect that and no-op silently.
+        sibling_dir = _resolve_sibling_dir(path)
+        sibling_cache = _SiblingArtifactCache(sibling_dir) if sibling_dir else None
         violations: list[str] = []
         try:
             reader = csv.DictReader(io.StringIO(content))
@@ -578,10 +907,11 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
                 for err in sorted(validator.iter_errors(row), key=lambda e: list(e.absolute_path)):
                     field = ".".join(str(p) for p in err.absolute_path) or "<row>"
                     violations.append(f"line {row_idx} {field}: {err.message}")
-                # Cross-field extension rules. Each helper no-ops
-                # when the schema doesn't declare its extension, so
-                # this pass is schema-agnostic: new schemas that adopt
-                # an existing extension shape get enforcement for free.
+                # Cross-field extension rules (per-row, no sibling reads).
+                # Each helper no-ops when the schema doesn't declare its
+                # extension, so this pass is schema-agnostic: new schemas
+                # that adopt an existing extension shape get enforcement
+                # for free.
                 #   x-bsa-claim-type-rules (A59): INV-01 + INV-07
                 #   x-bsa-measurability-rules (A62, v1.0.3): INV-09 seed
                 #   x-bsa-provenance-rules (A70, v1.0.3): INV-08 seed
@@ -596,6 +926,21 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
                 violations.extend(_apply_provenance_rules(row, schema, row_idx))
                 violations.extend(_apply_invest_rules(row, schema, row_idx))
                 violations.extend(_apply_deferral_rules(row, schema, row_idx))
+                # Cross-artifact extension rules (v1.1.3, sibling reads).
+                # Same C2 pattern but with path + sibling_cache so the
+                # handler can resolve A50/A59/A62/A70 entries at hook time.
+                #   x-bsa-foreign-key-rules (A72): TODO-S8-02-X-ARTIFACT-FK
+                #     closed — StoryID/ClaimID/SourceID resolution +
+                #     claim_source_consistency.
+                #   x-bsa-nfr-coverage-rules (A71): TODO-S8-01-X-ARTIFACT
+                #     -NFR-COVERAGE closed — Then-clause embeds the
+                #     A62 row's literal Target + Metric reference.
+                violations.extend(_apply_foreign_key_rules(
+                    row, schema, row_idx, path, sibling_cache,
+                ))
+                violations.extend(_apply_nfr_coverage_rules(
+                    row, schema, row_idx, path, sibling_cache,
+                ))
         except csv.Error as exc:
             violations.append(f"CSV parse error: {exc}")
         return violations
