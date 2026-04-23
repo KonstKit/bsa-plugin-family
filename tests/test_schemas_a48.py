@@ -5,11 +5,11 @@ Two layers:
 1. **Parser** (``parse_a48``) — handles the three on-disk shapes
    (bullet-backtick, bullet-bold, table). Covers the real fixture A48
    (table format), the test-helper A48 (bullet-backtick), and a
-   Sysco-engagement-style A48 (bullet-bold + nested children).
+   Pilot-1-class A48 (bullet-bold + nested children).
 2. **Schema** — validates the parsed dict against
    ``governance/schemas/a48.schema.json``. Includes the same
    negative-regression-guard pattern as the marker schema tests
-   (Sysco-style content that would mismatch).
+   (Pilot-1-class content that would mismatch).
 
 Plus the CLI smoke test for the ``a48-field`` subcommand that
 ``hooks/pre_bash_promote.sh`` will invoke after the F2 fix lands.
@@ -74,13 +74,13 @@ def test_parser_handles_bullet_backtick(tmp_path: Path) -> None:
 
 
 def test_parser_handles_bullet_bold(tmp_path: Path) -> None:
-    """Format used by the Sysco engagement A48 (bold field labels + nested children)."""
+    """Format used by the Pilot-1 engagement A48 (bold field labels + nested children)."""
     from governance.schemas.loader import parse_a48
 
     p = tmp_path / "A48_run_context_card.md"
     p.write_text(
         "# A48 Run Context Card\n\n"
-        "- **RunID**: SYSCO-OD-DISC-20260420-001\n"
+        "- **RunID**: PILOT1-OD-DISC-20260420-001\n"
         "- **Mode**: `discovery_then_bsa`\n"
         "- **CurrentStage**: `discovery.complete`\n"
         "- **CanonPolicyVersion**: 1.0.0\n"
@@ -92,7 +92,7 @@ def test_parser_handles_bullet_bold(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     fields = parse_a48(p)
-    assert fields["RunID"] == "SYSCO-OD-DISC-20260420-001"
+    assert fields["RunID"] == "PILOT1-OD-DISC-20260420-001"
     assert fields["Mode"] == "discovery_then_bsa"
     assert fields["CurrentStage"] == "discovery.complete"
     assert fields["CanonPolicyVersion"] == "1.0.0"
@@ -173,9 +173,9 @@ def test_schema_accepts_real_fixture(
 def test_schema_accepts_discovery_complete_state(
     a48_validator: "jsonschema.Draft202012Validator",
 ) -> None:
-    """The Sysco engagement reached CurrentStage=discovery.complete; schema must allow."""
+    """The Pilot-1 engagement reached CurrentStage=discovery.complete; schema must allow."""
     fields = {
-        "RunID": "SYSCO-OD-DISC-20260420-001",
+        "RunID": "PILOT1-OD-DISC-20260420-001",
         "Mode": "discovery_then_bsa",
         "CurrentStage": "discovery.complete",
         "CanonPolicyVersion": "1.0.0",

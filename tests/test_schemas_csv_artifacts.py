@@ -6,7 +6,7 @@ in test_schemas_marker.py / test_schemas_a48.py / test_schemas_a51.py:
   1. Schema meta-validity (Draft 2020-12).
   2. Helper API (iter_aNN_rows).
   3. Positive cases — every row in every golden fixture validates.
-  4. Negative cases — Sysco-engagement drift class is rejected,
+  4. Negative cases — Pilot-1 engagement drift class is rejected,
      specifically:
        * A59.ClaimType using the legacy strings policy_statement /
          factual_state / process_step / decision_pending.
@@ -98,7 +98,7 @@ def test_tier_to_claim_strength_returns_canonical_values() -> None:
 
 
 def test_tier_to_claim_strength_rejects_drift_label() -> None:
-    """Sysco-style 'T1_multi_source_consistent' must NOT resolve."""
+    """Pilot-1-class 'T1_multi_source_consistent' must NOT resolve."""
     from governance.schemas.loader import tier_to_claim_strength
 
     with pytest.raises(KeyError, match="Unknown ReliabilityTier"):
@@ -134,11 +134,11 @@ def test_all_golden_fixture_rows_validate(
     )
 
 
-# ---- 4. Negative cases (the Sysco-class regression guards) -----------
+# ---- 4. Negative cases (the Pilot-1-class regression guards) -----------
 
 
 def test_a59_rejects_legacy_claim_type_values() -> None:
-    """A59 ClaimType using the Sysco-engagement legacy values
+    """A59 ClaimType using the Pilot-1 engagement legacy values
     (policy_statement / factual_state / process_step / decision_pending)
     MUST fail validation. This is the most-impactful negative test in
     the F4d set — it directly closes the drift class identified by the
@@ -183,7 +183,7 @@ def test_a59_accepts_inv07_enum_values() -> None:
 
 
 def test_a50_rejects_drift_tier_label() -> None:
-    """Sysco-engagement custom-tier labels (T1_multi_source_consistent etc.)
+    """Pilot-1 engagement custom-tier labels (T1_multi_source_consistent etc.)
     must fail the A50.ReliabilityTier enum."""
     schema = json.loads((SCHEMAS_DIR / "a50.schema.json").read_text(encoding="utf-8"))
     v = jsonschema.Draft202012Validator(schema)
@@ -193,7 +193,7 @@ def test_a50_rejects_drift_tier_label() -> None:
         "Title": "Test",
         "Origin": "/tmp/test.md",
         "AccessStatus": "readable",
-        "ReliabilityTier": "T1_multi_source_consistent",  # Sysco drift
+        "ReliabilityTier": "T1_multi_source_consistent",  #  Pilot-1 drift
         "Priority": "medium",
         "Language": "en",
         "DateOrVersion": "2026-04-20",

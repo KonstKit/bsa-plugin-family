@@ -2,11 +2,13 @@
 
 Status, findings, and follow-up backlog from real-world pilot workspaces against the BSA plugin family.
 
+> **Anonymization note (v1.1.7):** The first external pilot engagement is referenced throughout this plugin family as **`Pilot-1`**. The real client name was scrubbed from the plugin's active surface (schemas, scripts, docs, tests) so the framework reads as universal. Historical references in `docs/retros/sprint_*.md` retain the original client name as a development-history record (analogous to commit messages — they document development context, not contract).
+
 ## Active pilots
 
-### Sysco (v1.0.3 → v1.1.1)
+###  Pilot-1 (v1.0.3 → v1.1.1)
 
-**Workspace:** `/private/tmp/sysco-pilot-v103` (operator-local; not committed).
+**Workspace:** `/private/tmp/pilot1-workspace-v1.0.x` (operator-local; not committed).
 
 **Status:** v1.1.1 unblocks the schema-extendable subset; mechanical migration steps + manual review items remain pending.
 
@@ -26,17 +28,17 @@ Status, findings, and follow-up backlog from real-world pilot workspaces against
 - Schema-and-contract consistency drift (h1_spec.md / h4_spec.md / shared-control-surface-contracts.md / docs/architecture_overview.md / docs/workflow.md / reliability_tier_spec.md / discovery_to_main_merge.md all aligned to the new closed sets).
 
 **Closed in v1.1.2:**
-- `scripts/migrate_v1.0_to_v1.1.py` ships with: 4 mechanical fixes (`--markers-only`, `--a50-priority`, `--a50-reliability-tier`, `--a50-source-id-prefix`, or `--all-mechanical`) + 4 report-only checks (`--report verdict-caveats|a50-access-status-partial|a60-header-mismatch|a51-reconciliation` or `--report all-reports`). Idempotent, non-destructive (`.pre-v1.1.bak` backups), JSONL-logged. Smoke-tested against the Sysco workspace — correctly classifies all 8 v1.0.x → v1.1.x drift classes.
+- `scripts/migrate_v1.0_to_v1.1.py` ships with: 4 mechanical fixes (`--markers-only`, `--a50-priority`, `--a50-reliability-tier`, `--a50-source-id-prefix`, or `--all-mechanical`) + 4 report-only checks (`--report verdict-caveats|a50-access-status-partial|a60-header-mismatch|a51-reconciliation` or `--report all-reports`). Idempotent, non-destructive (`.pre-v1.1.bak` backups), JSONL-logged. Smoke-tested against the Pilot-1 workspace — correctly classifies all 8 v1.0.x → v1.1.x drift classes.
 - 23 regression tests (`tests/test_migrate_v1_0_to_v1_1.py`) covering preflight, all 4 mechanical fixes (dry-run + apply + idempotent), all 4 report kinds, JSONL log schema, and the combined `--all-mechanical` + `--report all-reports` paths.
 
 **Open backlog (in priority order):**
 
 1. **Operator runbook** for the manual-review steps (decision trees for verdict caveats, A50 AccessStatus partial, A60 column-set mapping, A51 reconciliation). Estimated effort: Short (1-4h).
-2. **Second-round Sysco doctor pass** after the operator applies the v1.1.2 migration end-to-end against the real workspace. Verifies the script closes the mechanical drift in practice; identifies any unforeseen edge cases.
-3. **A60 schema-and-doc alignment**: confirm the Sysco A60 column drift is genuine schema misuse (not a draft-schema artifact). If draft-schema, note in changelog; if genuine misuse, harden the operator-facing A60 docs.
+2. **Second-round  Pilot-1 doctor pass** after the operator applies the v1.1.2 migration end-to-end against the real workspace. Verifies the script closes the mechanical drift in practice; identifies any unforeseen edge cases.
+3. **A60 schema-and-doc alignment**: confirm the Pilot-1 A60 column drift is genuine schema misuse (not a draft-schema artifact). If draft-schema, note in changelog; if genuine misuse, harden the operator-facing A60 docs.
 
 **Pilot lessons captured into the framework:**
-- The `bsa doctor` validator successfully surfaces every drift class without requiring custom Sysco-specific code — confirms the dispatcher pattern in `scripts/bsa_doctor.py` is operator-friendly.
+- The `bsa doctor` validator successfully surfaces every drift class without requiring custom Pilot-1-specific code — confirms the dispatcher pattern in `scripts/bsa_doctor.py` is operator-friendly.
 - The schema-and-contract consistency rule (every enum extension touches schema + `shared-control-surface-contracts.md` + downstream specs in the same patch) caught two would-be drift introductions in v1.1.1 (h4_spec L28 + L35) and one in h1_spec L46. Pattern is enforced via Codex review discipline and pre-commit grep checks.
 - v1.1.x patch line versioning is suitable for additive enum extensions (backward-compatible).
 

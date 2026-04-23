@@ -8,7 +8,7 @@ Covers four groups:
    validation.
 3. **Negative cases** — the ``automated_results``-style camelCase markers
    (``marker``/``emittedAt``/``canonPolicyVersion``) MUST fail. This is a
-   regression guard against the Sysco-engagement drift that motivated
+   regression guard against the Pilot-1 engagement drift that motivated
    this schema in the first place.
 4. **Alphabet sync** — every marker_id listed in
    ``skills/bsa-orchestrator/references/runtime-marker-schema.md`` is in
@@ -194,10 +194,10 @@ def test_marker_schema_accepts_golden_fixture_markers() -> None:
 def test_marker_schema_rejects_camelcase_legacy(
     marker_validator: "jsonschema.Draft202012Validator",
 ) -> None:
-    """Sysco-engagement drift shape MUST fail.
+    """Pilot-1 engagement drift shape MUST fail.
 
     This is the actual shape observed in
-    /Users/kkitanin/Documents/_-_PROJECTS/Sysco/Order&Deliver/automated_results/
+    /<operator-local-path>/<pilot-1>/automated_results/
     discovery/runtime/ready/discovery.d1.ready.json — produced by v1.0.0
     of the plugin without write-time enforcement. After F5 lands this
     shape will also be blocked at the hook layer, but the schema is the
@@ -205,7 +205,7 @@ def test_marker_schema_rejects_camelcase_legacy(
     """
     legacy = {
         "marker": "discovery.d1.ready",
-        "runId": "SYSCO-OD-DISC-20260420-001",
+        "runId": "PILOT1-OD-DISC-20260420-001",
         "mode": "discovery_then_bsa",
         "emittedAt": "2026-04-20T00:00:00Z",
         "emittedBy": "bsa-orchestrator",

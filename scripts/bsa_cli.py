@@ -131,7 +131,7 @@ class WorkspaceState:
         """Return the marker's emission timestamp, tolerating drift.
 
         Canonical field is ``timestamp`` (ISO-8601 UTC per marker schema).
-        Sysco-style drifted markers use ``emittedAt`` — we accept either
+        Pilot-1-class drifted markers use ``emittedAt`` — we accept either
         so recency sorting stays correct even on non-conformant workspaces
         (the user's reason for needing this CLI in the first place).
         """

@@ -5,7 +5,7 @@ Covers:
   - `bsa status` CLI output shape (not exact formatting — exit code + key
     substrings so the test survives reasonable layout tweaks).
   - Graceful degradation: uninitialized workspace, missing A48, missing
-    A51, malformed markers, Sysco-drifted (camelCase-payload) markers.
+    A51, malformed markers, Pilot-1-drifted (camelCase-payload) markers.
 """
 
 from __future__ import annotations
@@ -204,11 +204,11 @@ def test_status_a51_counts_by_blocking_status(tmp_path: Path) -> None:
     assert "informational:   1" in result.stdout
 
 
-# ---- 5. Sysco-drifted markers (camelCase) ---------------------------
+# ---- 5. Pilot-1-drifted markers (camelCase) ---------------------------
 
 
-def test_status_tolerates_camelcase_sysco_markers(tmp_path: Path) -> None:
-    """Sysco-engagement markers use `marker`/`emittedAt` instead of
+def test_status_tolerates_camelcase_pilot1_markers(tmp_path: Path) -> None:
+    """Pilot-1 engagement markers use `marker`/`emittedAt` instead of
     `marker_id`/`timestamp`. CLI must still read them (fallback
     keys) rather than crash. It's a DIAGNOSTIC tool — refusing to
     open non-conformant workspaces is the wrong call; surfacing the
@@ -219,7 +219,7 @@ def test_status_tolerates_camelcase_sysco_markers(tmp_path: Path) -> None:
         "discovery.d1.ready.json",
         {
             "marker": "discovery.d1.ready",
-            "runId": "sysco-like",
+            "runId": "pilot1-like",
             "emittedAt": "2026-04-22T09:00:00Z",
             "canonPolicyVersion": "1.0.0",
         },
@@ -434,7 +434,7 @@ def test_next_stage8_promoted_suggests_handoff(tmp_path: Path) -> None:
 
 
 def test_next_discovery_complete_with_bridge_shows_two_paths(tmp_path: Path) -> None:
-    """The Sysco state: discovery.complete + bsa.stage1.entry.enabled
+    """The  Pilot-1 state: discovery.complete + bsa.stage1.entry.enabled
     present, no main-cycle stage markers. The Sprint-5 F7 notice says
     this deserves a two-path suggestion: continue OR treat as
     deliverable. `bsa next` mirrors that."""
@@ -983,8 +983,8 @@ def test_doctor_exits_with_summary_line(tmp_path: Path) -> None:
     ), "Summary line missing from failing run"
 
 
-def test_last_marker_uses_emittedat_for_sysco_markers(tmp_path: Path) -> None:
-    """Codex review: `last_marker()` only read `timestamp`. Sysco-style
+def test_last_marker_uses_emittedat_for_pilot1_markers(tmp_path: Path) -> None:
+    """Codex review: `last_marker()` only read `timestamp`. Pilot-1-class
     drifted markers use `emittedAt`. Fixed to accept either."""
     ws = _init_workspace(tmp_path, {
         "RunID": "emittedat-test",
@@ -1005,7 +1005,7 @@ def test_last_marker_uses_emittedat_for_sysco_markers(tmp_path: Path) -> None:
         },
         discovery=True,
     )
-    # Newer Sysco-drifted marker — uses emittedAt instead of timestamp.
+    # Newer Pilot-1-drifted marker — uses emittedAt instead of timestamp.
     _write_marker(
         ws,
         "discovery.d2.ready.json",
@@ -1018,7 +1018,7 @@ def test_last_marker_uses_emittedat_for_sysco_markers(tmp_path: Path) -> None:
     )
     result = _run_cli(["-w", str(ws), "status"])
     assert result.returncode == 0
-    # The Sysco-drifted d2 marker should win the "Last marker" line
+    # The Pilot-1-drifted d2 marker should win the "Last marker" line
     # because emittedAt 09:00 > timestamp 08:00. Pre-fix, the drifted
     # marker was ignored in recency sorting; conformant d1 marker won.
     last_line = [

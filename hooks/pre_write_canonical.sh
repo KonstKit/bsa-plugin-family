@@ -18,7 +18,7 @@
 #   - analysis/discovery/runtime/ready/**
 # If this script runs, the write is against one of those paths by
 # definition. The script does identity check first (cheaper, narrower)
-# then content check (catches the Sysco-engagement schema-drift class
+# then content check (catches the Pilot-1-engagement schema-drift class
 # that the pre-F5 identity-only hook waved through, AND the runtime/ready
 # marker-drift class that the Sprint-5 matcher gap allowed past).
 #

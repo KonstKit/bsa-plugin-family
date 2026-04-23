@@ -1,7 +1,7 @@
 """Write-validator tests for ``governance/schemas/write_validator.py`` (F5, Sprint 5).
 
 This is the single most-impactful test file in Sprint 5: it pins the
-mechanical enforcement that closes the Sysco-engagement schema-drift
+mechanical enforcement that closes the Pilot-1 engagement schema-drift
 class. Without these tests passing, F5 is rhetorical only.
 
 Five test groups:
@@ -9,7 +9,7 @@ Five test groups:
 1. **Path dispatcher** — every canonical artifact path resolves to its
    schema; non-canonical paths resolve to None (allow).
 2. **Positive cases** — well-formed content for each artifact passes.
-3. **Negative cases — Sysco regression class** — exact replays of the
+3. **Negative cases —  Pilot-1 regression class** — exact replays of the
    bad shapes from automated_results/ are blocked. This is the primary
    value of F5: the bad output the plugin produced WITHOUT this hook
    would now be blocked AT the hook.
@@ -170,10 +170,10 @@ def test_non_canonical_path_unconditional_pass() -> None:
     assert msgs == []
 
 
-# ---- 3. Sysco regression class (THE main value of F5) -----------------
+# ---- 3.  Pilot-1 regression class (THE main value of F5) -----------------
 
 
-def test_sysco_camelcase_marker_blocked() -> None:
+def test_pilot1_camelcase_marker_blocked() -> None:
     """The exact marker shape that came out of automated_results/discovery/
     runtime/ready/discovery.d1.ready.json is rejected at write time."""
     from governance.schemas.write_validator import validate_canonical_write
@@ -181,7 +181,7 @@ def test_sysco_camelcase_marker_blocked() -> None:
     content = json.dumps(
         {
             "marker": "discovery.d1.ready",
-            "runId": "SYSCO-OD-DISC-20260420-001",
+            "runId": "PILOT1-OD-DISC-20260420-001",
             "mode": "discovery_then_bsa",
             "emittedAt": "2026-04-20T00:00:00Z",
             "emittedBy": "bsa-orchestrator",
@@ -197,7 +197,7 @@ def test_sysco_camelcase_marker_blocked() -> None:
     assert "timestamp" in err_text
 
 
-def test_sysco_legacy_no_new_facts_marker_filename_blocked() -> None:
+def test_pilot1_legacy_no_new_facts_marker_filename_blocked() -> None:
     """The filename pre-Sprint-2 (no_new_facts vs no_new_claims) emits
     a payload whose marker_id is also no_new_facts — the alphabet
     rejects it."""
@@ -220,16 +220,16 @@ def test_sysco_legacy_no_new_facts_marker_filename_blocked() -> None:
     assert any("not one of" in m for m in msgs)
 
 
-def test_sysco_legacy_claim_type_in_a59_blocked() -> None:
+def test_pilot1_legacy_claim_type_in_a59_blocked() -> None:
     """A59 with the legacy ClaimType strings (policy_statement / factual_state /
     process_step / decision_pending) MUST be blocked at the hook. This is the
     single most-impactful negative test in F5 — it's the line that closes the
-    Sysco-class drift mechanically rather than rhetorically."""
+    Pilot-1-class drift mechanically rather than rhetorically."""
     from governance.schemas.write_validator import validate_canonical_write
 
     content = (
         "ClaimID,SourceID,ExcerptID,ClaimType,Statement,JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes\n"
-        'C-001,S-001,E-001,policy_statement,"Sysco SOP rule",,,"0.85",level-2,\n'
+        'C-001,S-001,E-001,policy_statement,"Pilot-1 SOP rule",,,"0.85",level-2,\n'
         'C-002,S-001,E-002,factual_state,"observed state",,,"0.85",level-2,\n'
         'C-003,S-001,E-003,process_step,"step in flow",,,"0.85",level-2,\n'
     )
@@ -244,7 +244,7 @@ def test_sysco_legacy_claim_type_in_a59_blocked() -> None:
     assert sum(1 for m in msgs if "line" in m) >= 3
 
 
-def test_sysco_drift_tier_label_in_a50_blocked() -> None:
+def test_pilot1_drift_tier_label_in_a50_blocked() -> None:
     """A50 with custom-tier labels (T1_multi_source_consistent etc.) is blocked."""
     from governance.schemas.write_validator import validate_canonical_write
 
@@ -332,7 +332,7 @@ def test_cli_passes_valid_marker() -> None:
     assert "matched marker.schema.json" in result.stderr
 
 
-def test_cli_blocks_sysco_marker() -> None:
+def test_cli_blocks_pilot1_marker() -> None:
     bad = json.dumps(
         {
             "marker": "discovery.d1.ready",
@@ -1345,8 +1345,8 @@ def test_a70_row_can_trip_both_provenance_and_invest_rules() -> None:
     assert "invest-rules" in err_text
 
 
-def test_marker_sysco_attack_replay_fully_blocked() -> None:
-    """The Sysco-engagement attack shape, now with H-sec-4 enforcement.
+def test_marker_pilot1_attack_replay_fully_blocked() -> None:
+    """The Pilot-1 engagement attack shape, now with H-sec-4 enforcement.
 
     Original attack: write `stage8.no_new_claims.pass.json` (which
     pre_bash_promote.sh trusts for Stage-8 promotion) containing an

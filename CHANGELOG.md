@@ -4,6 +4,37 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.7] — 2026-04-23
+
+**Pilot anonymization across the active surface.** The first external pilot engagement was previously referenced by its client name throughout the plugin's active surface — schemas, scripts, docs, tests, hooks. Even though the plugin is positioned as a universal Business/Systems Analysis framework, the client-name leak created a vendor-lock-in feel ("why is a specific company mentioned in our universal contract?") and broke the public-distribution use case. v1.1.7 scrubs all active-surface references to use the universal alias **`Pilot-1`**.
+
+**Tag target**: this commit (the v1.1.7 anonymization patch).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged** from v1.1.6. Anonymization is text-only and touches only files outside POLICY_GLOBS (CHANGELOG, migrations README, pilot_validation.md, schemas, scripts, tests, hooks). Manifest version stays at 1.1.6; v1.1.7 git tag marks the anonymization release. Matches the v1.0.x precedent where v1.0.0 → v1.0.4 all kept the manifest at 1.0.0 (and v1.1.5 kept it at 1.1.4).
+
+### Changed (active surface — operator-visible)
+
+- **CHANGELOG.md** v1.1.1 – v1.1.6 entries — all client-name mentions rewritten to `Pilot-1`.
+- **`migrations/v1.0_to_v1.1/README.md`** — title + scenario language now uses `Pilot-1 drift bundle` / `Pilot-1 workspace`.
+- **`docs/pilot_validation.md`** — section heading + body anonymized; new top-of-file note explaining the `Pilot-1` alias convention and pointing at retros for historical client-name reference.
+- **`governance/schemas/a51.schema.json`** — `IssueType.description`, `Severity.description`, `RaisedByStage.description` all rewritten.
+- **`governance/schemas/a59.schema.json`** — schema `description` + `ClaimType.description` + drift-class `_comment` rewritten.
+- **`scripts/migrate_v1.0_to_v1.1.py`** — module docstring + drift-bundle naming rewritten.
+- **`scripts/bsa_cli.py`**, **`scripts/validate_a51_reconciliation.py`** — comments rewritten.
+- **`hooks/hooks.json`**, **`hooks/pre_write_canonical.sh`** — comments rewritten.
+- **`tests/test_*`** — function names + comments + sample data identifiers (`<client>-OD-DISC-...` → `PILOT1-OD-DISC-...`, `<client>_marker` → `pilot1_marker`, etc.) — all rewritten while preserving test semantics.
+
+### Preserved (development history — analogous to commit messages)
+
+- **`docs/retros/sprint_*.md`** (sprints 5, 7, 8, 9, 5_v1_0_2, 5_v1_0_3, 5_v1_0_4) — historical sprint retrospectives retain the original client name as a development-history record. Documenting WHY the framework evolved as it did is part of the project ledger and was deliberately not rewritten. Future contributors who want to know "where did `inventory_gap` come from?" can read those retros to see the real-world drift case study.
+- **`docs/phase_3_plan.md`** — historical planning document.
+- **Git commit messages + tag annotations v1.0.x..v1.1.6** — immutable; not touched. The original engagement name persists in the commit log as a development-history artifact.
+
+### Result
+
+- **136 → 0** mentions of the original client name in the active surface.
+- **~53 mentions** retained in `docs/retros/sprint_*.md` + `docs/phase_3_plan.md` (historical record).
+- 1412 tests still passing; no behavior change; no canon-state change.
+
 ## [v1.1.6] — 2026-04-23
 
 **Live API integration (Section C).** Closes `[TODO-S9-LIVE-API]`. The `bsa-backlog-bridge` skill produced static export files since v1.1.0; v1.1.6 adds `scripts/backlog_live_apply.py` which POSTs each exported row to the live platform API (Jira REST, Linear GraphQL, GitHub REST). All three platforms ship in one patch.
@@ -133,7 +164,7 @@ Codex round-1 review (REJECT) raised 2 critical bugs + 1 should-fix. All address
 
 ## [v1.1.2] — 2026-04-23
 
-**Sysco mechanical migration script.** Implements `scripts/migrate_v1.0_to_v1.1.py` per the spec authored in v1.1.1. Operators can now mechanically apply four classes of v1.0.x → v1.1.x drift fixes (marker payload field renames + A50 Priority/ReliabilityTier/SourceID-prefix cleanup) AND surface four classes of manual-review findings (verdict caveats / A50 AccessStatus partial / A60 header mismatch / A51 reconciliation) via `--report` flags.
+**Pilot-1 mechanical migration script.** Implements `scripts/migrate_v1.0_to_v1.1.py` per the spec authored in v1.1.1. Operators can now mechanically apply four classes of v1.0.x → v1.1.x drift fixes (marker payload field renames + A50 Priority/ReliabilityTier/SourceID-prefix cleanup) AND surface four classes of manual-review findings (verdict caveats / A50 AccessStatus partial / A60 header mismatch / A51 reconciliation) via `--report` flags.
 
 **Tag target**: this commit (the v1.1.2 migration script implementation).
 **Canon policy version**: `1.1.1+hash:a5b51af8` — **unchanged** from v1.1.1 (operator-tooling addition only; canon hash is unchanged because `scripts/` is not in POLICY_GLOBS, matching the v1.0.x patch-line precedent where v1.0.0 → v1.0.4 all kept the manifest at `1.0.0`). The v1.1.2 git tag marks the operator-tooling release; the policy state is identical to v1.1.1.
@@ -154,13 +185,13 @@ Codex round-1 review (REJECT) raised 2 critical bugs + 1 should-fix. All address
     - `--report a51-reconciliation` — finds every A51 row with `ResolutionStatus=open` that a marker payload declares resolved/remediated (within ±80 char window of the A51Ref).
     - `--report all-reports` — aliases all four reports.
   - **Properties**: idempotent, non-destructive (`.pre-v1.1.bak` backups before every write), scoped to `analysis/`, JSONL log under `<workspace>/runtime/migration_log_v1.0_to_v1.1.jsonl`, dry-run by default.
-  - **Smoke-tested against the Sysco pilot workspace** (`/private/tmp/sysco-pilot-v103`): correctly classifies all 8 drift classes from the v1.0.x doctor output into mechanical-or-manual buckets, and matches the doctor's A51 reconciliation finding count (3 findings, not just 1) by delegating to the upstream auditor instead of duplicating it.
+  - **Smoke-tested against the Pilot-1 workspace** (`/private/tmp/pilot1-workspace-v1.0.x`): correctly classifies all 8 drift classes from the v1.0.x doctor output into mechanical-or-manual buckets, and matches the doctor's A51 reconciliation finding count (3 findings, not just 1) by delegating to the upstream auditor instead of duplicating it.
 - **`tests/test_migrate_v1_0_to_v1_1.py`** (+29 tests) — covers preflight, all 4 mechanical fixes (dry-run + apply + idempotent), all 4 report kinds, JSONL log schema, the combined `--all-mechanical` + `--report all-reports` paths, headerless-CSV detection, write-error logging, parent-workspace mode, report-only immutability, and A51 synonym parity (fixed/completed/done).
 
 ### Codex review discipline
 
 - **Round-1 review (REJECT)** raised 2 release-blocking issues + 2 should-fix issues, all addressed before commit:
-  - **Must (closed)** — `report_a51_reconciliation` had hand-rolled scanning (only 5 resolution keywords, 80-char window, ignored H1-H4 handoff packets, didn't expand `A51-MISS-010/011` shorthand). v1.1.2 final delegates to `scripts/validate_a51_reconciliation.audit_workspace()` for full parity with `bsa doctor`. Verified by re-smoke on Sysco workspace (1 → 3 findings; matches doctor).
+  - **Must (closed)** — `report_a51_reconciliation` had hand-rolled scanning (only 5 resolution keywords, 80-char window, ignored H1-H4 handoff packets, didn't expand `A51-MISS-010/011` shorthand). v1.1.2 final delegates to `scripts/validate_a51_reconciliation.audit_workspace()` for full parity with `bsa doctor`. Verified by re-smoke on Pilot-1 workspace (1 → 3 findings; matches doctor).
   - **Must (closed)** — `report_a60_header_mismatch` hardcoded a stale 5-column canonical (real schema is 7: `NegEvID, SourceID, ExcerptRef, RelatedClaimID, NegativeFinding, A51Ref, Notes`). v1.1.2 final loads the canonical column set from `governance/schemas/a60.schema.json` at module-import time + uses exact-set semantics (missing OR extra columns both flagged). Stale test asserting 5-col file as canonical was rewritten.
   - **Should (closed)** — headerless CSV inputs were silently downgraded to "no column" skips (`csv.DictReader` promotes the first data row to a header). v1.1.2 final adds `_csv_read_validated()` that raises `HeaderValidationError` when none of the expected marker columns are present; surfaces as a real error record.
   - **Should (closed)** — SourceID-prefix phase-3 writes logged `applied` before the actual write succeeded. v1.1.2 final emits `planned` in phase 1+2 and `applied` (or `error`) per file after each phase-3 write.
@@ -168,27 +199,27 @@ Codex round-1 review (REJECT) raised 2 critical bugs + 1 should-fix. All address
 ### Updated
 
 - **`migrations/v1.0_to_v1.1/README.md`** — marks the migration tool as IMPLEMENTED (was: spec'd, implementation pending). Recommended migration order section gains the actual command-line invocations.
-- **`docs/pilot_validation.md`** — Sysco "Open backlog" item #1 (script implementation) marked DONE; backlog now leads with the operator runbook + second-round doctor pass.
+- **`docs/pilot_validation.md`** —  Pilot-1 "Open backlog" item #1 (script implementation) marked DONE; backlog now leads with the operator runbook + second-round doctor pass.
 
 ### Carried forward (deferred to v1.2)
 
 - Operator runbook for the manual-review steps (decision trees for verdict caveats, A50 AccessStatus partial, A60 column-set mapping, A51 reconciliation).
-- Second-round Sysco doctor pass after operator applies the migration end-to-end.
-- A60 schema-and-doc alignment (confirm the Sysco A60 column drift is genuine misuse vs draft-schema artifact).
+- Second-round  Pilot-1 doctor pass after operator applies the migration end-to-end.
+- A60 schema-and-doc alignment (confirm the Pilot-1 A60 column drift is genuine misuse vs draft-schema artifact).
 
 ## [v1.1.1] — 2026-04-23
 
-**Sysco pilot enum-extension patch + internal contract alignment.** Closes the schema-extendable subset of Sysco-pilot drift via three additive A51 enum extensions, plus aligns existing internal documentation with the closed schema enums (no behavior change; doc drift had accumulated since v1.0.0).
+**Pilot-1 enum-extension patch + internal contract alignment.** Closes the schema-extendable subset of Pilot-1 drift via three additive A51 enum extensions, plus aligns existing internal documentation with the closed schema enums (no behavior change; doc drift had accumulated since v1.0.0).
 
 **Tag target**: this commit (the v1.1.1 enum-extension patch).
 **Canon policy version**: `1.1.1+hash:a5b51af8` — patch-line bump from 1.1.0 (additive enum extensions are backward-compatible). Hash advanced from edits to A51 schema, h1/h4 specs, shared-control-surface-contracts, reliability_tier_spec, discovery_to_main_merge.
 
 ### Added
 
-- **A51 IssueType enum extension** — `inventory_gap` (Sysco pilot, distinguishes a missing CATEGORY/SET of expected artifacts from a single `missing_source`) + `cross_tier_contradiction` (internal alignment — promotes the orchestrator-emitted variant for the reliability-tier-delta ≤ 1 contested rule from a doc-only convention to a first-class enum value matching `test_tier_conflict_scenarios` coverage). IssueType enum is now 7 values (was 5 in v1.1.0).
-- **A51 Severity enum extension** — `critical` (Sysco pilot, exceeds `high` for contract-binding SLA breach risk + customer-facing/regulatory issues). Severity enum is now 4 values (was 3 in v1.1.0).
-- **`migrations/v1.0_to_v1.1/README.md`** — drift catalogue + per-class migration backlog for v1.0.x pilot workspaces (Sysco baseline). Eight drift classes (marker payload schema, verdict enum, A50 Priority/ReliabilityTier/AccessStatus/SourceID format, A60 column set, A51 reconciliation) with `additive` / `mechanical` / `manual` verdicts each.
-- **`docs/pilot_validation.md`** — Sysco pilot status + framework-level pilot-validation invariants. Pilot template for future engagements.
+- **A51 IssueType enum extension** — `inventory_gap` (Pilot-1, distinguishes a missing CATEGORY/SET of expected artifacts from a single `missing_source`) + `cross_tier_contradiction` (internal alignment — promotes the orchestrator-emitted variant for the reliability-tier-delta ≤ 1 contested rule from a doc-only convention to a first-class enum value matching `test_tier_conflict_scenarios` coverage). IssueType enum is now 7 values (was 5 in v1.1.0).
+- **A51 Severity enum extension** — `critical` (Pilot-1, exceeds `high` for contract-binding SLA breach risk + customer-facing/regulatory issues). Severity enum is now 4 values (was 3 in v1.1.0).
+- **`migrations/v1.0_to_v1.1/README.md`** — drift catalogue + per-class migration backlog for v1.0.x pilot workspaces (Pilot-1 baseline). Eight drift classes (marker payload schema, verdict enum, A50 Priority/ReliabilityTier/AccessStatus/SourceID format, A60 column set, A51 reconciliation) with `additive` / `mechanical` / `manual` verdicts each.
+- **`docs/pilot_validation.md`** — Pilot-1 status + framework-level pilot-validation invariants. Pilot template for future engagements.
 
 ### Aligned (internal contract drift closed in this patch)
 
@@ -202,9 +233,9 @@ Codex round-1 review (REJECT) raised 2 critical bugs + 1 should-fix. All address
 
 ### Carried forward (deferred to v1.1.2 or v1.2)
 
-- Sysco mechanical migration script (`scripts/migrate_v1.0_to_v1.1.py`) — spec'd in `migrations/v1.0_to_v1.1/README.md`, implementation pending. Operators currently apply the per-row mapping rules manually + use `bsa doctor` as a checklist.
-- Sysco manual-review steps (verdict caveats, A50 AccessStatus partial, A60 column-set mapping, A51 reconciliation) — operator runbook pending.
-- Second-round Sysco doctor pass after migration script lands.
+-  Pilot-1 mechanical migration script (`scripts/migrate_v1.0_to_v1.1.py`) — spec'd in `migrations/v1.0_to_v1.1/README.md`, implementation pending. Operators currently apply the per-row mapping rules manually + use `bsa doctor` as a checklist.
+-  Pilot-1 manual-review steps (verdict caveats, A50 AccessStatus partial, A60 column-set mapping, A51 reconciliation) — operator runbook pending.
+- Second-round  Pilot-1 doctor pass after migration script lands.
 
 ## [v1.1.0] — 2026-04-22
 
@@ -245,7 +276,7 @@ Codex round-1 review (REJECT) raised 2 critical bugs + 1 should-fix. All address
 - `[TODO-S9-01-JIRA-CUSTOMFIELDS]` / `[TODO-S9-02-LINEAR-PROJECTS]` / `[TODO-S9-03-GITHUB-PROJECTS]` — additional platform-export polish. v1.2.
 - `[TODO-S9-LIVE-API]` — optional live-API mode (POST to Jira/Linear directly). v1.3.
 - Block-on-contradiction failure mode + multi-way contradictions + tier-delta auto-resolution case — separate adversarial fixtures for v1.2.
-- Sysco pilot blockers: IssueType `inventory_gap` + Severity `critical` enum extensions (separate from the v1.0.4+1 `RaisedByStage` extension). Triage with operator.
+- Pilot-1 blockers: IssueType `inventory_gap` + Severity `critical` enum extensions (separate from the v1.0.4+1 `RaisedByStage` extension). Triage with operator.
 
 ## [v1.0.4] — 2026-04-22
 
@@ -258,7 +289,7 @@ Codex round-1 review (REJECT) raised 2 critical bugs + 1 should-fix. All address
 
 - **`scripts/bsa` (shell wrapper)** + **`scripts/bsa_cli.py` (Python CLI)** — locates the plugin repo from realpath-on-`$0` (same lockdown as `hooks/pre_write_canonical.sh` per v1.0.2 C3), so the documented `ln -s /path/to/bsa-plugin-family/scripts/bsa ~/.local/bin/bsa` install mode works. Stdlib at module level; PDF/DOCX libs imported lazily inside the materials subcommand.
 
-- **`bsa status`** (`895581f`) — Reads A48 (RunID, Mode, CurrentStage, CanonPolicyVersion), markers in both zones (`analysis/runtime/ready/` + `analysis/discovery/runtime/ready/`), A51 open counts split by BlockingStatus, and audit outputs (no-new-claims report, citation/consistency reports). Tolerates Sysco-style camelCase markers (`marker`/`emittedAt` instead of `marker_id`/`timestamp`) via fallback keys; tolerates malformed marker JSON (skipped silently). Uninitialized workspace exits 2 with clear "not a BSA workspace" message.
+- **`bsa status`** (`895581f`) — Reads A48 (RunID, Mode, CurrentStage, CanonPolicyVersion), markers in both zones (`analysis/runtime/ready/` + `analysis/discovery/runtime/ready/`), A51 open counts split by BlockingStatus, and audit outputs (no-new-claims report, citation/consistency reports). Tolerates Pilot-1-class camelCase markers (`marker`/`emittedAt` instead of `marker_id`/`timestamp`) via fallback keys; tolerates malformed marker JSON (skipped silently). Uninitialized workspace exits 2 with clear "not a BSA workspace" message.
 
 - **`bsa next`** (`c9013e8`) — State machine over A48 stage + marker presence → next slash-command suggestion. `_STAGE_REQUIRED_MARKERS` table mirrors `hooks/pre_bash_promote.sh` exactly (drift-check test parses the hook's case-pattern block). Zone-aware presence checks (`_zone_filenames_for_stage`); main vs discovery zones never cross-contaminate. Distinguishes d1 init state (where `/bsa-start` emits `discovery.d1.ready` BEFORE the worker runs) via `_d1_has_proposal_output` check; suggests `/bsa-stage d1 run` instead of bogus `/bsa-promote`.
 
@@ -328,7 +359,7 @@ Codex round-1 review (REJECT) raised 2 critical bugs + 1 should-fix. All address
 
 - Manifest `version` stays at `1.0.0` through v1.0.3 — bump to `1.1.0` accompanies the Phase-3 feature release at Sprint 9 close.
 - Sprint 5 retro trilogy now complete: `sprint_5.md` (v1.0.1 scope), `sprint_5_v1_0_2_hotfix.md` (v1.0.2 must-fix), `sprint_5_v1_0_3_polish.md` (this release).
-- Next step: Phase-2.5 pilot on v1.0.3 on the Sysco Order & Deliver materials, now with A59 + A62 + A70 all mechanically enforced. If clean, proceed to Sprint 8 (bsa-test-scenario-builder, US-S8-01).
+- Next step: Phase-2.5 pilot on v1.0.3 on the Pilot-1 Order & Deliver materials, now with A59 + A62 + A70 all mechanically enforced. If clean, proceed to Sprint 8 (bsa-test-scenario-builder, US-S8-01).
 
 ## [v1.0.2] — 2026-04-21
 
@@ -349,7 +380,7 @@ The three CRITICALs plus the most-exploitable HIGH became the v1.0.2 must-fix se
 
 ### Fixed
 
-- **C1 — hooks.json matcher coverage** (`743a496`) — Pre-fix, the PreToolUse:Write matcher covered only `analysis/canonical/**`. Marker writes to `analysis/runtime/ready/**` and `analysis/discovery/runtime/ready/**`, plus `analysis/discovery/canonical/**` writes, bypassed F5 entirely. The entire Sysco-engagement marker-drift class (camelCase marker_id, legacy `no_new_facts` filename) landed unmolested on v1.0.1. Matcher list now covers all four protected-path classes; stderr diagnostics generalized accordingly. 2 new data-level assertion tests would have caught the original miss.
+- **C1 — hooks.json matcher coverage** (`743a496`) — Pre-fix, the PreToolUse:Write matcher covered only `analysis/canonical/**`. Marker writes to `analysis/runtime/ready/**` and `analysis/discovery/runtime/ready/**`, plus `analysis/discovery/canonical/**` writes, bypassed F5 entirely. The entire Pilot-1 engagement marker-drift class (camelCase marker_id, legacy `no_new_facts` filename) landed unmolested on v1.0.1. Matcher list now covers all four protected-path classes; stderr diagnostics generalized accordingly. 2 new data-level assertion tests would have caught the original miss.
 
 - **C2 — A59 cross-field rules executable** (`e5418f4`) — Pre-fix, `x-bsa-claim-type-rules` in `a59.schema.json` declared INV-01 + INV-07 rules in plain text, but `_make_csv_validator()` ignored the extension. Bypasses: `ClaimType=direct` with empty `ExcerptID` + empty `A51Ref` passed (INV-01); `analyst_judgment` with empty `JustificationRationale` passed (INV-07). New helper `_apply_claim_type_rules()` reads the extension and applies per-row cross-field checks after JSON Schema. 9 regression tests.
 
@@ -363,7 +394,7 @@ The three CRITICALs plus the most-exploitable HIGH became the v1.0.2 must-fix se
   - 2 data-level hook-config assertions (C1 protected-path coverage).
   - 9 A59 cross-field coverage tests (C2).
   - 2 env-injection attack replays (C3).
-  - 14 marker-binding tests (H-sec-4: timestamp, filename binding, stage/verdict binding, traversal normalization, Sysco attack replay).
+  - 14 marker-binding tests (H-sec-4: timestamp, filename binding, stage/verdict binding, traversal normalization, Pilot-1 attack replay).
 
 ### Deferred
 
@@ -394,7 +425,7 @@ The following findings from the same review cycle are acknowledged but not fixed
 
 ## [v1.0.1] — 2026-04-21
 
-Sprint 5 close — **contract-enforcement hardening release**. Schema-as-source-of-truth for canonical artifacts, plus write-time mechanical enforcement via the PreToolUse:Write hook. Closes three reviewer P-level findings (P1 marker-validator alphabet drift, P1 promote-hook A48 parse failure, P2 privacy-scan letter-only secrets). Also closes the entire Sysco-engagement drift class identified during the Phase 2.5 trial run.
+Sprint 5 close — **contract-enforcement hardening release**. Schema-as-source-of-truth for canonical artifacts, plus write-time mechanical enforcement via the PreToolUse:Write hook. Closes three reviewer P-level findings (P1 marker-validator alphabet drift, P1 promote-hook A48 parse failure, P2 privacy-scan letter-only secrets). Also closes the entire Pilot-1 engagement drift class identified during the Phase 2.5 trial run.
 
 **Tag target**: commit `8d4692a` (last Sprint-5-work commit, before Sprint-6 Phase-3 kick-off scaffolding).
 **Canon policy version at v1.0.1**: `1.0.1+hash:65a577fd6dea35474d349e312d6890690625aff11414b3e19848dfbdfc00a93b`. Hash advanced from `cbba8e53…` (v1.0.0) because `runtime-marker-schema.md` gained the previously-undocumented `stage1.ready`, `discovery.d{2,3,4,5}.ready`, and verdict `MERGED` — filling documentation gaps surfaced by the schema-conformance tests.
@@ -404,9 +435,9 @@ Sprint 5 close — **contract-enforcement hardening release**. Schema-as-source-
 - **F4b + F2** (`dd5efe8`) — `governance/schemas/a48.schema.json` + three-format A48 parser (`parse_a48`: table / bullet-backtick / bullet-bold). `python3 -m governance.schemas.loader a48-field` CLI. `hooks/pre_bash_promote.sh` delegates parsing to the CLI instead of an in-bash grep that silently failed on table-format A48.
 - **F1** (`c7dd646`) — `scripts/validate_marker_chain.py` reads alphabet + audit-pass sequences from the schema. Private `MAIN_CYCLE_SEQUENCE` / `DISCOVERY_SEQUENCE` tuples removed. Stage-ready / end-state / bridge / non-go-decision markers no longer rejected as `chain-unknown-marker`. `bsa.stage1.entry.enabled` no longer double-rejected.
 - **F3** (`e648401`) — `scripts/privacy_scan._is_likely_natural_prose` rewritten: known-token-prefix gate (21 real secret prefixes: ghp_, sk_live_, xoxb-, AKIA, eyJ, glpat-, shpat_, etc.) + vowel-ratio heuristic (0.30..0.50 prose band). The `QwErTyUiOpAsDfGhJkLzXcVbNm` false-negative reproducer now surfaces as `api_key_token`.
-- **F7** (`9495c2b`) — `commands/bsa-status.md` emits three state-aware notices: `discovery-deliverable-only`, `pre-stage-ready`, `handoff-ready-not-emitted`. Direct UX fix for the Sysco engagement operator-confusion at discovery-exit + bridge state.
+- **F7** (`9495c2b`) — `commands/bsa-status.md` emits three state-aware notices: `discovery-deliverable-only`, `pre-stage-ready`, `handoff-ready-not-emitted`. Direct UX fix for the Pilot-1 engagement operator-confusion at discovery-exit + bridge state.
 - **F4c + F4d** (`12ec5e9`) — CSV row schemas for A50/A51/A58/A59/A60 + `iter_a50_rows`..`iter_a60_rows` loader helpers + `tier_to_claim_strength()` + 45 schema-conformance tests. `A59.ClaimType` pins the closed INV-07 enum (`direct | inference | analyst_judgment`); legacy values (`policy_statement` / `factual_state` / `process_step` / `decision_pending`) explicitly listed in the `x-bsa-banned-claim-type-values` extension as documentation.
-- **F5** (`5025b2a`) — `governance/schemas/write_validator.py` with path-to-schema dispatcher for all 7 canonical artifacts. `hooks/pre_write_canonical.sh` now runs content validation after the INV-02 identity check. 35 tests including direct Sysco-regression replays (camelCase marker, legacy no_new_facts filename, legacy ClaimType in A59, drift tier label in A50) — all blocked at the hook with structured stderr.
+- **F5** (`5025b2a`) — `governance/schemas/write_validator.py` with path-to-schema dispatcher for all 7 canonical artifacts. `hooks/pre_write_canonical.sh` now runs content validation after the INV-02 identity check. 35 tests including direct Pilot-1-regression replays (camelCase marker, legacy no_new_facts filename, legacy ClaimType in A59, drift tier label in A50) — all blocked at the hook with structured stderr.
 - **F6** (`d699565`) — `scripts/validate_a51_reconciliation.py` + 9 tests. Detects `A51_RECONCILE_GAP` when marker payloads / handoff packets declare an A51Ref remediated while the canonical register holds it open; `A51_RECONCILE_GHOST` for refs that don't exist in the register at all. Handles operator-shorthand `A51-MISS-010/011` correctly.
 - **F5 extension** (`8d4692a`) — Edit-tool support in the write hook. `apply_edit()` mirrors Claude Code Edit semantics (uniqueness required unless `replace_all=True`). Hook reads existing file, applies edit, validates the post-image. 9 new tests.
 
@@ -428,7 +459,7 @@ Sprint 5 close — **contract-enforcement hardening release**. Schema-as-source-
 
 ### Verification
 - `python3 -m pytest -q`: 885 passed at v1.0.1 tag point (730 baseline at sprint start + 155 new).
-- Manual replay of every Sysco-engagement drift shape → each blocked at the write hook with structured stderr.
+- Manual replay of every Pilot-1 engagement drift shape → each blocked at the write hook with structured stderr.
 - All three reviewer P-level findings: reproduced pre-fix, verified fixed post-fix.
 
 ## [v1.0.0] — 2026-04-20

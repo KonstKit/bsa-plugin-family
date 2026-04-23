@@ -1,17 +1,17 @@
-# Migration v1.0 → v1.1 (Sysco pilot drift bundle)
+# Migration v1.0 → v1.1 (Pilot-1 drift bundle)
 
-Authoritative migration guide for workspaces created against pre-v1.1.0 schema drafts (notably the Sysco pilot workspace at v1.0.x). Brings them forward to the v1.1.1 schema-and-marker contract.
+Authoritative migration guide for workspaces created against pre-v1.1.0 schema drafts (notably the Pilot-1 workspace at v1.0.x). Brings them forward to the v1.1.1 schema-and-marker contract.
 
 ## Why this migration exists
 
-The Sysco pilot was built against early v1.0.x schema drafts before the marker / A50 / verdict / A51 enums were finalized. The drift fell into two buckets:
+The Pilot-1 was built against early v1.0.x schema drafts before the marker / A50 / verdict / A51 enums were finalized. The drift fell into two buckets:
 
 1. **Schema-extendable drift** — closed inside v1.1.1 itself by additive enum extensions (no migration step needed). See `governance/schemas/a51.schema.json` v1.1.1 changelog and root [CHANGELOG](../../CHANGELOG.md) once published.
 2. **Migration-required drift** — the workspace content has to change. This README enumerates the migration steps and points at the (planned) `scripts/migrate_v1.0_to_v1.1.py` extension.
 
 This document is the **migration backlog**. The script extension lands in a follow-up patch (tracked in [pilot_validation.md](../../docs/pilot_validation.md)).
 
-## Drift catalog (Sysco pilot, v1.0.3 → v1.1.1)
+## Drift catalog (Pilot-1, v1.0.3 → v1.1.1)
 
 The catalog is grouped by schema family. Each entry records: the legacy form found in the pilot, the canonical form mandated by v1.1.1 schemas, the migration verdict (`additive` / `mechanical` / `manual`), and the responsible migration step.
 
@@ -143,9 +143,9 @@ Three symptoms were closed inside v1.1.1 itself by **additive** enum extensions 
 
 | Symptom | Source | v1.1.1 resolution |
 |---|---|---|
-| `A51 IssueType: 'inventory_gap'` rejected | Sysco pilot | `inventory_gap` added to IssueType enum (now 7 values total) |
+| `A51 IssueType: 'inventory_gap'` rejected | Pilot-1 | `inventory_gap` added to IssueType enum (now 7 values total) |
 | `A51 IssueType: 'cross_tier_contradiction'` rejected | Internal alignment (orchestrator-emitted variant for the reliability-tier-delta ≤ 1 contested rule) | `cross_tier_contradiction` added to IssueType enum (now 7 values total) |
-| `A51 Severity: 'critical'` rejected | Sysco pilot | `critical` added to Severity enum (now 4 values total) |
+| `A51 Severity: 'critical'` rejected | Pilot-1 | `critical` added to Severity enum (now 4 values total) |
 
 All three extensions are backward-compatible (existing 5-value IssueType + 3-value Severity rows still validate). See `governance/schemas/a51.schema.json` field descriptions for the v1.1.1 alignment notes.
 
@@ -165,7 +165,7 @@ For a v1.0.x pilot workspace:
 
 `scripts/migrate_v1.0_to_v1.1.py` shipped in **v1.1.2** (matching the spec above). Operators apply the four mechanical fixes via flags (or `--all-mechanical`) and surface the four manual-review classes via `--report <kind>` (or `--report all-reports`). Run `scripts/migrate_v1.0_to_v1.1.py --help` for the full CLI surface.
 
-Recommended invocation sequence for a Sysco-shaped pilot workspace:
+Recommended invocation sequence for a Pilot-1-shaped pilot workspace:
 
 ```bash
 # 1. Backup
@@ -194,7 +194,7 @@ bsa doctor
 
 Each fix run appends to `<workspace>/runtime/migration_log_v1.0_to_v1.1.jsonl` for traceability. Backup files (`.pre-v1.1.bak`) are written before any in-place edit; first run wins so re-running is idempotent.
 
-Tracking item: see [docs/pilot_validation.md](../../docs/pilot_validation.md) §Sysco workstream for the latest status.
+Tracking item: see [docs/pilot_validation.md](../../docs/pilot_validation.md) §Pilot-1 workstream for the latest status.
 
 ## Related
 

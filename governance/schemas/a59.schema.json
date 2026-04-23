@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bsa-plugin-family.local/schemas/a59.schema.json",
   "title": "A59 Claim Register row",
-  "description": "Schema for one row of analysis/canonical/core_controls/A59_claim_register.csv. The claim register is the foundational evidence-bound layer — every promoted positive claim of ClaimType=direct or inference MUST carry SourceID+ExcerptID per INV-01, OR an explicit A51Ref. ClaimType=analyst_judgment is exempt from evidence-binding but MUST carry a JustificationRationale referencing >= 1 upstream ClaimID per INV-07. Producer: bsa-claim-binder. Consumers: every downstream stage skill plus the auditors. This schema is the first line of defense against the Sysco-style ClaimType drift (legacy values like policy_statement / factual_state / process_step / decision_pending).",
+  "description": "Schema for one row of analysis/canonical/core_controls/A59_claim_register.csv. The claim register is the foundational evidence-bound layer — every promoted positive claim of ClaimType=direct or inference MUST carry SourceID+ExcerptID per INV-01, OR an explicit A51Ref. ClaimType=analyst_judgment is exempt from evidence-binding but MUST carry a JustificationRationale referencing >= 1 upstream ClaimID per INV-07. Producer: bsa-claim-binder. Consumers: every downstream stage skill plus the auditors. This schema is the first line of defense against the Pilot-1-class ClaimType drift (legacy values like policy_statement / factual_state / process_step / decision_pending).",
   "type": "object",
   "required": [
     "ClaimID",
@@ -35,7 +35,7 @@
     "ClaimType": {
       "type": "string",
       "enum": ["direct", "inference", "analyst_judgment"],
-      "description": "Closed enum per INV-07. NEVER one of the legacy strings (policy_statement / factual_state / process_step / decision_pending) — those are the Sysco drift class and the schema explicitly rejects them. direct = quotes/reproduces source; inference = derived via recorded reasoning; analyst_judgment = recommendation/risk-assessment requiring JustificationRationale."
+      "description": "Closed enum per INV-07. NEVER one of the legacy strings (policy_statement / factual_state / process_step / decision_pending) — those are the Pilot-1 drift class and the schema explicitly rejects them. direct = quotes/reproduces source; inference = derived via recorded reasoning; analyst_judgment = recommendation/risk-assessment requiring JustificationRationale."
     },
     "Statement": {
       "type": "string",
@@ -100,7 +100,7 @@
     }
   },
   "x-bsa-banned-claim-type-values": {
-    "_comment": "Values observed in the Sysco-engagement A59 that the rename forbids. Listed here as documentation; the enum constraint above already rejects them, this is a hint for error messages and for potential migration tooling.",
+    "_comment": "Values observed in the Pilot-1 engagement A59 that the rename forbids. Listed here as documentation; the enum constraint above already rejects them, this is a hint for error messages and for potential migration tooling.",
     "values": [
       "policy_statement",
       "factual_state",

@@ -305,7 +305,7 @@ def test_write_validator_dispatches_a70_path() -> None:
 
 
 def test_write_validator_blocks_anti_pattern_story_content() -> None:
-    """Direct Sysco-class regression guard: if a skill emits a story
+    """Direct Pilot-1-class regression guard: if a skill emits a story
     with the banned "The system shall..." shape, F5 hook blocks at
     write time."""
     from governance.schemas.write_validator import validate_canonical_write

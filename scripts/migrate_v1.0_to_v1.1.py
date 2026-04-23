@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Workspace migration v1.0 → v1.1 for BSA plugin family (Sysco pilot drift).
+"""Workspace migration v1.0 → v1.1 for BSA plugin family (Pilot-1 drift).
 
-Closes the Sysco-pilot drift bundle catalogued in
+Closes the Pilot-1 drift bundle catalogued in
 `migrations/v1.0_to_v1.1/README.md`. Splits into two surface kinds:
 
   * MECHANICAL — drift the script can fix automatically (applied with
@@ -174,7 +174,7 @@ A50_PRIORITY_MAP: dict[str, str] = {
 # A50 ReliabilityTier prefix-only canonical regex (capture the Tn prefix).
 A50_RELIABILITY_TIER_RE = re.compile(r"^(T[1-5])_(.+)$")
 
-# A50 SourceID Sysco-style (missing S- prefix) regex.
+# A50 SourceID Pilot-1-class (missing S- prefix) regex.
 A50_SOURCE_ID_LEGACY_RE = re.compile(r"^([A-Z]{2,5})-(\d{3,4})$")
 A50_SOURCE_ID_CANONICAL_RE = re.compile(r"^S-(?:[A-Z]{2,5}-)?\d{3,4}$")
 
@@ -982,7 +982,7 @@ def write_log(workspace: Path, records: Iterable[FixRecord]) -> Optional[Path]:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="BSA workspace migration v1.0 → v1.1 (Sysco pilot drift bundle)."
+        description="BSA workspace migration v1.0 → v1.1 (Pilot-1 drift bundle)."
     )
     parser.add_argument("--workspace", type=Path, required=True,
                         help="Path to workspace root (typically a directory containing analysis/).")

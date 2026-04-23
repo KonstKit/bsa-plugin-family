@@ -220,10 +220,10 @@ def test_write_validator_dispatches_a62_path() -> None:
     assert schema_name == "a62"
 
 
-def test_write_validator_blocks_sysco_style_nfr_drift() -> None:
+def test_write_validator_blocks_pilot1_style_nfr_drift() -> None:
     """Pre-F5, a Phase-3 skill emitting A62 without SourceClaimIDs
     would land without complaint. Post-F5 this MUST block at the
-    hook. This is the forward-looking equivalent of the Sysco-class
+    hook. This is the forward-looking equivalent of the Pilot-1-class
     guard."""
     from governance.schemas.write_validator import validate_canonical_write
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """A51 reconciliation auditor (F6, Sprint 5).
 
-Detects the class of governance drift first observed in the Sysco
+Detects the class of governance drift first observed in the Pilot-1
 engagement: a marker payload (most often discovery.go.json) or a
 handoff packet declares an A51 row to be remediated / resolved /
 closed, while the canonical A51_issue_route_register.csv still holds
 that same row as ``ResolutionStatus = open``.
 
-Concretely, the Sysco automated_results carried this preconditions
+Concretely, the Pilot-1 automated_results carried this preconditions
 list inside discovery.go.json:
 
     "Reclassify register-hygiene: A51-MISS-010/011 →

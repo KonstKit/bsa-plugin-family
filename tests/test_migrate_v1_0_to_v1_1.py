@@ -1,4 +1,4 @@
-"""Unit tests for scripts/migrate_v1.0_to_v1.1.py (Sysco pilot drift bundle).
+"""Unit tests for scripts/migrate_v1.0_to_v1.1.py (Pilot-1 drift bundle).
 
 Covers the four mechanical fixes (markers / a50-priority / a50-reliability-tier /
 a50-source-id-prefix) and the four report-only checks (verdict-caveats /

@@ -5,7 +5,7 @@ Five test groups:
 1. **Empty workspace** — no A51 + no markers → clean.
 2. **Clean reconciliation** — A51 entries are open, nothing in markers
    declares them resolved → clean.
-3. **The Sysco regression case** — A51 row is `open` in canonical, but
+3. **The  Pilot-1 regression case** — A51 row is `open` in canonical, but
    discovery.go.json precondition list declares it
    resolved_by_remediation → A51_RECONCILE_GAP.
 4. **Ghost reference** — marker declares an A51Ref resolved but that
@@ -161,11 +161,11 @@ def test_resolved_a51_with_resolved_mention_passes(tmp_path: Path) -> None:
     assert result.returncode == 0
 
 
-# ---- 3. The Sysco regression case (THE main F6 test) ----------------
+# ---- 3. The  Pilot-1 regression case (THE main F6 test) ----------------
 
 
-def test_sysco_reconcile_gap_detected(tmp_path: Path) -> None:
-    """Direct replay of the Sysco engagement gap. discovery.go.json
+def test_pilot1_reconcile_gap_detected(tmp_path: Path) -> None:
+    """Direct replay of the Pilot-1 engagement gap. discovery.go.json
     precondition #4 declares A51-MISS-010/011 as resolved_by_remediation
     but the canonical A51 register still has them as open. Auditor MUST
     surface A51_RECONCILE_GAP for both."""
@@ -208,7 +208,7 @@ def test_sysco_reconcile_gap_detected(tmp_path: Path) -> None:
     )
     result = _run(ws)
     assert result.returncode == 1, (
-        f"Sysco-class gap NOT detected.\nstderr={result.stderr}"
+        f"Pilot-1-class gap NOT detected.\nstderr={result.stderr}"
     )
     assert "A51_RECONCILE_GAP" in result.stderr
     assert "A51-MISS-010" in result.stderr

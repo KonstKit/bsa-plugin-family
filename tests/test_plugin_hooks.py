@@ -86,7 +86,7 @@ REQUIRED_PROTECTED_PATHS: frozenset[str] = frozenset({
 def test_hooks_json_covers_all_protected_write_paths() -> None:
     """PreToolUse:Write matcher MUST cover every BSA-protected path class.
 
-    The Sysco-engagement analysis revealed that with only
+    The Pilot-1 engagement analysis revealed that with only
     `analysis/canonical/**` as a matcher, every marker write (at
     analysis/runtime/ready/*.json and analysis/discovery/runtime/ready/*.json)
     and every discovery-canonical write (analysis/discovery/canonical/**)
@@ -439,7 +439,7 @@ def _init_workspace_bullet_bold_a48(
     tmp_path: Path, current_stage: str, mode: str = "direct"
 ) -> Path:
     """Same as _init_workspace but writes A48 in BULLET-BOLD format
-    (the shape used by the Sysco engagement A48)."""
+    (the shape used by the Pilot-1 engagement A48)."""
     canonical = tmp_path / "analysis" / "canonical" / "core_controls"
     canonical.mkdir(parents=True)
     (canonical / "A48_run_context_card.md").write_text(
@@ -486,7 +486,7 @@ def test_pre_bash_promote_handles_table_format_a48_marker_present(
 
 
 def test_pre_bash_promote_handles_bullet_bold_a48(tmp_path: Path) -> None:
-    """Sysco-style A48 (bold field labels) must work too."""
+    """Pilot-1-class A48 (bold field labels) must work too."""
     ws = _init_workspace_bullet_bold_a48(tmp_path, "stage7")
     result = _run(PRE_BASH, cwd=ws)
     assert result.returncode == 1
@@ -500,7 +500,7 @@ def test_pre_bash_promote_handles_bullet_bold_a48(tmp_path: Path) -> None:
 # When stdin carries the tool-input JSON (Claude Code's PreToolUse:Write
 # contract), the hook validates the proposed content against the
 # matching schema in governance/schemas/. Tests below cover both passes
-# and the Sysco-class regression rejects.
+# and the Pilot-1-class regression rejects.
 
 
 def _run_pre_write_with_json(tool_input: dict, env: dict | None = None):
@@ -545,14 +545,14 @@ def test_pre_write_f5_passes_valid_marker_content() -> None:
     )
 
 
-def test_pre_write_f5_blocks_sysco_camelcase_marker() -> None:
+def test_pre_write_f5_blocks_pilot1_camelcase_marker() -> None:
     """Direct replay of the automated_results/discovery/runtime/ready/
     discovery.d1.ready.json shape. The previous identity-only hook
     waved this through; F5 must block."""
-    sysco_marker = json.dumps(
+    pilot1_marker = json.dumps(
         {
             "marker": "discovery.d1.ready",
-            "runId": "SYSCO-OD-DISC-20260420-001",
+            "runId": "PILOT1-OD-DISC-20260420-001",
             "emittedAt": "2026-04-20T00:00:00Z",
             "emittedBy": "bsa-orchestrator",
             "canonPolicyVersion": "1.0.0",
@@ -561,35 +561,35 @@ def test_pre_write_f5_blocks_sysco_camelcase_marker() -> None:
     result = _run_pre_write_with_json(
         {
             "file_path": "analysis/discovery/runtime/ready/discovery.d1.ready.json",
-            "content": sysco_marker,
+            "content": pilot1_marker,
         }
     )
     assert result.returncode == 1, (
-        f"Sysco camelCase marker NOT blocked (F5 regression).\n"
+        f"Pilot-1 camelCase marker NOT blocked (F5 regression).\n"
         f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
     )
     assert "BLOCKED" in result.stderr
     assert "marker_id" in result.stderr
 
 
-def test_pre_write_f5_blocks_sysco_legacy_claim_type_in_a59() -> None:
+def test_pre_write_f5_blocks_pilot1_legacy_claim_type_in_a59() -> None:
     """Most-impactful F5 negative: A59 with legacy ClaimType strings is
     blocked at write time. This is the line that closes the engagement
     drift class mechanically."""
-    sysco_a59 = (
+    pilot1_a59 = (
         "ClaimID,SourceID,ExcerptID,ClaimType,Statement,JustificationRationale,"
         "A51Ref,ClaimStrength,Criticality,Notes\n"
-        'C-001,S-001,E-001,policy_statement,"Sysco SOP rule",,,"0.85",level-2,\n'
+        'C-001,S-001,E-001,policy_statement,"Pilot-1 SOP rule",,,"0.85",level-2,\n'
         'C-002,S-001,E-002,factual_state,"observed state",,,"0.85",level-2,\n'
     )
     result = _run_pre_write_with_json(
         {
             "file_path": "analysis/canonical/core_controls/A59_claim_register.csv",
-            "content": sysco_a59,
+            "content": pilot1_a59,
         }
     )
     assert result.returncode == 1, (
-        f"Sysco-class A59 NOT blocked.\nstderr={result.stderr}"
+        f"Pilot-1-class A59 NOT blocked.\nstderr={result.stderr}"
     )
     assert "BLOCKED" in result.stderr
     assert "ClaimType" in result.stderr or "policy_statement" in result.stderr
@@ -663,7 +663,7 @@ def test_pre_write_f5_edit_shape_passes_when_post_image_valid(tmp_path: Path) ->
 
 def test_pre_write_f5_edit_shape_blocks_when_post_image_invalid(tmp_path: Path) -> None:
     """Edit that mutates a canonical file into a schema-invalid post-image
-    MUST be blocked. This is the Sysco-class equivalent for Edits."""
+    MUST be blocked. This is the Pilot-1-class equivalent for Edits."""
     canonical = tmp_path / "analysis" / "canonical" / "core_controls"
     canonical.mkdir(parents=True)
     target = canonical / "A48_run_context_card.md"
@@ -744,7 +744,7 @@ def test_pre_write_f5_identity_failure_short_circuits() -> None:
     """If BSA_WRITER is wrong, the hook should block on identity BEFORE
     attempting content validation — the BLOCKED message names INV-02,
     not the schema violation."""
-    sysco_marker = json.dumps(
+    pilot1_marker = json.dumps(
         {
             "marker": "wrong",
             "emittedAt": "2026-04-20T00:00:00Z",
@@ -753,7 +753,7 @@ def test_pre_write_f5_identity_failure_short_circuits() -> None:
     result = _run_pre_write_with_json(
         {
             "file_path": "analysis/runtime/ready/stage1.ready.json",
-            "content": sysco_marker,
+            "content": pilot1_marker,
         },
         env={"BSA_WRITER": "evil-skill"},
     )

@@ -14,7 +14,7 @@ Five test groups:
 3. **Positive cases** — rows from all four golden fixtures must
    validate; representative hand-built rows for each IssueType +
    ResolutionStatus combination must validate.
-4. **Negative cases** — Sysco-style drift (e.g., bare numeric A51Ref
+4. **Negative cases** — Pilot-1-class drift (e.g., bare numeric A51Ref
    without category prefix is fine; but bare ``A51-MISS`` without
    numeric suffix or unknown IssueType must fail).
 5. **F6 reconciliation seed** — verify the schema enum supports the
@@ -202,10 +202,10 @@ def test_all_golden_fixture_rows_validate(
         },
         {
             # v1.0.4+1 polish: prefixed `discovery.dN` form must validate.
-            # Sysco engagement raised hard-block missing-source rows
+            # Pilot-1 engagement raised hard-block missing-source rows
             # against `discovery.d1` (see Phase-2.5 pilot blocker note in
             # docs/retros/sprint_5_v1_0_4_ux_pass.md). Pre-fix, the bare
-            # `d1` was the only legal form and Sysco's rows failed F5.
+            # `d1` was the only legal form and Pilot-1's rows failed F5.
             "A51Ref": "A51-MISS-001",
             "IssueType": "missing_source",
             "Severity": "high",
@@ -228,7 +228,7 @@ def test_all_golden_fixture_rows_validate(
             "ResolutionStatus": "open",
         },
         {
-            # v1.1.1 Sysco pilot blocker: IssueType=inventory_gap
+            # v1.1.1 Pilot-1 blocker: IssueType=inventory_gap
             # (broader than missing_source — targets a category/set
             # of expected items, not a single source).
             "A51Ref": "A51-INV-001",
@@ -242,7 +242,7 @@ def test_all_golden_fixture_rows_validate(
             "ResolutionStatus": "open",
         },
         {
-            # v1.1.1 Sysco pilot blocker: Severity=critical
+            # v1.1.1 Pilot-1 blocker: Severity=critical
             # (exceeds high — contract-binding SLA breach risk).
             "A51Ref": "A51-CONFL-099",
             "IssueType": "contradiction",
@@ -295,7 +295,7 @@ def test_representative_rows_validate(
 def test_schema_rejects_unknown_issue_type(
     a51_validator: "jsonschema.Draft202012Validator",
 ) -> None:
-    """Sysco-style drift would emit ad-hoc IssueType strings (e.g.,
+    """Pilot-1-class drift would emit ad-hoc IssueType strings (e.g.,
     'policy_violation'); schema must reject."""
     bad = {
         "A51Ref": "A51-001",
