@@ -38,8 +38,8 @@ Useful for verifying the plugin loads end-to-end without committing to the full 
 ### What happens under the hood (both install paths)
 
 1. Claude Code reads `.claude-plugin/plugin.json` to discover the plugin name (`bsa-full`) and skill/command/hook paths.
-2. All 23 skills under `./skills/` become available via their `SKILL.md` `name` field.
-3. All 6 slash commands under `./commands/` become available as `/bsa-start`, `/bsa-status`, `/bsa-stage`, `/bsa-promote`, `/bsa-audit`, `/bsa-handoff`.
+2. All 28 skills under `./skills/` become available via their `SKILL.md` `name` field (9 main-cycle workers + 5 discovery workers + 5 auditors + 5 Phase-3 workers + 2 sidecars + 1 orchestrator + 1 meta).
+3. All 6 slash commands under `./commands/` become available as `/bsa-start`, `/bsa-status`, `/bsa-stage`, `/bsa-promote`, `/bsa-audit`, `/bsa-handoff`, plus the Phase-3 composite `/bsa-dev-handoff`.
 4. The three hooks in `./hooks/hooks.json` (SessionStart, PreToolUse:Write, PreToolUse:Bash) register with the event dispatcher.
 
 Verify the install:
@@ -48,7 +48,7 @@ Verify the install:
 /plugin list
 ```
 
-Expected output includes `bsa-full@1.0.0` (or `@1.0.0-rcN` on an intermediate release candidate).
+Expected output includes `bsa-full@1.1.6` (the manifest version of the current v1.1.x line; tag may be ahead — e.g., v1.1.7 anonymization patch keeps the manifest at 1.1.6).
 
 ## First use — in a fresh project directory
 

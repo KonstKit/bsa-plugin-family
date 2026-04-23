@@ -2,7 +2,7 @@
 
 Quickstart for installing `bsa-full` into Claude Code and running the evidence-first BA/SA pipeline end-to-end on your own project.
 
-> **Who this is for:** a business or systems analyst (or team lead) who wants an auditable, anti-hallucination claim layer for a mid-size system-understanding or discovery engagement. 23 skills, six slash-commands, three safety hooks, three golden fixtures worth of regression coverage.
+> **Who this is for:** a business or systems analyst (or team lead) who wants an auditable, anti-hallucination claim layer for a mid-size system-understanding or discovery engagement. 28 skills, 6 slash-commands + 1 Phase-3 composite, 3 safety hooks, 8 golden fixtures (3 happy-path: `project_0001`/`0002`/`0003` + 5 adversarial: `prompt_injection`, `nfr_claim_contradiction`, `multi_way_contradiction`, `tier_delta_auto_resolution`, `block_on_contradiction` — last one is `spec_only`) worth of regression coverage. v1.1.x adds Phase-3 dev-handoff (NFRs / stories / test scenarios / traceability matrix / backlog export with optional live-API mode).
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ Quickstart for installing `bsa-full` into Claude Code and running the evidence-f
 ```
 /plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
 /plugin install bsa-full@bsa-marketplace
-/plugin list      # expect bsa-full@1.0.0
+/plugin list      # expect bsa-full@1.1.6
 ```
 
 Full install + uninstall + upgrade notes (including the session-only `claude --plugin-dir` path for quick smoke-tests): [../INSTALL.md](../INSTALL.md).
@@ -73,6 +73,40 @@ Auditors run as part of each stage's worker chain; `/bsa-audit <kind>` is only n
 `/bsa-promote` is two-key: it verifies evidence-binding (INV-01 on promoted positive claims) **and** checks for the required audit markers before it moves anything from proposals to canonical. Use `/bsa-promote --dry-run` first if you want to see what would happen.
 
 Each stage prints the artifacts it will write and what invariants must hold. The full command reference is in [commands_reference.md](commands_reference.md).
+
+## Phase 3 dev-handoff (post-Handoff, optional)
+
+Once `/bsa-handoff` has emitted H1-H4, the Phase-3 chain extends the engagement into dev-team-ready artifacts:
+
+```
+/bsa-dev-handoff                # composite: nfr-collector → story-writer →
+                                  test-scenario-builder → traceability-matrix →
+                                  backlog-bridge (jira / linear / generic / github)
+```
+
+Output lives at `analysis/handoff/`:
+
+| File | Purpose |
+|---|---|
+| `backlog_export_jira.json` | Jira REST v3 issue-create JSON (consumable by `gh-style` Jira API loop) |
+| `backlog_export_linear.csv` | Linear CSV import (Settings → Import) |
+| `backlog_export_generic.csv` | Generic spreadsheet shape |
+| `backlog_export_github.csv` | GitHub Projects v2 CSV (operator-side `gh` script consumes) |
+| `phase3_dev_handoff_report.md` | Counts + flagged stories + INVEST-deferred backlog |
+
+For real-time platform integration (POST directly to Jira / Linear / GitHub instead of static files), see `scripts/backlog_live_apply.py --help` (v1.1.6).
+
+## Migrating an older workspace
+
+If you have a workspace authored against v1.0.x schemas and want to bring it forward to v1.1.x:
+
+```
+scripts/migrate_v1.0_to_v1.1.py --workspace=path/to/analysis/ --all-mechanical
+scripts/migrate_v1.0_to_v1.1.py --workspace=path/to/analysis/ --all-mechanical --apply
+scripts/migrate_v1.0_to_v1.1.py --workspace=path/to/analysis/ --report all-reports
+```
+
+Full migration guide: [../migrations/v1.0_to_v1.1/README.md](../migrations/v1.0_to_v1.1/README.md).
 
 ## Modes
 

@@ -2,9 +2,13 @@
 
 ## Is this ready for production use?
 
-Phase 0-2 ships the MVP `bsa-full@1.0.0-rc2` on HEAD, with the final `@1.0.0` tag landing at Sprint 4.5 close (US-S45-03) — core pipeline end-to-end, three golden fixtures, CI regression, solo-maintainer-reviewed. It is **not** certified for regulated domains (fintech, healthcare, etc.) — those need the Phase 5 pack layer and Phase 8 certification framework.
+Current release: **`bsa-full@1.1.6` manifest** with `v1.1.8` git tag on top (v1.1.7 anonymization + v1.1.8 docs polish are operator-tooling-only patches that don't change the canon state). Phase 0-2 (MVP) closed at v1.0.0 (Sprint 4.5); Phase 3 (dev-handoff) closed at v1.1.0 (Sprint 9). The v1.1.x patch line through v1.1.8 added: cross-artifact validator at the F5 hook layer (v1.1.3), platform export polish (v1.1.4 — Jira customfields / Linear projects / GitHub Projects v2), three new adversarial fixtures (v1.1.5), live-API integration (v1.1.6 — Jira REST + Linear GraphQL + GitHub REST clients), pilot anonymization (v1.1.7), and docs polish (v1.1.8).
 
-Phase 2.5 external shakedown (2-4 weeks of real-project usage by non-self-owned analysts) is the gate before Phase 3 feature work begins. If you're trying the plugin on a small internal engagement, you're part of that shakedown — see CONTRIBUTING.md for how to file feedback.
+It is **not** certified for regulated domains (fintech, healthcare, etc.) — those need a future Phase-5 pack layer and Phase-8 certification framework.
+
+Phase 2.5 external shakedown framing (2-4 weeks of real-project usage) was the gate before Phase 3 feature work began (closed in v1.1.0). The v1.0.x → v1.1.x migration tool (`scripts/migrate_v1.0_to_v1.1.py`, v1.1.2) exists precisely to bring shakedown-era workspaces forward to the v1.1.x schema set. See [docs/pilot_validation.md](pilot_validation.md) for the active pilot status (Pilot-1 baseline + framework-level pilot validation invariants).
+
+If you're trying the plugin on a small internal engagement, see CONTRIBUTING.md for how to file feedback.
 
 ## Why "claims" instead of "facts"?
 
@@ -24,7 +28,7 @@ Five tiers on every A50 source:
 | T4 | 0.45 | recorded interview, signed questionnaire |
 | T5 | 0.20 | meeting summary, slack thread, hallway recollection |
 
-`A59.ClaimStrength = max_supporting_tier_weight × (1 - decay_factor)` (decay defaults to 0 in v1.0).
+`A59.ClaimStrength = max_supporting_tier_weight × (1 - decay_factor)` (decay defaults to 0 in the v1.x line).
 
 KPI-001 weighted coverage is the sum of ClaimStrength across direct claims divided by the direct-claim count. Target ≥ 0.75.
 
@@ -118,19 +122,30 @@ Git. Every promotion should land on a commit. `git revert <promotion-commit>` re
 
 If you didn't commit per-promotion, that's a process lesson for next time. The workspace is YOUR git repo; the plugin doesn't manage history for you.
 
-## What isn't in v1.0.0?
+## What's in v1.1.x and what's still deferred?
 
-Deferred to Phase 3+ (see Sprint plan):
+**Closed in v1.1.x (current line):**
+- Phase-3 dev-handoff (NFR collector, story writer, test-scenario builder, traceability matrix, backlog bridge with three initial export shapes — Jira REST v3 JSON, Linear CSV, generic CSV) — v1.1.0.
+- A51 enum extensions (`inventory_gap`, `cross_tier_contradiction`, `Severity=critical`) — v1.1.1.
+- Mechanical migration tool (`scripts/migrate_v1.0_to_v1.1.py`) — v1.1.2.
+- Cross-artifact validator at the F5 hook layer (A71 NFR-coverage + A72 FK/claim-source-consistency now executable, not just documentary) — v1.1.3.
+- Platform export polish: Jira `customfield_mapping`, Linear `Project`+`Cycle` columns, brand-new GitHub Projects v2 export schema — v1.1.4 (the GitHub Projects v2 export shape is a v1.1.4 addition; v1.1.0 only shipped Jira/Linear/generic).
+- Adversarial regression fixtures (multi-way contradiction, tier-delta auto-resolution, block-on-contradiction spec) — v1.1.5.
+- Live-API integration (POST directly to Jira / Linear / GitHub via `scripts/backlog_live_apply.py`) — v1.1.6.
+- Pilot anonymization across active surface — v1.1.7.
+- Documentation polish — v1.1.8.
 
-- Dev-handoff extension (FR/NFR collector, story writer, test-scenario builder, traceability matrix, backlog bridge).
+**Still deferred to Phase 5+ / future:**
 - Machine-readable Stage 6 (OpenAPI / AsyncAPI / proto generation).
 - Plugin decomposition (bsa-core / bsa-discovery / bsa-sidecars split).
 - Domain/stack packs (fintech, healthcare, regulated).
 - Reality-probe layer (freshness, triangulation, runtime invariants).
-- Self-improvement telemetry + evolution-miner.
+- Self-improvement telemetry + evolution-miner (Phase 7).
 - Marketplace + certification framework.
-- Multi-session / concurrency handling beyond the file-lock.
+- Multi-session / concurrency handling beyond the file-lock + per-platform live-API lock.
 - Full GDPR / retention / right-to-erasure controls.
+- Block-on-hard-A51 strict promote mode (`--strict-on-hard-a51`) — spec'd in `fixtures/golden/adversarial_block_on_contradiction_001/` (v1.1.5), implementation pending.
+- Operator-side import drivers (`scripts/{jira,linear,github}_import_from_export.sh`) — for operators who prefer shell over Python.
 
 ## Where do I file an issue?
 

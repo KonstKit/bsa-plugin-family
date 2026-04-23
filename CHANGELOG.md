@@ -4,6 +4,27 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.8] — 2026-04-23
+
+**Documentation polish (Section E).** Refreshes operator-facing docs that had drifted significantly during the v1.1.x feature line. README, getting_started, FAQ, CONTRIBUTING, and INSTALL all updated to reflect the current release shape.
+
+**Tag target**: this commit (the v1.1.8 docs polish).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged** from v1.1.6/v1.1.7. Documentation lives outside POLICY_GLOBS; canon hash unchanged. Manifest version stays at 1.1.6; v1.1.8 git tag marks the docs-polish release. Matches v1.0.x precedent.
+
+### Changed
+
+- **README.md** — refreshed Status section: v1.0.3 era description replaced with a per-release v1.1.0..v1.1.7 summary line; install snippet shows `bsa-full@1.1.6`; skill count + invariant count updated; new section on Phase-3 dev-handoff in the Architecture overview; repository-layout block updated; Documentation section adds links to `pilot_validation.md`, `migrations/v1.0_to_v1.1/README.md`, and the CHANGELOG.
+- **docs/getting_started.md** — version pin `@1.0.0` → `@1.1.6`; "23 skills" → "28 skills"; new "Phase 3 dev-handoff" section showing the `/bsa-dev-handoff` composite command and the four backlog export shapes; new "Migrating an older workspace" section pointing at the v1.0.x → v1.1.x migration tool.
+- **docs/faq.md** — "Is this ready for production use?" rewritten for v1.1.x reality (Phase-3 closed, v1.0.x → v1.1.x migration tool exists, Pilot-1 framing); old "What isn't in v1.0.0?" section split into "What's in v1.1.x" (closed: Phase-3, enum extensions, migration tool, cross-artifact validator, platform export polish, adversarial fixtures, live API, anonymization) + "Still deferred to Phase 5+ / future" (machine-readable Stage 6, plugin decomposition, packs, Phase-7 self-improvement, marketplace, multi-session concurrency, GDPR controls, strict-on-hard-A51 mode, operator-side import drivers).
+- **CONTRIBUTING.md** — pre-commit checklist test count `992 → 1412`; "Validation tooling" table replaced with the actual current state (12 validators, all available — was an aspirational table from Sprint 0); new "Release discipline" section explaining the two-semver-dimension pattern (manifest version vs git tag) with v1.0.x and v1.1.x examples; new "Codex review discipline" section formalizing the multi-round review pattern; new "Privacy + anonymization" section documenting the `Pilot-N` alias convention.
+- **INSTALL.md** — version pin `@1.0.0` → `@1.1.6` with explanation of the manifest-vs-tag divergence.
+
+### Result
+
+- All operator-touch docs now read as v1.1.x reality.
+- Zero behavior change; zero canon-state change.
+- 1412 tests still passing.
+
 ## [v1.1.7] — 2026-04-23
 
 **Pilot anonymization across the active surface.** The first external pilot engagement was previously referenced by its client name throughout the plugin's active surface — schemas, scripts, docs, tests, hooks. Even though the plugin is positioned as a universal Business/Systems Analysis framework, the client-name leak created a vendor-lock-in feel ("why is a specific company mentioned in our universal contract?") and broke the public-distribution use case. v1.1.7 scrubs all active-surface references to use the universal alias **`Pilot-1`**.
