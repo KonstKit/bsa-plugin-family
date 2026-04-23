@@ -88,7 +88,7 @@ Because F5 dispatches by path, the new schemas (A62 / A70 / A71 / A72) get write
 1. Their `governance/schemas/a62.schema.json` et al. exist.
 2. The `_DISPATCHER` table in `governance/schemas/write_validator.py` gains the new path patterns.
 
-No hook-level changes needed. This is the direct payoff of doing F5 before Phase 3 — every new Phase-3 artifact gets mechanical schema enforcement from day one, and the LLM-drift class that bit the Sysco engagement cannot recur for the new surfaces.
+No hook-level changes needed. This is the direct payoff of doing F5 before Phase 3 — every new Phase-3 artifact gets mechanical schema enforcement from day one, and the LLM-drift class that bit Pilot-1 cannot recur for the new surfaces.
 
 ## Risks
 
@@ -97,7 +97,7 @@ No hook-level changes needed. This is the direct payoff of doing F5 before Phase
 | Story-writer produces "stories" that are thinly-restated claims (no real decomposition) | INV-08 + story-specific no-new-claims auditor recognizes this; adversarial fixture in US-S9-04 pins the regression. |
 | NFR over-collection — picking up every adjective as an NFR | NFRCategory enum + Measurability rules; small-scope fixtures. |
 | Backlog-bridge brittleness across platforms | Generic-CSV path as fallback; JSON+Jira as primary; defer Linear/GitHub Projects to v1.2. |
-| Phase-3 output schema-drift (the Sysco-class problem) | Already mitigated by F5 — new schemas get enforcement on day one. |
+| Phase-3 output schema-drift (the Pilot-1-class problem) | Already mitigated by F5 — new schemas get enforcement on day one. |
 
 ## Release target
 

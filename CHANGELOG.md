@@ -4,6 +4,41 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.19] — 2026-04-23
+
+**Anonymization regression test (Sprint 1 / H4).** Pins the v1.1.7 anonymization contract mechanically. Prior to this release, the scrub was a one-time commit verified by ad-hoc grep; any future maintainer who copy-pasted a retro mention into an active-surface file would silently re-introduce the client name. v1.1.19 closes that gap with a pytest regression scan.
+
+**Tag target**: this commit. **Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. Regression test + the two scrubbed doc lines all outside POLICY_GLOBS; manifest stays at 1.1.6.
+
+### Added
+
+- **`tests/test_anonymization_regression.py`** (+5 tests) — pins:
+  * `test_no_forbidden_tokens_in_active_surface` — headline scan: walks the entire active surface (excluding `docs/retros/`, this test file itself, and tooling artifacts like `.pytest_cache`/`.git`/`node_modules`); fails with file:line for every leak. Uses word-boundary-anchored case-insensitive regex so `FORBIDDEN_TOKENS` additions are safe. Scans both file BODY and file PATH (filename-leak coverage from Codex round-1).
+  * `test_forbidden_tokens_list_is_non_empty` — defensive pin that silently-cleared `FORBIDDEN_TOKENS` doesn't disable the regression.
+  * `test_exempt_paths_match_documented_intent` — pins `docs/retros/` + this test file's exemption (the v1.1.7 contract surface).
+  * `test_filename_leak_detected` — regression pin: synthesises a tmp repo with a file whose NAME contains the forbidden token (body is clean); asserts the scanner fires with a FILENAME-leak diagnostic + does NOT false-positive on an adjacent clean file. Synthetic-fixture-only — the literal token is NOT spelled out in this CHANGELOG entry to avoid the regression test self-flagging the changelog.
+  * `test_pilot_1_alias_appears_in_active_surface` — defense-in-depth: if v1.1.7 got reverted (alias `Pilot-1` gone from the surface), this test fires independent of the forbidden-token scan.
+
+### Updated
+
+- **`docs/phase_3_plan.md`** — two leaked client-name mentions (lines 91 + 100 per v1.1.7 scrub catalogue) replaced with `Pilot-1`. The retros directory (`docs/retros/*.md`) remains intentionally untouched per the v1.1.7 "historical record" carve-out.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 1 HIGH + 2 MEDIUM + 1 LOW.
+  * **HIGH**: earlier impl scanned file BODIES only; a filename leak (token in path, not content) would pass. **Fixed**: added parallel filename / repo-relative path scan + `test_filename_leak_detected` regression.
+  * **MEDIUM**: CHANGELOG said "one scrubbed doc line"; reality is 2 (lines 91 + 100 in `docs/phase_3_plan.md`). **Fixed**: wording corrected to "two scrubbed doc lines".
+  * **MEDIUM**: CHANGELOG said scan walked "459 tracked files" but the walk is a filesystem walk (`os.walk`), not git-tracked. **Fixed**: wording corrected to "the active surface" (file-count omitted since it varies by working-tree state).
+  * **LOW**: line-by-line scan could miss a token split across two lines. **Round-1 fix attempt**: switched to full-body finditer + re.DOTALL — but Codex round-2 caught that this STILL doesn't catch `sy\nsco` because the regex literal has no `\n`. **Round-2 fix**: added a parallel scan against a whitespace-stripped form of the body (no word boundaries, since stripping glues words together). New test `test_cross_line_split_detected` synthesises a file with `sy\nsco` body, asserts the scanner fires.
+- **Round 2**: REJECT — HIGH/MEDIUM closed; LOW still OPEN per the round-1 attempt's incompleteness. **Fixed via stripped-body fallback** (see LOW notes above).
+- **Round 3**: APPROVE with non-blocking LOW (false-positive surface on benign phrases like `sys cobra` → strips to `syscobra` → matches). Documented as deliberate v1.1.19 tradeoff via `test_stripped_scan_avoids_false_positive_on_split_words` regression that PINS the false-positive behavior — flipping the assertion in a future release signals the fallback got upgraded.
+
+### Result
+
+- 1628 → 1635 tests passing (+7 anonymization regression tests).
+- Anonymization is now executable contract, not just a one-time commit. Any future accidental re-introduction of the scrubbed name into the active surface (body OR filename OR cross-line-split) fires at CI, not at first external distribution.
+- Active surface scan walked + reports zero violations.
+
 ## [v1.1.18] — 2026-04-23
 
 **Sidecar common config schema + registry batch (Sprint 1 / S1+S2).** Closes the two open follow-ups from `docs/sidecar_inventory.md`. Sets up the foundation for adding 3rd / 4th sidecars (DBML, sequence-diagram, etc.) without re-defining the anchor manifest contract per sidecar.
