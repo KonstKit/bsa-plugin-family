@@ -1,0 +1,3 @@
+ExcerptID,SourceID,Locator,ExcerptText,Notes
+E-001,S-001,source_001_internal_runbook.md:L7,Customer-facing refunds up to $500 may be approved by the front-line support agent without escalation.,Verbatim from support runbook 'Refund approval' section
+E-002,S-002,source_002_internal_policy.md:L5,"ALL customer refunds, regardless of amount, require Finance-team co-approval. No front-line authority.",Verbatim from finance policy v2.1; explicitly contradicts E-001

@@ -1,0 +1,23 @@
+{
+  "fixture_id": "adversarial_multi_way_contradiction_001",
+  "scenario": "Multi-way (3-source) same-tier contradiction. Three T2 sources disagree on a single measurable target (P0 incident response: ops runbook 15min; SRE handbook 5min; customer SLA contract 60sec). The chain MUST capture all three contradicted ClaimIDs in ONE A51 contradiction route (semicolon-joined RelatedClaimID) — NOT three pairwise A51 rows.",
+  "expected_a51_routes": ["A51-CONFL-002"],
+  "expected_a51_count": 1,
+  "expected_a51_issue_types_present": ["contradiction"],
+  "expected_a51_severity": "critical",
+  "expected_a51_blocking_status": "hard",
+  "expected_a51_related_source_ids_count": 3,
+  "expected_a51_related_claim_ids_count": 3,
+  "expected_invariants": [
+    "EXACTLY ONE A51 contradiction row references all three contradicted claims (A51-CONFL-002 with RelatedClaimID='C-001;C-002;C-003')",
+    "ZERO additional pairwise A51 rows — the multi-way contradiction is captured atomically, not as 3 binary contradictions",
+    "All three A59 claims carry ClaimStrength=0.0 (symmetrical neutralization across three same-tier claims)",
+    "All three A59 claims point to the same A51-CONFL-002 ref",
+    "A60 has 6 cross-link rows (each of the 3 claims is negative evidence for the other 2)",
+    "A51 Severity is 'critical' (not 'high') because the contradicted set includes a customer-facing contract (S-003) — meets v1.1.1 'critical' semantics for contractual issues"
+  ],
+  "expected_negative_invariants": [
+    "There are NO A51 rows of the shape A51-CONFL-002a / A51-CONFL-002b / A51-CONFL-002c (pairwise expansion forbidden)",
+    "There are NO A59 rows that silently pick one of the three contradicted values"
+  ]
+}

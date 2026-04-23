@@ -1,0 +1,9 @@
+{
+  "marker_id": "stage1.excerpts.merged",
+  "stage": "stage1",
+  "verdict": "MERGED",
+  "timestamp": "2026-04-23T07:30:00Z",
+  "canon_policy_version": "1.1.4+hash:eefb7204",
+  "canon_policy_version_hash": "eefb7204",
+  "notes": "Stage 1 intake captured 2 evidence excerpts (E-001, E-002) from 2 sources at distant tiers (T1 signed engineering spec; T4 marketing blog). Tier-delta = 3 ≥ 2 threshold per reliability_tier_spec.md → auto-resolution by tier hierarchy. C-001 wins; C-002 marked superseded with audit trail in A60 N-001. NO A51 raised — auto-resolution by design. MERGED verdict means the auto-resolved state is consistent with the canonical A50/A58/A59/A60 + empty A51."
+}

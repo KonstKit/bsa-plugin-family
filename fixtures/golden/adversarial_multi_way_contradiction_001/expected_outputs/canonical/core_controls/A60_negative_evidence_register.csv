@@ -1,0 +1,7 @@
+NegEvID,SourceID,ExcerptRef,RelatedClaimID,NegativeFinding,A51Ref,Notes
+N-001,S-002,E-002,C-001,SRE handbook explicitly states 5 minutes — directly contradicts the ops runbook's 15-minute window.,A51-CONFL-002,Cross-link from C-002 to C-001 (multi-way contradiction set)
+N-002,S-003,E-003,C-001,Customer SLA contract states 60 seconds — directly contradicts the ops runbook's 15-minute window.,A51-CONFL-002,Cross-link from C-003 to C-001
+N-003,S-001,E-001,C-002,Ops runbook states 15 minutes — directly contradicts the SRE handbook's 5-minute window.,A51-CONFL-002,Cross-link from C-001 to C-002
+N-004,S-003,E-003,C-002,Customer SLA contract states 60 seconds — directly contradicts the SRE handbook's 5-minute window.,A51-CONFL-002,Cross-link from C-003 to C-002
+N-005,S-001,E-001,C-003,Ops runbook states 15 minutes — directly contradicts the customer SLA contract's 60-second acknowledgement target.,A51-CONFL-002,Cross-link from C-001 to C-003
+N-006,S-002,E-002,C-003,SRE handbook states 5 minutes — directly contradicts the customer SLA contract's 60-second acknowledgement target.,A51-CONFL-002,Cross-link from C-002 to C-003

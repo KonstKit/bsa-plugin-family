@@ -1,0 +1,2 @@
+A51Ref,IssueType,Severity,BlockingStatus,RaisedByStage,RelatedSourceID,RelatedClaimID,NextAction,ResolutionStatus
+A51-CONFL-003,contradiction,critical,hard,stage1,S-001;S-002,C-001;C-002,Resolve customer-refund authority: support runbook (S-001) says front-line up to $500; finance policy v2.1 (S-002) says all refunds require Finance co-approval. Stakeholder validation required (Support lead + Finance lead). HARD-blocking: under --strict-on-hard-a51 the orchestrator MUST refuse /bsa-promote until this is resolved or waivered in H4.,open

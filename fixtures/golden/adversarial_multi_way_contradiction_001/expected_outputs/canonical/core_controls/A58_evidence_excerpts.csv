@@ -1,0 +1,4 @@
+ExcerptID,SourceID,Locator,ExcerptText,Notes
+E-001,S-001,source_001_ops_runbook.md:L7,P0 incident response begins within 15 minutes of page acknowledgement.,Verbatim from ops runbook 'Initial response window' section
+E-002,S-002,source_002_sre_handbook.md:L5,P0 incident response begins within 5 minutes of page acknowledgement.,Verbatim from SRE handbook 'P0 response' section; explicitly contradicts E-001's 15-min window
+E-003,S-003,source_003_customer_sla_contract.md:L7,"the Service Provider agrees to acknowledge the incident within sixty (60) seconds of the customer's notification",Verbatim from customer SLA contract Section 4.1; contradicts both E-001 (15 min) and E-002 (5 min)

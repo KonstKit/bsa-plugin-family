@@ -4,6 +4,26 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.5] — 2026-04-23
+
+**Adversarial fixtures (B3).** Closes the three v1.2-candidate adversarial-fixture TODOs from the v1.1.0 carried-forward list — block-on-contradiction failure mode, multi-way contradictions, and tier-delta auto-resolution case. All three ship as fixture-data + integration tests; the block-on-contradiction fixture is **spec-only** (documents an unimplemented opt-in failure mode the v1.2 implementation will use as its regression baseline).
+
+**Tag target**: this commit (the v1.1.5 adversarial-fixture batch).
+**Canon policy version**: `1.1.4+hash:eefb7204` — **unchanged** from v1.1.4 (fixtures are not in POLICY_GLOBS; v1.1.5 is regression-baseline-only). Manifest version stays at 1.1.4 (matching v1.0.x patch-line precedent where v1.0.0 → v1.0.4 all kept manifest at 1.0.0; the v1.1.5 git tag marks the operator-facing fixture release, not a canon-state change).
+
+### Added
+
+- **`fixtures/golden/adversarial_multi_way_contradiction_001/`** — 3-source same-tier contradiction (P0 incident response: ops runbook 15min vs SRE handbook 5min vs customer SLA contract 60sec). Pins the contract that N-way contradictions are captured as ONE atomic A51 row (semicolon-joined `RelatedSourceID`/`RelatedClaimID`), NOT as N(N-1)/2 pairwise rows. Severity=critical because customer-contract is in the contradicted set. Full canonical state (A50/A58/A59/A60 with N×(N-1)=6 cross-link rows/A51) + `stage1.excerpts.merged` marker.
+- **`fixtures/golden/adversarial_tier_delta_auto_resolution_001/`** — cross-tier (T1 vs T4 = delta 3) auto-resolution. T1 signed engineering spec (200ms target) wins over T4 marketing blog (under 1 sec). Pins the contract: higher-tier wins silently, lower-tier marked superseded via A59.Notes (`SupersededBy=C-001`), audit trail in A60, **NO A51 raised** (auto-resolution is the contract per `reliability_tier_spec.md` §By tier delta). Empty A51 register (header-only) explicitly tested.
+- **`fixtures/golden/adversarial_block_on_contradiction_001/`** — spec-as-fixture for the proposed `--strict-on-hard-a51` opt-in failure mode (NOT implemented in v1.1.5 — v1.2 candidate). Documents the BLOCKED message shape so when the implementation lands, this fixture is the regression baseline. `fixture_metadata.json.spec_only = true` flags the fixture as documenting an unimplemented contract.
+- **`tests/test_adversarial_b3_fixtures.py`** (+30 tests across 3 test classes) — covers the headline behavior unique to each fixture (atomic vs pairwise A51 cardinality; auto-resolution audit trail + no-A51 invariant; spec-only flag + mocked strict-mode pre-flight) plus cross-fixture invariants (required artifacts, A59/A51 schema validation, fixture_runner-required metadata fields).
+
+### Carried forward (deferred to v1.2 / Section C)
+
+- `--strict-on-hard-a51` opt-in failure mode in `/bsa-promote` orchestrator step + hook integration. Fixture `adversarial_block_on_contradiction_001` is the regression baseline waiting on this implementation.
+- `SupersededBy` typed column in A59 schema (today encoded in Notes free-text). v1.2 candidate.
+- Operator override of tier-delta auto-resolution via explicit A51 cross_tier_contradiction route. Documented in fixture README; no schema change needed.
+
 ## [v1.1.4] — 2026-04-23
 
 **Platform export polish (B2).** Closes the three remaining v1.2-candidate TODOs from the v1.1.0 carried-forward list — `[TODO-S9-01-JIRA-CUSTOMFIELDS]`, `[TODO-S9-02-LINEAR-PROJECTS]`, `[TODO-S9-03-GITHUB-PROJECTS]` — by extending the existing Jira + Linear export schemas and adding a brand-new GitHub Projects v2 export schema. All three additions are backward-compatible (new fields/columns are optional or default to empty so pre-v1.1.4 exports still validate after operators add the new columns).

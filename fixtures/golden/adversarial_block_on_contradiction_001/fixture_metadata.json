@@ -1,0 +1,27 @@
+{
+  "fixture_id": "adversarial_block_on_contradiction_001",
+  "schema_version": 1,
+  "captured_at": "2026-04-23T07:30:00Z",
+  "fixture_kind": "adversarial",
+  "authoring_mode": "synthetic_adversarial",
+  "spec_only": true,
+  "_authoring_mode_comment": "Hand-authored spec-as-fixture for v1.1.5 (B3). The orchestrator does NOT yet honor --strict-on-hard-a51; this fixture documents the proposed contract for the v1.2-candidate implementation. The integration test asserts (a) the canonical state is schema-conforming today, AND (b) the proposed strict-mode pre-flight pseudo-code (mocked) produces the expected BLOCKED message shape.",
+  "canon_policy_version": "1.1.4+hash:eefb7204",
+  "plugin_version": "1.1.4",
+  "model_used": "n/a (synthetic fixture)",
+  "model_version_hash": "n/a (synthetic fixture)",
+  "_model_fields_comment": "model_used / model_version_hash will remain n/a — this fixture's whole point is to be a deterministic regression baseline for an opt-in failure-mode contract.",
+  "scenario_tags": ["adversarial", "spec-only", "strict-mode", "hard-blocker", "future-implementation"],
+  "covers": [
+    "spec for the proposed --strict-on-hard-a51 opt-in failure mode",
+    "canonical state with exactly one hard-blocking unresolved contradiction A51 row",
+    "expected BLOCKED message shape (stderr keywords + exit code)"
+  ],
+  "does_not_cover": [
+    "Live orchestrator behavior — the strict-mode flag does not exist today (v1.2 candidate)",
+    "Soft / informational A51 rows — those NEVER block, even in strict mode (out of scope for this fixture)",
+    "Multi-blocker BLOCKED-message format — pinned in README but not exhaustively covered"
+  ],
+  "future_implementation_notes": "When --strict-on-hard-a51 lands (v1.2), expand the test from mocked-pre-flight to direct /bsa-promote invocation. The hook script would set BSA_STRICT_ON_HARD_A51=1 from the CLI flag, and the orchestrator's promote step would read it before acquiring the canonical write lock.",
+  "regression_test": "tests/test_adversarial_b3_fixtures.py::TestBlockOnContradictionSpec"
+}

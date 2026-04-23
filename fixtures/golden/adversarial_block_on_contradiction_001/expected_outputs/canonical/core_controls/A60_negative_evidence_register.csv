@@ -1,0 +1,3 @@
+NegEvID,SourceID,ExcerptRef,RelatedClaimID,NegativeFinding,A51Ref,Notes
+N-001,S-002,E-002,C-001,Finance policy v2.1 explicitly contradicts the support runbook's $500 unilateral-approval authority — all refunds require Finance co-approval.,A51-CONFL-003,Cross-link from C-002 (finance policy) to C-001 (support runbook)
+N-002,S-001,E-001,C-002,Support runbook explicitly contradicts the finance policy's all-refunds-require-Finance rule — front-line agents have $500 unilateral authority.,A51-CONFL-003,Cross-link from C-001 (support runbook) to C-002 (finance policy)

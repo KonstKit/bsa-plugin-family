@@ -1,0 +1,26 @@
+{
+  "fixture_id": "adversarial_tier_delta_auto_resolution_001",
+  "schema_version": 1,
+  "captured_at": "2026-04-23T07:30:00Z",
+  "fixture_kind": "adversarial",
+  "authoring_mode": "synthetic_adversarial",
+  "_authoring_mode_comment": "Hand-authored adversarial fixture for v1.1.5 (B3). Demonstrates the tier-delta ≥ 2 auto-resolution contract: higher-tier wins silently, lower-tier marked superseded, audit trail preserved in A60, NO A51 raised.",
+  "canon_policy_version": "1.1.4+hash:eefb7204",
+  "plugin_version": "1.1.4",
+  "model_used": "n/a (synthetic fixture)",
+  "model_version_hash": "n/a (synthetic fixture)",
+  "_model_fields_comment": "model_used / model_version_hash will remain n/a — this fixture's whole point is to be a deterministic regression baseline, not a model-driven sample.",
+  "scenario_tags": ["adversarial", "tier-delta", "auto-resolution", "supersededby", "audit-trail"],
+  "covers": [
+    "tier-delta ≥ 2 auto-resolution (T1 vs T4)",
+    "audit trail preservation (lower-tier source + claim retained)",
+    "absence of A51 (auto-resolution by design)",
+    "SupersededBy convention via A59 Notes (until promoted to typed column)"
+  ],
+  "does_not_cover": [
+    "tier-delta ≤ 1 (same-tier or 1-tier-apart) — covered by adversarial_nfr_claim_contradiction_001 + tier-conflict scenario tests",
+    "Operator override of auto-resolution via A51 cross_tier_contradiction — documentary in README",
+    "Phase-3 propagation — auto-resolved cases propagate normally; covered by project_0001"
+  ],
+  "regression_test": "tests/test_adversarial_b3_fixtures.py::TestTierDeltaAutoResolution"
+}

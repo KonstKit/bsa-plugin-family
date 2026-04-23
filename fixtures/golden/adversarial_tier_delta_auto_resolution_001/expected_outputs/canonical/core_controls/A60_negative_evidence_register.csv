@@ -1,0 +1,2 @@
+NegEvID,SourceID,ExcerptRef,RelatedClaimID,NegativeFinding,A51Ref,Notes
+N-001,S-002,E-002,C-002,"Marketing-blog claim 'under 1 second' was auto-superseded by C-001 (T1 signed engineering spec; 200 ms target) per reliability_tier_spec.md §By tier delta (T1 vs T4 = delta 3, ≥ 2 threshold).",,Override audit trail. NO A51 cross-link because auto-resolution is the contract. Operator can later raise an A51 cross_tier_contradiction if they disagree with the auto-pick.

@@ -1,0 +1,30 @@
+{
+  "fixture_id": "adversarial_block_on_contradiction_001",
+  "scenario": "Spec-as-fixture for an opt-in failure mode the chain does not yet implement: under --strict-on-hard-a51, /bsa-promote MUST refuse to land canonical when any A51 row with BlockingStatus=hard + ResolutionStatus=open exists without an H4 waiver. The fixture's canonical state has exactly one such row (A51-CONFL-003) so the proposed strict-mode pre-flight check would fire.",
+  "spec_only": true,
+  "expected_a51_count": 1,
+  "expected_a51_routes": ["A51-CONFL-003"],
+  "expected_a51_issue_types_present": ["contradiction"],
+  "expected_a51_severity": "critical",
+  "expected_a51_blocking_status": "hard",
+  "expected_a51_resolution_status": "open",
+  "expected_strict_mode_verdict": {
+    "exit_code": 1,
+    "blocked_a51_refs": ["A51-CONFL-003"],
+    "stderr_message_keywords": ["BLOCKED", "A51-CONFL-003", "BlockingStatus=hard", "ResolutionStatus=open"]
+  },
+  "expected_default_mode_verdict": {
+    "exit_code": 0,
+    "_comment": "Default permissive mode (no --strict-on-hard-a51) accepts hard-blocking A51s as long as evidence-binding + audit markers pass. The contract is 'surface as A51', not 'block on contradictions'."
+  },
+  "expected_invariants": [
+    "EXACTLY ONE A51 row with BlockingStatus=hard + ResolutionStatus=open exists",
+    "Both contradicted A59 claims point at the same A51 ref (A51-CONFL-003)",
+    "No H4 waiver for A51-CONFL-003 (handoff is not even emitted in this fixture; the spec scenario is pre-handoff promote)",
+    "ClaimStrength=0.0 on both contradicted claims (same-tier neutralization)"
+  ],
+  "expected_negative_invariants": [
+    "There is NO orchestrator code today that honors --strict-on-hard-a51 — the fixture's expected_strict_mode_verdict is the spec for the v1.2-candidate implementation, not the current behavior.",
+    "Default-mode promote on this fixture would PASS the F5/identity hooks (contradicted claims are correctly captured); the BLOCK is opt-in only."
+  ]
+}

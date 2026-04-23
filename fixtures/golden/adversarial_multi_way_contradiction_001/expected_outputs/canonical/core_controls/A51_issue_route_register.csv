@@ -1,0 +1,2 @@
+A51Ref,IssueType,Severity,BlockingStatus,RaisedByStage,RelatedSourceID,RelatedClaimID,NextAction,ResolutionStatus
+A51-CONFL-002,contradiction,critical,hard,stage1,S-001;S-002;S-003,C-001;C-002;C-003,Resolve P0 incident response window: ops runbook (S-001) says 15 minutes; SRE handbook (S-002) says 5 minutes; customer SLA contract (S-003) says 60 seconds. Stakeholder validation required (steering / SRE lead / sales-ops). Customer-contract binding (S-003) drives Severity=critical — breach has direct contractual exposure.,open

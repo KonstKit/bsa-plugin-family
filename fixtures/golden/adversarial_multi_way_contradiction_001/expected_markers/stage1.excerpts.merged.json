@@ -1,0 +1,9 @@
+{
+  "marker_id": "stage1.excerpts.merged",
+  "stage": "stage1",
+  "verdict": "MERGED",
+  "timestamp": "2026-04-23T07:30:00Z",
+  "canon_policy_version": "1.1.4+hash:eefb7204",
+  "canon_policy_version_hash": "eefb7204",
+  "notes": "Stage 1 intake captured 3 evidence excerpts (E-001, E-002, E-003) from 3 same-tier T2 sources contradicting on the P0 incident response window. bsa-claim-binder routed all three claims to ONE atomic A51 row (A51-CONFL-002) with semicolon-joined RelatedSourceID/RelatedClaimID — multi-way contradiction captured atomically, not as 3 pairwise rows. MERGED verdict means the excerpt set is consistent with the canonical A58/A59/A60 state."
+}

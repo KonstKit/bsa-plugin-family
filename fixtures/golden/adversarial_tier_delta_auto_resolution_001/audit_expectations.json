@@ -1,0 +1,19 @@
+{
+  "fixture_id": "adversarial_tier_delta_auto_resolution_001",
+  "scenario": "Cross-tier auto-resolution. T1 signed engineering spec ('200 ms') vs T4 marketing blog ('under 1 second'). Tier-delta = 3 ≥ 2 threshold. Per reliability_tier_spec.md §By tier delta, the higher-tier source wins automatically; the lower-tier source is marked superseded; NO A51 contradiction is raised.",
+  "expected_a51_count": 0,
+  "expected_a51_routes": [],
+  "expected_invariants": [
+    "A59[C-001].ClaimStrength reflects T1 tier weight without contradiction-neutralization (tier-delta auto-resolved; ≈ 0.95)",
+    "A59[C-002].ClaimStrength is 0.0 (superseded by C-001)",
+    "A59[C-002].Notes references SupersededBy=C-001 in plain text (until SupersededBy is promoted to a typed column in v1.2+)",
+    "A60 has exactly ONE row recording the auto-supersede audit trail (C-002 superseded by C-001)",
+    "A51 issue-route register is empty (header-only) — auto-resolution does NOT raise an A51",
+    "Both A50 sources remain in the register (lower-tier source is NOT discarded — audit trail preservation)"
+  ],
+  "expected_negative_invariants": [
+    "There is NO A51 row with IssueType=contradiction or IssueType=cross_tier_contradiction for this auto-resolved pair",
+    "The lower-tier source S-002 is NOT removed from A50",
+    "The lower-tier claim C-002 is NOT removed from A59 (only marked superseded with ClaimStrength=0.0)"
+  ]
+}

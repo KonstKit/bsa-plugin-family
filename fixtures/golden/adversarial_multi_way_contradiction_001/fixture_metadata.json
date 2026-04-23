@@ -1,0 +1,26 @@
+{
+  "fixture_id": "adversarial_multi_way_contradiction_001",
+  "schema_version": 1,
+  "captured_at": "2026-04-23T07:30:00Z",
+  "fixture_kind": "adversarial",
+  "authoring_mode": "synthetic_adversarial",
+  "_authoring_mode_comment": "Hand-authored adversarial fixture for v1.1.5 (B3). Demonstrates the multi-way (3-source) contradiction capture contract: ONE atomic A51 row, not pairwise expansion. Synthesized inputs (no real company / person identifiers).",
+  "canon_policy_version": "1.1.4+hash:eefb7204",
+  "plugin_version": "1.1.4",
+  "model_used": "n/a (synthetic fixture)",
+  "model_version_hash": "n/a (synthetic fixture)",
+  "_model_fields_comment": "model_used / model_version_hash will remain n/a — this fixture's whole point is to be a deterministic regression baseline, not a model-driven sample.",
+  "scenario_tags": ["adversarial", "multi-way-contradiction", "atomic-a51", "same-tier", "severity-critical"],
+  "covers": [
+    "multi-way contradiction (N=3) at same tier",
+    "atomic A51 capture (semicolon-joined Related* cells)",
+    "Severity=critical when customer-contract is among contradicted sources",
+    "A60 cross-link cardinality N×(N-1) for N-way contradictions"
+  ],
+  "does_not_cover": [
+    "Phase-3 propagation (A62/A70/A71/A72) — covered by adversarial_nfr_claim_contradiction_001",
+    "Cross-tier auto-resolution — covered by adversarial_tier_delta_auto_resolution_001",
+    "Block-on-contradiction failure mode — covered by adversarial_block_on_contradiction_001"
+  ],
+  "regression_test": "tests/test_adversarial_b3_fixtures.py::TestMultiWayContradiction"
+}

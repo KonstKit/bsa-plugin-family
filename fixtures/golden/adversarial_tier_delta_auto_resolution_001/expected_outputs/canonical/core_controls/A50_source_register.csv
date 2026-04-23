@@ -1,0 +1,3 @@
+SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,Priority,Language,DateOrVersion,Notes
+S-001,policy_document,API Latency Spec (Signed Engineering Spec),Engineering Director,readable,T1,high,en,v3.2 / 2026-04-01,Authored-primary signed engineering spec; version-controlled. T1 — primary recording / source-of-truth.
+S-002,blog_post,Why our API is so fast,Marketing,readable,T4,low,en,2026-04-15,"Secondary marketing paraphrase; no measurement methodology cited. T4. Tier-delta vs S-001 = 3 (T1 vs T4) — well above the auto-resolution threshold of ≥ 2 (per reliability_tier_spec.md §By tier delta). Higher-tier S-001 wins automatically; this row remains in A50 so the audit trail of 'we considered the marketing claim and overrode it via tier hierarchy' is preserved."

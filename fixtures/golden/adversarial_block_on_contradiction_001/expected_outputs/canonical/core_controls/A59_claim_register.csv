@@ -1,0 +1,3 @@
+ClaimID,SourceID,ExcerptID,ClaimType,Statement,JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes
+C-001,S-001,E-001,direct,Front-line support agents have unilateral approval authority for customer refunds up to $500.,,A51-CONFL-003,0.0,level-1,"Direct from support runbook (T2); contradicted by C-002 (T2 finance policy). Same-tier neutralization → ClaimStrength=0.0."
+C-002,S-002,E-002,direct,All customer refunds require Finance-team co-approval; no front-line authority.,,A51-CONFL-003,0.0,level-1,"Direct from finance policy v2.1 (T2); contradicts C-001."

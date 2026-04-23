@@ -1,0 +1,9 @@
+{
+  "marker_id": "stage1.excerpts.merged",
+  "stage": "stage1",
+  "verdict": "MERGED",
+  "timestamp": "2026-04-23T07:30:00Z",
+  "canon_policy_version": "1.1.4+hash:eefb7204",
+  "canon_policy_version_hash": "eefb7204",
+  "notes": "Stage 1 intake captured 2 evidence excerpts (E-001, E-002) from 2 same-tier T2 sources contradicting on customer-refund authority (support runbook says front-line $500 unilateral; finance policy v2.1 says all refunds require Finance co-approval). One A51 row raised (A51-CONFL-003) with BlockingStatus=hard + ResolutionStatus=open. Default-mode promote PASSES this state (the contract is 'surface as A51', not 'block on contradictions'). The proposed --strict-on-hard-a51 opt-in mode (v1.2 candidate, NOT implemented today) WOULD refuse promote until A51-CONFL-003 is resolved or waivered in H4."
+}
