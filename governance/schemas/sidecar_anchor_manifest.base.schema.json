@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kkitanin/bsa-plugin-family/schemas/sidecar_anchor_manifest.base.schema.json",
+  "title": "Sidecar anchor manifest — common base shape",
+  "description": "Shared base schema for sidecar anchor manifests (v1.1.18, S1). Defines the 5 required top-level fields every sidecar's anchor_manifest.json MUST carry: manifest_version, generated_at, sidecar, canon_policy_version, view_files. Per-sidecar schemas (skills/<sidecar>/references/anchor_manifest.schema.json) extend this base with sidecar-specific discriminators (diagram_type / bpmn_profile / etc.) + their per-view-file shape. Future 3rd / 4th sidecars (DBML, sequence-diagram, etc.) MUST conform to this base — operators registering a new sidecar in config/sidecar_registry.yaml gain free conformance to the BSA orchestrator's anchor-binding contract.\n\nThis base schema is NOT directly referenced by F5 (the per-sidecar schemas under skills/<sidecar>/references/ remain the F5-validated artifacts since they're more specific). It IS pinned by tests/test_sidecar_registry.py + scripts/sidecar_registry_lint.py to catch the case where a per-sidecar schema accidentally drops a base requirement.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "manifest_version",
+    "generated_at",
+    "sidecar",
+    "canon_policy_version",
+    "view_files"
+  ],
+  "properties": {
+    "manifest_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Manifest schema version. v1.0 today; bump on breaking shape changes."
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when this manifest was emitted."
+    },
+    "sidecar": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]+[a-z0-9]$",
+      "description": "Sidecar name (matches the skill directory under skills/). Per-sidecar schemas pin this to a const value."
+    },
+    "sidecar_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "description": "Optional sidecar release version (semver). Recorded for downstream provenance."
+    },
+    "canon_policy_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:\\+hash:[a-f0-9]{6,64})?$|^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
+      "description": "BSA canon policy version at the time of emission. Lets the orchestrator detect canon drift between emission + consumption."
+    },
+    "view_files": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One element per emitted view file. Per-sidecar schemas constrain the per-element shape (path extension + discriminator field + anchor_map shape). Base schema only requires that view_files is a non-empty array.",
+      "items": {
+        "type": "object",
+        "required": ["path", "anchor_map"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Workspace-relative path to the emitted view file (e.g., analysis/views/c4/system_context.puml)."
+          },
+          "anchor_map": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One entry per view-element-to-A61-anchor binding. Per-sidecar schemas constrain the entry shape."
+          }
+        }
+      }
+    }
+  }
+}

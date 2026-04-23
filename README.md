@@ -83,7 +83,7 @@ docs/                   User + maintainer documentation
 - [docs/architecture_overview.md](docs/architecture_overview.md) — skill families + invariants + governance.
 - [docs/pilot_validation.md](docs/pilot_validation.md) — Pilot-1 status + framework-level pilot validation invariants.
 - [docs/pilot_2nd_pass_runbook.md](docs/pilot_2nd_pass_runbook.md) — operator runbook for the 2nd Pilot-1 doctor pass (manual-review decision trees + pre/post diff workflow). v1.1.15.
-- [docs/sidecar_inventory.md](docs/sidecar_inventory.md) — c4-plantuml + camunda-bpmn sidecar inventory + F5-boundary contract.
+- [docs/sidecar_inventory.md](docs/sidecar_inventory.md) — c4-plantuml + camunda-bpmn sidecar inventory + F5-boundary contract. v1.1.18 added [`config/sidecar_registry.yaml`](config/sidecar_registry.yaml) machine-readable registry + [`governance/schemas/sidecar_anchor_manifest.base.schema.json`](governance/schemas/sidecar_anchor_manifest.base.schema.json) common base.
 - [docs/perf_baseline.md](docs/perf_baseline.md) — hot-path latency baseline + regression policy (run `python3 scripts/perf_bench.py --check` to verify).
 - [docs/phase_7_design.md](docs/phase_7_design.md) — Phase 7 self-improvement loop foundation (tunable inventory + IMMUTABLE_CONFLICT lint + safety contract). v1.1.14.
 - [docs/strict_a51_mode.md](docs/strict_a51_mode.md) — `/bsa-promote --strict-on-hard-a51` opt-in failure-mode contract (block-on-hard-A51). v1.1.16.

@@ -209,3 +209,26 @@ jobs:
           #   - C6 L1 inside POLICY_GLOBS (would silently bump canon hash)
           # See docs/phase_7_design.md for the full 8-check contract.
           python3 scripts/phase_7_lint.py
+
+  sidecar-registry-lint:
+    name: sidecar_registry_lint (registry ↔ skill dirs + base schema conformance)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install yaml dependency
+        run: pip install pyyaml
+      - name: Validate config/sidecar_registry.yaml
+        run: |
+          # v1.1.18 (S2). Catches drift between config/sidecar_registry.yaml
+          # and reality. Hard-fails on:
+          #   - C1 missing skill directory
+          #   - C3 anchor schema doesn't conform to base shape
+          #   - C4 f5_path_prefix contains a POLICY_GLOBS entry
+          #     (sidecar paths must stay non-canonical)
+          # See config/sidecar_registry.yaml header for the full 7-check
+          # contract.
+          python3 scripts/sidecar_registry_lint.py

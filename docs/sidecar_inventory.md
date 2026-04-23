@@ -103,7 +103,7 @@ The orchestrator emits `analysis/views/<sidecar>/anchor_manifest.json` automatic
 
 These are out of scope for v1.1.x but tracked here for future planning:
 
-- **Common SidecarConfig schema** — both sidecars have their own `references/integration-contract.md`. A shared schema for anchor-manifest shape would let a future third sidecar (e.g., DBML / dbdiagram, or sequence-diagram) inherit the contract without re-defining it.
-- **Sidecar registry** in `config/` — per-sidecar metadata (output format, optional deps, F5 path prefix) for operator discovery.
+- ~~**Common SidecarConfig schema**~~ — **CLOSED in v1.1.18 (S1)**. Shared base schema lives at `governance/schemas/sidecar_anchor_manifest.base.schema.json`; per-sidecar schemas extend it (verified by `scripts/sidecar_registry_lint.py` C3 check).
+- ~~**Sidecar registry** in `config/`~~ — **CLOSED in v1.1.18 (S2)**. `config/sidecar_registry.yaml` lists per-sidecar metadata (name, output format, F5 path prefix, integration contract path, anchor schema path, optional deps, status, added_in version, summary). Lint at `scripts/sidecar_registry_lint.py` enforces 7 checks.
 - **End-to-end test fixture** that exercises an orchestrated sidecar invocation against a `project_NNNN/` happy-path fixture. Today the sidecars are tested in isolation; a full-pipeline-with-sidecar test would catch orchestrator integration drift.
 - **DBML / sequence-diagram sidecars** — third / fourth sidecars to round out the diagram coverage.

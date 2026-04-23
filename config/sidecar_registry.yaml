@@ -1,0 +1,73 @@
+# Sidecar registry (v1.1.18, S2). Operator-discoverable inventory of
+# diagram sidecars shipped with the BSA plugin family.
+#
+# Purpose: a single machine-readable file listing all sidecars + their
+# metadata so:
+#   * Operators can `cat config/sidecar_registry.yaml` to see what's
+#     available without grepping skills/.
+#   * Future tooling (e.g., the orchestrator's sidecar dispatcher
+#     when it lands as a real component) can iterate this file
+#     instead of hard-coding sidecar names.
+#   * Adding a new sidecar (DBML, sequence-diagram, etc.) requires
+#     ONE entry here + the standard skill directory layout.
+#
+# Lint contract (scripts/sidecar_registry_lint.py — see also
+# tests/test_sidecar_registry.py): 7 checks total, all hard-failing.
+#   C1. Each entry's `name` MUST match an existing skills/<name>/
+#       directory.
+#   C2. Each entry's `integration_contract` MUST point at a real
+#       file (skills/<name>/references/integration-contract.md).
+#   C3. Each entry's `anchor_manifest_schema` MUST exist + conform
+#       to the base shape (governance/schemas/
+#       sidecar_anchor_manifest.base.schema.json):
+#         (a) ALL 5 base-required top-level fields present in the
+#             per-sidecar schema's `required` list.
+#         (b) `properties.view_files.type == "array"`.
+#         (c) `properties.view_files.minItems >= 1` (no empty manifests).
+#         (d) Each `view_files[]` item requires `path` + `anchor_map`.
+#   C4. Each entry's `f5_path_prefix` MUST NOT contain any
+#       POLICY_GLOBS path (sidecar paths are non-canonical by
+#       design — see docs/sidecar_inventory.md §"F5 boundary").
+#   C5. No two entries may share the same `name`.
+#   C6. Required fields (name, output_format, f5_path_prefix,
+#       integration_contract, anchor_manifest_schema, status,
+#       added_in, summary) MUST all be present + non-empty.
+#   C7. `status` MUST be one of {stable, beta, experimental}.
+#
+# Schema:
+#   sidecars:
+#     - name: <skill-directory-name>
+#       output_format: <e.g., "PlantUML .puml" | "BPMN 2.0 XML .bpmn">
+#       f5_path_prefix: <e.g., analysis/views/c4/>
+#       integration_contract: <skills/<name>/references/integration-contract.md>
+#       anchor_manifest_schema: <skills/<name>/references/anchor_manifest.schema.json>
+#       optional_dependencies: [<list of soft deps>]
+#       status: stable | beta | experimental
+#       added_in: <plugin version when first shipped, e.g., v1.0.0>
+#       summary: <one-line description>
+
+schema_version: "1.0"
+
+sidecars:
+  - name: c4-plantuml-from-context
+    output_format: "PlantUML .puml (C4 model)"
+    f5_path_prefix: analysis/views/c4/
+    integration_contract: skills/c4-plantuml-from-context/references/integration-contract.md
+    anchor_manifest_schema: skills/c4-plantuml-from-context/references/anchor_manifest.schema.json
+    optional_dependencies:
+      - plantuml CLI (for --plantuml on render mode; graceful degradation otherwise)
+    status: stable
+    added_in: v1.0.0
+    summary: Generates C4 model diagrams (system context / container / component / dynamic / deployment / system landscape) as PlantUML/C4-PlantUML source from architecture notes, ADRs, codebase context.
+
+  - name: camunda-bpmn-from-context
+    output_format: "BPMN 2.0 XML .bpmn (Camunda 7 + 8 aware)"
+    f5_path_prefix: analysis/views/bpmn/
+    integration_contract: skills/camunda-bpmn-from-context/references/integration-contract.md
+    anchor_manifest_schema: skills/camunda-bpmn-from-context/references/anchor_manifest.schema.json
+    optional_dependencies:
+      - xmllint (for BPMN syntax validation; graceful degradation when missing)
+      - playwright (under skills/camunda-bpmn-from-context/node_tooling/ for preview rendering; operator-installed)
+    status: stable
+    added_in: v1.0.0
+    summary: Generates BPMN 2.0 XML (with documented Camunda 7/8 extension support) from process notes, transcripts, workshop output. Greenfield + review/fix + preserve-only modes.

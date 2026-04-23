@@ -4,6 +4,47 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.18] — 2026-04-23
+
+**Sidecar common config schema + registry batch (Sprint 1 / S1+S2).** Closes the two open follow-ups from `docs/sidecar_inventory.md`. Sets up the foundation for adding 3rd / 4th sidecars (DBML, sequence-diagram, etc.) without re-defining the anchor manifest contract per sidecar.
+
+**Tag target**: this commit. **Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. Base schema + registry + lint live outside POLICY_GLOBS; manifest stays at 1.1.6.
+
+### Added
+
+- **`governance/schemas/sidecar_anchor_manifest.base.schema.json`** (S1) — shared base schema defining the 5 required top-level fields every sidecar's anchor manifest MUST carry: `manifest_version`, `generated_at`, `sidecar`, `canon_policy_version`, `view_files` (non-empty array). Per-sidecar schemas under `skills/<sidecar>/references/anchor_manifest.schema.json` extend this base with sidecar-specific discriminators (`diagram_type` for c4, `bpmn_profile` for bpmn). NOT directly F5-validated (per-sidecar schemas remain the F5 surface) — pinned by the registry lint + tests instead.
+- **`config/sidecar_registry.yaml`** (S2) — operator-discoverable registry of all sidecars. Per-entry: `name`, `output_format`, `f5_path_prefix`, `integration_contract`, `anchor_manifest_schema`, `optional_dependencies`, `status` (stable / beta / experimental), `added_in` (plugin version), `summary`. Two entries today (c4-plantuml, camunda-bpmn).
+- **`scripts/sidecar_registry_lint.py`** — stdlib + pyyaml lint with 7 checks:
+  * **C1**: each entry's `name` matches a real `skills/<name>/` directory.
+  * **C2**: `integration_contract` path exists.
+  * **C3**: `anchor_manifest_schema` exists AND its `required` list includes ALL base-schema required fields (catches per-sidecar schema drift).
+  * **C4**: `f5_path_prefix` does NOT contain any POLICY_GLOBS entry (sidecar paths must stay non-canonical — uses the AST-based POLICY_GLOBS reader from `phase_7_lint.py`).
+  * **C5**: no two entries share the same `name`.
+  * **C6**: required fields all present + non-empty.
+  * **C7**: `status` ∈ {stable, beta, experimental}.
+- **`tests/test_sidecar_registry.py`** (+14 tests) — pins committed registry passes lint; both shipping sidecars listed; per-sidecar schemas inherit base required fields (defense-in-depth check independent of lint); per-check unit triggers on synthetic broken inputs (C1–C7).
+
+### Updated
+
+- **`.github/workflows/ci.yml`** — added `sidecar-registry-lint` job (9th parallel job alongside pytest matrix, fixture-runner, privacy-scan, security-audit, canon-hash, marker-chain, perf-bench, phase-7-lint).
+- **`tests/test_ci_workflows.py`** — required-jobs set bumped 8 → 9.
+- **`docs/sidecar_inventory.md`** — both follow-ups (Common SidecarConfig schema, Sidecar registry) marked closed with cross-refs to v1.1.18 deliverables.
+- **`README.md`** — Documentation section adds links to registry + base schema.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 1 HIGH + 2 MEDIUM.
+  * **HIGH**: C3 only compared top-level `required` keys; a per-sidecar schema could keep the 5 required fields but mutate `view_files` to a non-array OR drop `minItems`/`items.required` and silently pass. **Fixed**: C3 now also pins (a) `properties.view_files.type == "array"`, (b) `properties.view_files.minItems >= 1`, (c) each `view_files[]` item requires `path` + `anchor_map`. New error codes: `C3_ANCHOR_SCHEMA_VIEW_FILES_NOT_ARRAY`, `C3_ANCHOR_SCHEMA_VIEW_FILES_ALLOWS_EMPTY`, `C3_ANCHOR_SCHEMA_VIEW_FILES_ITEM_MISSING_REQUIRED`. Three new regression tests pin each.
+  * **MEDIUM #1**: registry YAML header documented checks 1–5 while implementation has 7. **Fixed**: header now lists all 7 checks (C1-C7) with C3's full sub-conditions (a-d). Lint script header also updated.
+  * **MEDIUM #2**: POLICY_GLOBS reader silently dropped non-string elements (unlike `phase_7_lint.py` which fails loudly). **Fixed**: now raises `RuntimeError` on any non-string element with message matching the phase_7_lint contract.
+
+- **Round 2**: REJECT — HIGH still PARTIAL (C3 bypass when `properties.view_files` is absent entirely). MEDIUM #1 + MEDIUM #2 closed. **Fixed**: added `C3_ANCHOR_SCHEMA_VIEW_FILES_NOT_DEFINED` check that fires when `view_files` is in `required` but not declared under `properties`. Deeper structural checks now correctly short-circuit when view_files is missing (avoids noise; tested explicitly). New regression test `test_C3_view_files_not_defined`.
+
+### Result
+
+- 1610 → 1628 tests passing (+18 sidecar registry tests; 14 round-1 + 3 round-2 view_files conformance + 1 round-2 view_files NOT_DEFINED).
+- The two open follow-ups from `docs/sidecar_inventory.md` are closed; remaining post-v1.1.x sidecar work (S3 e2e fixture, S4 DBML sidecar, S5 sequence-diagram sidecar) is now genuinely additive — adding a 3rd sidecar requires only a registry entry + skill directory + per-sidecar anchor schema (which the registry lint validates against the base shape via 5 sub-checks: required overlap + view_files defined + array + non-empty + items.required).
+
 ## [v1.1.17] — 2026-04-23
 
 **Shell import drivers (Sprint 1 / T5).** Closes `TODO-S9-03-IMPORT-DRIVER` from `scripts/backlog_live_apply.py`. Three thin bash wrappers that consume `analysis/handoff/backlog_export_{jira,linear,github}.{json,csv}` and POST to the live platform — alternative to the Python impl for operators whose CI / environment doesn't have full Python, or who simply prefer shell.
