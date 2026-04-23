@@ -1,0 +1,183 @@
+# Phase 7 tunable inventory (v1.1.14, Section D foundation).
+#
+# Single source of truth for which knobs the future Phase 7 self-
+# improvement loop may tune. See docs/phase_7_design.md for the design
+# rationale + safety contract + IMMUTABLE_CONFLICT detection algorithm.
+#
+# Lint contract (scripts/phase_7_lint.py):
+#   1. Every entry's `source_file:source_line` must contain `current_value`
+#      (verbatim substring match). Catches drift if the value is edited
+#      without updating this file.
+#   2. Every entry's `linked_invariants` must reference real INV-XX IDs
+#      from governance/immutable_invariants.md.
+#   3. Every entry's `owner_skill` must reference a real skill directory
+#      (or 'governance' / 'sidecar:<name>' for non-skill owners).
+#   4. No two entries may share the same `id`.
+#   5. Every L1_auto_tunable with non-empty linked_invariants is an
+#      IMMUTABLE_CONFLICT — auto-patch is forbidden when the tunable
+#      touches an invariant.
+#   6. L1_auto_tunable entries' `source_file` must NOT match any
+#      POLICY_GLOBS pattern (auto-merge inside canonical state would
+#      silently bump canon hash). L2_proposal_only entries MAY live
+#      in POLICY_GLOBS — the analyst sign-off step naturally includes
+#      a manifest version bump.
+#
+# Schema:
+#   tunables:
+#     - id: <stable-id>
+#       current_value: <as-it-appears-in-source>
+#       allowed_range: [<min>, <max>]   # numeric only in v1.1.14
+#       owner_skill: <skill-name | governance | sidecar:<name>>
+#       source_file: <repo-relative-path>
+#       source_line: <1-indexed-int>
+#       linked_invariants: [<INV-XX>, ...]
+#       change_class: L1_auto_tunable | L2_proposal_only
+#       rationale: <one-line-why-and-when-to-tune>
+
+schema_version: "1.0"
+
+tunables:
+  # ---- Reliability tier weights (used by KPI-001 ClaimStrength formula).
+  # Phase 7 may NOT auto-tune these — tier ordering is INV-adjacent
+  # (changing T2 above T1 would break the conflict-resolution semantics
+  # documented in immutable_invariants.md INV-01 evidence-binding).
+  - id: tier_weight_T1
+    current_value: "1.00"
+    allowed_range: [0.95, 1.00]
+    owner_skill: bsa-evidence-intake
+    source_file: skills/bsa-evidence-intake/references/reliability_tier_spec.md
+    source_line: 24
+    linked_invariants: [INV-01]
+    change_class: L2_proposal_only
+    rationale: T1 = empirical / live system state. Tightening would deflate downstream KPI-001 confidence. Loosening below T2's max would invert tier ordering — INV-01-violating. L2-proposal only.
+
+  - id: tier_weight_T2
+    current_value: "0.85"
+    allowed_range: [0.80, 0.92]
+    owner_skill: bsa-evidence-intake
+    source_file: skills/bsa-evidence-intake/references/reliability_tier_spec.md
+    source_line: 25
+    linked_invariants: [INV-01]
+    change_class: L2_proposal_only
+    rationale: T2 = authored-primary. Range bounded so it cannot exceed T1 or fall below T3. L2-proposal because re-weighting changes KPI-001 retroactively across all projects.
+
+  - id: tier_weight_T3
+    current_value: "0.65"
+    allowed_range: [0.55, 0.75]
+    owner_skill: bsa-evidence-intake
+    source_file: skills/bsa-evidence-intake/references/reliability_tier_spec.md
+    source_line: 26
+    linked_invariants: [INV-01]
+    change_class: L2_proposal_only
+    rationale: T3 = authored-secondary. Range bounded so it cannot cross T2 or T4. L2-proposal.
+
+  - id: tier_weight_T4
+    current_value: "0.45"
+    allowed_range: [0.35, 0.55]
+    owner_skill: bsa-evidence-intake
+    source_file: skills/bsa-evidence-intake/references/reliability_tier_spec.md
+    source_line: 27
+    linked_invariants: [INV-01]
+    change_class: L2_proposal_only
+    rationale: T4 = attestation. Range bounded so it cannot cross T3 or T5. L2-proposal.
+
+  - id: tier_weight_T5
+    current_value: "0.20"
+    allowed_range: [0.10, 0.30]
+    owner_skill: bsa-evidence-intake
+    source_file: skills/bsa-evidence-intake/references/reliability_tier_spec.md
+    source_line: 28
+    linked_invariants: [INV-01]
+    change_class: L2_proposal_only
+    rationale: T5 = reported / hearsay. Range bounded above 0 (zero weight is semantically equivalent to "unsupported" per INV-01) and below T4. L2-proposal.
+
+  # ---- KPI targets (operator-facing).
+  # These ARE L1-auto-tunable within range — they're observation-driven
+  # acceptance thresholds, not invariants. Phase 7 may legitimately
+  # learn that real pilots cluster around 0.78 KPI-001 not 0.75 and
+  # propose tightening the target.
+
+  - id: kpi_001_target_weighted
+    current_value: ">= 0.75"
+    allowed_range: [0.70, 0.95]
+    owner_skill: bsa-evidence-intake
+    source_file: skills/bsa-evidence-intake/references/reliability_tier_spec.md
+    source_line: 143
+    linked_invariants: []
+    change_class: L2_proposal_only
+    rationale: KPI-001 weighted ClaimStrength target. Calibrated against synthetic fixtures (project_0001 ≈ 0.82). Re-tune after 3+ real pilots per the spec's own commitment. L2-proposal because the value lives in canonical state (POLICY_GLOBS) — auto-merge would silently bump canon hash. Analyst sign-off includes the manifest bump.
+
+  - id: kpi_001_target_unweighted_legacy
+    current_value: ">= 0.90"
+    allowed_range: [0.85, 0.98]
+    owner_skill: bsa-evidence-intake
+    source_file: skills/bsa-evidence-intake/references/reliability_tier_spec.md
+    source_line: 136
+    linked_invariants: []
+    change_class: L2_proposal_only
+    rationale: Pre-Sprint-3 unweighted KPI-001 target. Documentation-only (the live formula is the weighted variant). L2-proposal because changing this also changes the migration baseline for pre-Sprint-3 fixtures.
+
+  - id: kpi_006_target_story_coverage
+    current_value: "≥ 0.90"
+    allowed_range: [0.80, 0.98]
+    owner_skill: bsa-traceability-matrix
+    source_file: skills/bsa-traceability-matrix/SKILL.md
+    source_line: 71
+    linked_invariants: [INV-08]
+    change_class: L2_proposal_only
+    rationale: KPI-006 story-to-claim coverage ratio. Linked to INV-08 (every story carries provenance) — loosening could mask story-writer drift. L2-proposal-only.
+
+  # ---- Decay schedule (optional, default off — guard against staleness).
+  # Decay parameters are L2-proposal only because they change ClaimStrength
+  # retroactively across all projects with `decay_factor != 0` enabled.
+
+  - id: decay_factor_cap
+    current_value: "0.80"
+    allowed_range: [0.50, 0.95]
+    owner_skill: bsa-evidence-intake
+    source_file: skills/bsa-evidence-intake/references/reliability_tier_spec.md
+    source_line: 97
+    linked_invariants: [INV-01]
+    change_class: L2_proposal_only
+    rationale: Hard cap on decay_factor — ensures no claim drops below 20% of undecayed strength. INV-01-adjacent (very-low ClaimStrength makes a claim semantically "unsupported" without an A51 route). L2-proposal.
+
+  # ---- BPMN sidecar layout policy (sidecar:camunda-bpmn-from-context).
+  # These are L1_auto_tunable because they're operator-facing UX
+  # thresholds (label crowding, edge crossings) with no governance
+  # linkage to A50..A72 canonical state.
+
+  - id: bpmn_max_shape_shift_native_greenfield_main
+    current_value: "120"
+    allowed_range: [60, 240]
+    owner_skill: "sidecar:camunda-bpmn-from-context"
+    source_file: skills/camunda-bpmn-from-context/config/layout_thresholds.yaml
+    source_line: 17
+    linked_invariants: []
+    change_class: L1_auto_tunable
+    rationale: Movement budget for existing shapes in preserve/repair modes. Pure layout-quality tunable; no governance interaction. Phase 7 may learn that real BPMN diagrams cluster around shift=180.
+
+  - id: bpmn_max_label_shift_native_greenfield_main
+    current_value: "80"
+    allowed_range: [40, 160]
+    owner_skill: "sidecar:camunda-bpmn-from-context"
+    source_file: skills/camunda-bpmn-from-context/config/layout_thresholds.yaml
+    source_line: 18
+    linked_invariants: []
+    change_class: L1_auto_tunable
+    rationale: Movement budget for existing labels. Pure layout-quality tunable.
+
+  # ---- Performance-bench regression threshold.
+  # The 2x p95 threshold from v1.1.13 is itself a tunable — if pilots
+  # show that p95 noise is larger than 2x naturally, the threshold
+  # needs to widen. L2-proposal because loosening can mask real
+  # regressions.
+
+  - id: perf_bench_regression_threshold
+    current_value: "2.0"
+    allowed_range: [1.5, 3.5]
+    owner_skill: governance
+    source_file: scripts/perf_bench.py
+    source_line: 83
+    linked_invariants: []
+    change_class: L2_proposal_only
+    rationale: Multiplier for p95 regression detection (current vs baseline). Loosening masks real regressions; tightening creates noise-driven false positives. L2-proposal because the operator-facing CI gate semantics change with this knob.

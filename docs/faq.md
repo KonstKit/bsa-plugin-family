@@ -142,7 +142,7 @@ If you didn't commit per-promotion, that's a process lesson for next time. The w
 - Plugin decomposition (bsa-core / bsa-discovery / bsa-sidecars split).
 - Domain/stack packs (fintech, healthcare, regulated).
 - Reality-probe layer (freshness, triangulation, runtime invariants).
-- Self-improvement telemetry + evolution-miner (Phase 7).
+- Self-improvement telemetry + evolution-miner (Phase 7). v1.1.14 ships the **foundation** — `config/tunables.yaml` inventory + `scripts/phase_7_lint.py` IMMUTABLE_CONFLICT detector + `docs/phase_7_design.md` design — but the actual telemetry collection backend + miner is v1.2.x scope.
 - Marketplace + certification framework.
 - Multi-session / concurrency handling beyond the file-lock + per-platform live-API lock.
 - Full GDPR / retention / right-to-erasure controls.

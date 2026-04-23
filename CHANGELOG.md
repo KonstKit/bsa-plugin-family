@@ -4,6 +4,68 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.1.14] — 2026-04-23
+
+**Phase 7 self-improvement loop foundation (Section D).** Sets up the contract for the v1.2.x self-improvement loop without committing to a backend before there's real pilot data to drive it. Three layers:
+* **L0 (foundation)** — formal tunable inventory + IMMUTABLE_CONFLICT lint + safety contract. **This release.**
+* **L1 (telemetry + miner)** — v1.2.x candidate.
+* **L2 (auto-patcher)** — v1.3+ candidate.
+
+**Tag target**: this commit (the v1.1.14 Phase 7 foundation release).
+**Canon policy version**: `1.1.6+hash:ac63a8c3` — **unchanged**. Tunable inventory + lint live outside POLICY_GLOBS; canon hash unchanged. Manifest version stays at 1.1.6; v1.1.14 git tag marks the foundation release.
+
+### Added
+
+- **`docs/phase_7_design.md`** — formal design doc for the self-improvement loop:
+  * Three-layer architecture (L0 foundation / L1 miner / L2 auto-patcher) + which layer ships when.
+  * Tunable inventory schema (id, current_value, allowed_range, owner_skill, source_file, source_line, linked_invariants, change_class, rationale).
+  * 8-check lint contract (C1 source-line drift / C2 invariant validity / C3 owner_skill validity / C4 unique IDs / C5 IMMUTABLE_CONFLICT / C6 L1+POLICY_GLOBS forbidden / C7 change_class validity / C8 allowed_range sanity).
+  * IMMUTABLE_CONFLICT detection algorithm + safety contract (no invariant edits / range-bounded / provenance / reversible / canon-hash neutral by construction for L1 / pilot-data-driven only).
+  * Open questions deferred to v1.2.x design (telemetry storage shape, statistical significance gate, multi-pilot aggregation, auto-patch cadence, operator opt-out).
+- **`config/tunables.yaml`** — single source of truth for which knobs Phase 7 may tune. v1.1.14 ships 12 entries:
+  * 5 tier weights (T1..T5) — all `L2_proposal_only` (linked to INV-01).
+  * 3 KPI targets (KPI-001 weighted, KPI-001 legacy, KPI-006) — all `L2_proposal_only` (KPI-001 legacy + KPI-006 also linked to invariants).
+  * 1 decay cap (decay_factor_cap = 0.80) — `L2_proposal_only` (linked to INV-01).
+  * 2 BPMN sidecar layout thresholds (max_shape_shift, max_label_shift) — `L1_auto_tunable` (no governance interaction; layout-quality tunables only).
+  * 1 perf-bench regression threshold (2.0) — `L2_proposal_only`.
+- **`scripts/phase_7_lint.py`** — stdlib + pyyaml lint with 8 per-entry / per-file checks (C1..C8). Uses `ast` to parse `POLICY_GLOBS` from `scripts/compute_canon_hash.py` (round-1 fix: regex-based reader was fooled by `(` in inline comments). CLI flags: `--quiet` for clean PASS output. Exit codes: 0 PASS / 1 lint findings / 2 invocation error.
+- **`tests/test_phase_7_lint.py`** (+27 tests) — pins:
+  * Committed tunables.yaml lints clean (C1 drift detector — catches if any tunable's source value changes without updating tunables.yaml).
+  * Design doc exists + carries required section headers (catches accidental rename).
+  * Inventory exercises BOTH change_classes (catches collapse to all-L2 = vacuous L1).
+  * Inventory has at least one `linked_invariants` entry (catches cross-reference loss).
+  * Each check rule (C1..C8) triggers on its synthetic broken-example.
+  * `_read_policy_globs()` returns non-empty + includes `governance/immutable_invariants.md` (catches refactor of canon-hash script).
+  * `_parse_numeric()` handles `>=`, `≥`, bare numbers, and returns None for enums.
+
+### Updated
+
+- **`.github/workflows/ci.yml`** — added `phase-7-lint` job (8th parallel job alongside pytest matrix, fixture-runner, privacy-scan, security-audit, canon-hash, marker-chain, perf-bench).
+- **`tests/test_ci_workflows.py`** — required-jobs set bumped 7 → 8.
+- **`docs/faq.md`** — Phase 7 line in "Still deferred to Phase 5+ / future" calls out v1.1.14 foundation vs v1.2.x telemetry backend.
+- **`README.md`** — Documentation section adds link to `docs/phase_7_design.md`.
+
+**Note**: `governance/immutable_invariants.md` is intentionally NOT touched in v1.1.14. That file is in POLICY_GLOBS — editing it would bump the canon hash and break the v1.1.x manifest-version-stable discipline. The `docs/phase_7_design.md` design doc cross-references invariants.md (one-way link) so the relationship is still discoverable; a reverse cross-reference in invariants.md can land in the next canon-bumping release.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 2 critical + 4 should-fix.
+  * **CRITICAL #1**: `docs/phase_7_design.md` L2 row in the layers table said "auto-merge proposals that pass governance gate (analyst review optional below threshold)" — contradicted the rest of the doc, which defines L2 as ALWAYS requiring analyst sign-off. Fixed: L2 row now says "auto-emit proposals (PRs) for tunables that need analyst sign-off (always reviewed before merge — the 'auto' is the proposal generation, not the apply)".
+  * **CRITICAL #2**: `_read_invariant_ids()` regexed every `INV-XX` mention in invariants.md, so a prose reference like "Historical note: INV-09 was removed" would let C2 silently accept stale `linked_invariants` even after the actual declaration was gone. Fixed: now parses only `### INV-XX:` h3 headers (the authoritative declaration shape). New test `test_read_invariant_ids_only_counts_declarations` synthesises a doc with prose mentions of INV-09/INV-99 + h3 declarations of INV-01/INV-02 and pins that only the headers count.
+  * **SHOULD #1**: `config/tunables.yaml` header comment said "no source_file may match POLICY_GLOBS" — contradicted the lint, which only blocks L1+POLICY_GLOBS (most committed entries are valid L2-in-POLICY_GLOBS). Fixed: comment now matches the lint's L1-only contract.
+  * **SHOULD #2**: tests claimed "tolerates both tuple + list literal" but only smoke-tested the live (tuple) file. Added `test_read_policy_globs_handles_list_literal` + `test_read_policy_globs_handles_tuple_literal` synthetic-fixture tests that pin both forms with embedded `(` `)` `]` chars in comments (the round-1 regex bug surface).
+  * **SHOULD #3**: `docs/phase_7_design.md` + `config/tunables.yaml` advertised enum-style tunables (`OR enum_values: [...]`) but the lint only supports numeric `allowed_range`. Fixed: doc + comment now say "v1.1.14 only supports numeric ranges; enum-style tunables are deferred until a use case appears".
+  * **SHOULD #4**: CHANGELOG said 11 entries; reality is 12 (5 tier weights + 3 KPI targets + 1 decay cap + 2 BPMN + 1 perf-bench). Fixed.
+
+
+### Result
+
+- 1497 → 1527 tests passing (+30 phase_7_lint tests +1 ci_workflows update; round-1 had 27, round-2 added 3).
+- Phase 7 contract is now executable, not just documented in immutable_invariants.md.
+- Drift detection at lint time means any maintainer who edits a tunable value (e.g., bumps T2 from 0.85 to 0.87) without updating `config/tunables.yaml` gets caught at CI, not at the moment Phase 7 actually fires.
+- IMMUTABLE_CONFLICT enforcement is mechanical — `L1_auto_tunable` with non-empty `linked_invariants` is a hard error.
+- L1+POLICY_GLOBS coupling enforcement is mechanical — `L1_auto_tunable` whose source_file is canonical state is a hard error (would silently bump canon hash without a release marker).
+
 ## [v1.1.13] — 2026-04-23
 
 **Performance / scale validation (Section F).** Establishes a hot-path latency baseline + automated regression detection. The plugin family was already fast (full pytest suite in ~115s; canon hash in ~25ms; F5 dispatcher per-call in single-digit microseconds), but had no codified baseline — so an O(n) → O(n²) regression on the F5 hot path could ship unnoticed. v1.1.13 closes that gap with a stdlib-only bench harness + committed baseline doc + CI regression check.
