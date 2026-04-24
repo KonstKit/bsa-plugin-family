@@ -7,7 +7,7 @@
 ```
 /plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
 /plugin install bsa-full@bsa-marketplace
-/plugin list       # expect bsa-full@1.2.3 (v1.2.x line; manifest may lag git tag during canon-neutral patch releases)
+/plugin list       # expect bsa-full@1.2.5 (v1.2.x line; manifest may lag git tag during canon-neutral patch releases)
 ```
 
 Full install / uninstall / upgrade (including session-only `claude --plugin-dir` path): [INSTALL.md](INSTALL.md).
@@ -31,7 +31,7 @@ Each `/bsa-stage N` invocation runs the stage's full worker chain (worker + any 
 
 ## Status
 
-**v1.2.3** — current release. v1.2.x line progression: v1.2.0 (first canon bump since v1.1.6 — one-line cross-ref), v1.2.1 (A51 `link_strength_override` enum, closes TODO-S8-02-LINK-STRENGTH-OVERRIDE), v1.2.2 (A72 incremental-diff helper, closes TODO-S8-02-INCREMENTAL-MATRIX), v1.2.3 (A71 runnable test export in Cucumber / pytest-bdd / jest, closes TODO-S8-01-RUNNABLE-EXPORT). v1.1.x background:
+**v1.2.5** — current release. v1.2.x line progression: v1.2.0 (first canon bump since v1.1.6 — one-line cross-ref), v1.2.1 (A51 `link_strength_override` enum, closes TODO-S8-02-LINK-STRENGTH-OVERRIDE), v1.2.2 (A72 incremental-diff helper, closes TODO-S8-02-INCREMENTAL-MATRIX), v1.2.3 (A71 runnable test export in Cucumber / pytest-bdd / jest, closes TODO-S8-01-RUNNABLE-EXPORT), v1.2.4 (Phase 7 telemetry foundation L1a — KPI-001 + KPI-006 capture, canon-neutral), v1.2.5 (A70 negative-path scenario suggestions, closes TODO-S8-01-NEGATIVE-PATH-HEURISTICS). v1.1.x background:
 
 - **v1.1.0** (Phase-3 close) — full Phase-3 dev-handoff: 5 new skills (`bsa-nfr-collector`, `bsa-story-writer`, `bsa-test-scenario-builder`, `bsa-traceability-matrix`, `bsa-backlog-bridge`); 4 new canonical artifacts (A62 NFR register, A70 story register, A71 test scenarios, A72 traceability matrix); 3 new platform-specific export shapes (Jira REST v3 JSON, Linear CSV, generic CSV); 3 new immutable invariants (INV-08, INV-09, INV-10).
 - **v1.1.1** — A51 enum extensions (`inventory_gap` + `cross_tier_contradiction` + `Severity=critical`) for the first external pilot drift bundle, plus internal contract alignment across 6 docs/SKILL.md files.

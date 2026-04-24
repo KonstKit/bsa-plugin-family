@@ -4,6 +4,67 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.5] — 2026-04-25
+
+**A70 negative-path scenario suggestions (Sprint 3 / T4).** Closes `[TODO-S8-01-NEGATIVE-PATH-HEURISTICS]` from `skills/bsa-test-scenario-builder/SKILL.md`. Pre-v1.2.5 the boundary + negative-path coverage rule (line 14 of the SKILL.md: "a 'within 60s' criterion implies both an 'exactly at SLA' scenario and a 'past SLA' rollover scenario") was operator-manual — the operator had to read every A70 acceptance criterion and remember to author the off-by-one A71 row. v1.2.5 ships a deterministic helper that scans A70 for measurable language + emits per-story suggestions the operator can copy-paste into A71.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.5+hash:0eb4093d` — manifest bumps from 1.2.3 → 1.2.5 (canon-bumping release; SKILL.md edit lives inside POLICY_GLOBS).
+
+### Added
+
+- **`scripts/suggest_negative_path_scenarios.py`** (~535 lines, stdlib-only) — scans every A70 `AcceptanceCriteria` cell for three pattern classes:
+  * **TEMPORAL** — `\bwithin\s+N\s*(seconds?|minutes?|hours?|days?|business\s+days?|business\s+hours?|ms|s|m|h|d)\b`. Suggestion: cover BOTH (a) "exactly at SLA" (N units elapsed → still passes) AND (b) "just past SLA" (N+1 units → fails).
+  * **BOUNDARY** — `\b(at\s+least|at\s+most|no\s+more\s+than|no\s+fewer\s+than|exactly)\s+N\b`. Suggestion per operator: at-least/no-fewer-than → boundary + just-below; at-most/no-more-than → boundary + just-above; exactly N → boundary + BOTH N-1 AND N+1 (two negative-path scenarios; both off-by-one directions matter).
+  * **COMPARISON** — `\b(more\s+than|less\s+than|greater\s+than|fewer\s+than|larger\s+than|smaller\s+than)\s+N\b` OR symbolic `>=|<=|≥|≤|>|<\s*N`. Suggestion: at-boundary-exact (=N) AND ±1 negative path on the failing side.
+- **Pattern classes evaluated most-specific first** (TEMPORAL → BOUNDARY → COMPARISON) with a covered-range overlap check (range-based, NOT exact-span equality) to prevent `no more than N` from ALSO emitting a `more than N` COMPARISON match. Same for `no fewer than N` vs `fewer than N`.
+- **Output** lands at `analysis/handoff/negative_path_suggestions.md` (NOT canonical; operator copies relevant suggestions into A71_test_scenario_register.csv after editing for the actual system under test). The helper deliberately does NOT auto-emit A71 rows — A71 row authoring needs human judgment about what's actually testable in the system under test, what's already covered by adjacent scenarios, etc.
+- **Same fail-CLOSED CSV parsing** as v1.2.2/v1.2.3: header validation rejects the run if any of `StoryID`/`Title`/`AcceptanceCriteria` are missing; per-row missing-cell detection logs + skips.
+- **CLI**: `--workspace`, `--output-path`, `--json` (machine-readable JSON for downstream tooling), `--print-only` (stdout instead of disk), `--quiet` (suppress per-story progress logs).
+- **`tests/test_suggest_negative_path_scenarios.py`** (+32 tests; 24 round-1 + 8 round-1-regression) — pins:
+  * Each pattern class detected with correct quantity + unit extraction (TEMPORAL: seconds / minutes / business-days / short-form aliases `s`/`m`/`h`; BOUNDARY: at-least / at-most / exactly; COMPARISON: word form / `>=` symbolic / unicode `≥`).
+  * **Anti-double-match invariant**: `no more than 50 retries allowed` MUST emit ONLY one BOUNDARY match — NOT also a COMPARISON match for the embedded `more than 50` substring. Same for `no fewer than 3 reviewers` vs the embedded `fewer than 3`. (Without the range-based overlap guard this would emit 2 false matches per phrase.)
+  * Multi-pattern in one criterion (`deliver within 60 minutes AND at least 3 retries`) → both emitted in source order.
+  * No-measurable-language input (`user-friendly login flow with intuitive UX`) → 0 matches.
+  * A70 fixture parsing against real `project_0001` golden.
+  * Header validation: missing `AcceptanceCriteria` column → exit 2 with explicit error.
+  * Markdown report: summary block + per-story sections + UPPERCASE pattern-class labels; zero-stories case emits "No measurable language detected" instead of dangling section header.
+  * JSON report: `stories_scanned` / `stories_with_matches` / `total_matches` / per-story `story_id`+`matches[].pattern_class`+`phrase`+`quantity`+`suggestion`.
+  * CLI: missing workspace / missing A70 → exit 2; default output path written; `--print-only` doesn't write; `--json` flag emits parseable JSON.
+
+### Updated
+
+- **`skills/bsa-test-scenario-builder/SKILL.md`** — TODO entry at line 109 closed: open marker → "**CLOSED in v1.2.5.**" with full pattern-class catalogue + anti-double-match note + CLI surface. POLICY_GLOBS-tracked file → canon hash recomputes (`f4ac1767` → `0eb4093d`).
+- **`.claude-plugin/plugin.json`** — manifest version 1.2.3 → 1.2.5; canon policy version semver + hash refreshed.
+- **`docs/RELEASING.md`** — release table back-filled with v1.2.5 row.
+- **`README.md`**, **`INSTALL.md`**, **`docs/getting_started.md`**, **`docs/faq.md`** — current-release lines refreshed: `bsa-full@1.2.3` → `bsa-full@1.2.5`; v1.2.x progression line extended to include v1.2.4 (Phase 7 telemetry foundation, canon-neutral) + v1.2.5 (negative-path heuristics).
+
+### Operator workflow
+
+After Phase-3 dev-handoff lands A70 (and ideally A71 first-pass), the operator can scan for measurable language they may have missed:
+
+1. `python3 scripts/suggest_negative_path_scenarios.py --workspace <ws>` (default markdown report).
+2. Open `<ws>/analysis/handoff/negative_path_suggestions.md`. Review per-story suggestions. For each suggestion the operator wants to act on, hand-author the corresponding A71 row(s) — the script never writes A71.
+3. For machine consumption (e.g., wiring into a future L1b miner that flags coverage gaps): `--json` emits a parseable JSON shape with the same contents.
+4. `--print-only` skips the disk write entirely (useful in pipelines that pipe to `jq` / `grep`).
+5. Output is operator-side state. Safe to delete + regenerate.
+
+### Codex review trail
+
+- **Round 1**: REQUEST CHANGES — 2 critical + 2 recommendations.
+  * **CRITICAL #1**: `_read_a70` only treated `None` as missing (truncated row), accepted stripped-empty required cells, AND was missing the `row.get(None)` extra-field overflow guard that `scripts/a71_runnable_export.py` ships. CHANGELOG claimed "Same fail-CLOSED CSV parsing as v1.2.2/v1.2.3" but the parser was weaker. **Fixed**: header-missing → exit; truncated row (None cell) → skip + log; extra-field overflow (`row.get(None)`) → skip + log; blank-after-strip required cell → skip + log. New regression tests `test_read_a70_blank_required_cell_returns_error` and `test_read_a70_extra_field_overflow_returns_error`.
+  * **CRITICAL #2**: `int(float(qty)) ± 1` produced numerically wrong off-by-one examples for decimal qty — `at least 99.9` suggested `98` as just-below; `at most 0.5` suggested `1` as just-above. Misleading guidance for percentage/SLA criteria. **Fixed**: new `_off_by_one(qty, direction)` helper detects integer-shaped qty (`5`, `5.0`, `100`) and emits literal arithmetic; for decimal-shaped qty emits symbolic `qty ± ε` so the operator picks SLA-appropriate epsilon per their domain. New regression tests: `test_detect_boundary_decimal_at_least`, `test_detect_boundary_decimal_at_most`, `test_detect_boundary_integer_still_uses_arithmetic`, `test_detect_boundary_exactly_decimal`.
+  * **Recommendation #1**: markdown report injected raw user-supplied `StoryID`/`Title`/`AcceptanceCriteria` — backticks, pipes, embedded HTML, hard newlines could distort rendering. **Fixed**: new `_md_escape_inline()` helper escapes `\\`, `` ` ``, `*`, `_`, `|`, `<`, `>`, `[`, `]` and collapses `\\r`/`\\n` to spaces. Applied to all user-derived inline strings in the per-story sections. New test `test_format_markdown_escapes_inline_specials`.
+  * **Recommendation #2**: missing regression coverage for "single cell with both `no more than N` AND `no fewer than M`" anti-double-match case. **Fixed**: new test `test_detect_boundary_both_no_more_and_no_fewer_in_one_cell` pins the multi-phrase guard.
+- **Round 2**: REQUEST CHANGES — round-1 fixes verified ✓, but 1 new precision bug found in the round-1 fix.
+  * **NEW**: `_off_by_one()` round-1 implementation used `int(float(qty))` for the integer-shape detect step. Even though the source regex bounds qty to `\d+(?:\.\d+)?`, the `float` round-trip silently loses precision past 2**53 — Codex spot-checked `at least 9007199254740993 attempts` (= 2**53 + 1) and got `9007199254740991` (= 2**53 - 1) for "just below" instead of the correct `9007199254740992` (= 2**53). Operator-side only, but still numerically wrong. **Fixed**: integer-shape detect is now lexical (`^\d+(?:\.0+)?$`) — no `float` round-trip — so arbitrarily-large integer quantities round-trip exactly through `int()`. New regression tests `test_off_by_one_large_integer_keeps_precision` (pins the 2**53 + 1 case) + `test_off_by_one_int_with_trailing_zero_decimal` (pins `5.0` still goes down the integer-arithmetic branch, not symbolic ε).
+- **Round 3**: APPROVE — round-2 precision fix verified; lexical integer-shape gate accepts all integer-shaped inputs from the source grammar (`5`, `5.0`, `5.00`, `100`, `9007199254740993`, `0`, `0.0`) and rejects all decimal-shaped ones with non-zero fractional part (`5.5`, `0.5`, `99.9`, `5.10`); `2**53 + 1` stays exact. No new issues.
+
+### Result
+
+- 1704 → 1738 tests passing (+24 round-1 + 8 round-1-regression + 2 round-2-regression suggest_negative_path_scenarios tests).
+- TODO-S8-01-NEGATIVE-PATH-HEURISTICS closed. Last open Sprint 8 TODO retired; the bsa-test-scenario-builder skill now has all three filed TODOs closed (`X-ARTIFACT-NFR-COVERAGE` v1.1.3, `RUNNABLE-EXPORT` v1.2.3, `NEGATIVE-PATH-HEURISTICS` v1.2.5).
+- Canon hash bumped `f4ac1767` → `0eb4093d`. Manifest version 1.2.3 → 1.2.5.
+
 ## [v1.2.4] — 2026-04-24
 
 **Phase 7 telemetry foundation L1a (Sprint 3 / P1+P2).** Ships the data-capture half of Phase 7 L1: a per-run JSON snapshot file shape (P1) + a stdlib-only collector that produces it from the workspace's canonical state (P2). v1.1.14 shipped the L0 foundation (tunable inventory + IMMUTABLE_CONFLICT lint); v1.2.4 opens L1 by giving operators a way to start collecting real-pilot KPI data NOW so the future L1b miner (v1.2.5+) lands with an actual training set instead of synthetic baselines.

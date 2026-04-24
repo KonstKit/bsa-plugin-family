@@ -48,7 +48,7 @@ Verify the install:
 /plugin list
 ```
 
-Expected output includes `bsa-full@1.2.3` (the manifest version of the current v1.2.x line; tag may be ahead during canon-neutral patch releases — the same two-semver discipline that kept manifest at 1.1.6 across v1.1.7..v1.1.19).
+Expected output includes `bsa-full@1.2.5` (the manifest version of the current v1.2.x line; tag may be ahead during canon-neutral patch releases — the same two-semver discipline that kept manifest at 1.1.6 across v1.1.7..v1.1.19, and at 1.2.3 across v1.2.4).
 
 ## First use — in a fresh project directory
 
