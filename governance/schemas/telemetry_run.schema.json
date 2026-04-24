@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/telemetry_run.schema.json",
+  "title": "Phase 7 telemetry run snapshot",
+  "description": "Schema for analysis/telemetry/run_<run_id>.json produced by scripts/phase_7_telemetry_collector.py (v1.2.4, P1+P2). One file per pipeline run; the file is an OBSERVATION of the canonical state at run time, not an assertion ABOUT it. Phase 7 L1 (the future telemetry miner; v1.2.x+ candidate) will read these snapshots across multiple runs to detect tunable-knob drift and propose tuning patches via tunables.yaml. Strictly read-only with respect to canonical state. NOT F5-validated (operator-side observation, not promotion gate). NOT in POLICY_GLOBS (no canon-hash interaction). Token-shape scrubbing inherits from privacy_scan (we never observe tokens — only structural KPIs / counts). See docs/phase_7_design.md for the full L0 → L1 → L2 architecture.\n\nv1.2.4 ships only the SHAPE + collector — the miner that consumes these files is L1 / v1.2.5+ scope. Operators may capture telemetry runs today + retain them for the future miner without a backend.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "captured_at",
+    "run_id",
+    "plugin_version",
+    "canon_policy_version",
+    "kpi_observations",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$",
+      "description": "Telemetry-run shape version. v1.2.4 ships 1.0; bumped on breaking shape changes."
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "ISO-8601 UTC timestamp when this snapshot was captured. Same shape as marker.timestamp."
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]{8,64}$",
+      "description": "Operator-supplied run identifier (CLI flag --run-id=<id>, or auto-generated from timestamp). Lets a future L1 miner aggregate observations across N runs without confusing them. Lowercase alphanumeric + hyphen + underscore."
+    },
+    "plugin_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "description": "Plugin manifest version at capture time (e.g., '1.2.4'). Captures which plugin release produced the observation."
+    },
+    "canon_policy_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:\\+hash:[a-f0-9]{6,64})?$|^[0-9]+\\.[0-9]+$",
+      "description": "Canon policy version + hash at capture time. Lets the future L1 miner correlate observations to specific policy state (e.g., 'KPI-001 dipped on the same day canon hash moved from X to Y' — that's evidence the canon change caused the dip)."
+    },
+    "workspace_path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional. Repo-relative or absolute path to the workspace this snapshot reflects. Operator-controlled — may be elided for privacy."
+    },
+    "kpi_observations": {
+      "type": "object",
+      "description": "Per-KPI observation block. v1.2.4 ships KPI-001 (weighted ClaimStrength coverage) + KPI-006 (story-to-claim coverage ratio). Future KPIs add as additional keys; the current key set is documentary.",
+      "additionalProperties": false,
+      "properties": {
+        "kpi_001_weighted_coverage": {
+          "$ref": "#/$defs/kpi_observation",
+          "description": "KPI-001 weighted: sum(ClaimStrength for direct claims with bound SourceID+ExcerptID) / count(direct claims). Target ≥ 0.75 per reliability_tier_spec.md."
+        },
+        "kpi_006_story_coverage": {
+          "$ref": "#/$defs/kpi_observation",
+          "description": "KPI-006: |A70 stories with at least one direct A72 row| / |A70 stories|. Target ≥ 0.90 per bsa-traceability-matrix SKILL.md §KPI-006."
+        }
+      }
+    },
+    "validator_observations": {
+      "type": "object",
+      "description": "Optional. Per-validator outcome counts (pass/fail/warn). Empty {} when no validators ran in this snapshot's window. Future-extensible: add per-validator keys as new validators land.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pass", "fail", "warn"],
+        "properties": {
+          "pass": {"type": "integer", "minimum": 0},
+          "fail": {"type": "integer", "minimum": 0},
+          "warn": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "threshold_trigger_counts": {
+      "type": "object",
+      "description": "Optional. Counts of times each tunable-threshold triggered during the run window (e.g., 'EpistemicInsufficiency' fired 3 times). The future L1 miner uses these to detect threshold-tuning candidates: if a threshold fires 0 times across 30 runs, it's probably too loose; if it fires every run, too strict.",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kpis_captured", "kpis_at_target", "kpis_below_target"],
+      "properties": {
+        "kpis_captured": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of KPIs in `kpi_observations`."
+        },
+        "kpis_at_target": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of KPIs whose `value` meets `target` (per the per-KPI comparison operator)."
+        },
+        "kpis_below_target": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of KPIs whose `value` is below target. Operator-readable signal: 'X of Y KPIs missed target this run'."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "kpi_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "target", "comparison", "status"],
+      "properties": {
+        "value": {
+          "type": ["number", "null"],
+          "description": "Observed value (e.g., 0.82 for KPI-001 weighted coverage). null when the input artifact required to compute is absent (pre-Stage-1 runs etc.)."
+        },
+        "target": {
+          "type": "number",
+          "description": "Target value at the time of capture (sourced from config/tunables.yaml or the canonical reference doc)."
+        },
+        "comparison": {
+          "type": "string",
+          "enum": [">=", "<=", "==", ">", "<"],
+          "description": "Comparison operator for value-vs-target. Most KPIs are >= (higher is better)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["at_target", "below_target", "n/a"],
+          "description": "Pre-computed verdict. n/a when value is null. The operator-readable summary block aggregates these."
+        },
+        "numerator": {
+          "type": ["number", "integer", "null"],
+          "description": "Optional. The raw numerator that produced `value`. Lets the L1 miner detect data shape (e.g., zero-numerator vs zero-denominator)."
+        },
+        "denominator": {
+          "type": ["number", "integer", "null"],
+          "description": "Optional. The raw denominator that produced `value`."
+        }
+      }
+    }
+  }
+}

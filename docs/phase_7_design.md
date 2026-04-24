@@ -14,8 +14,9 @@ Phase 7 has three layers:
 
 | Layer | What it does | When it ships |
 |---|---|---|
-| **L0 (foundation)** | Formal tunable inventory + IMMUTABLE_CONFLICT lint + safety contract doc | **v1.1.14 (this release)** |
-| **L1 (telemetry + miner)** | Per-run telemetry collection + pattern miner that proposes tuning patches | v1.2.x candidate |
+| **L0 (foundation)** | Formal tunable inventory + IMMUTABLE_CONFLICT lint + safety contract doc | **v1.1.14** |
+| **L1a (telemetry collector)** | Per-run KPI snapshot + storage shape | **v1.2.4** (P1+P2: schema + collector skeleton; KPI-001 + KPI-006 covered) |
+| **L1b (miner)** | Aggregate snapshots across N runs + detect tunable-knob drift + propose tuning patches | v1.2.5+ candidate (deferred — needs real pilot data to calibrate) |
 | **L2 (auto-patcher)** | Auto-emit proposals (PRs) for tunables that need analyst sign-off (always reviewed before merge — no auto-merge in L2; the "auto" is the proposal generation, not the apply) | v1.3+ |
 
 Shipping L0 first lets the tunable inventory get pinned (so future drift is caught) without committing to a full collector backend before there's real pilot telemetry to learn from.
@@ -78,6 +79,14 @@ Implementation in v1.1.14 (foundation):
 - Roll-back mechanism beyond `git revert`
 
 These are L1/L2 concerns — v1.2.x candidates pending real pilot data.
+
+## L1a status (v1.2.4)
+
+**Telemetry storage shape (P1)** — schema at `governance/schemas/telemetry_run.schema.json`. Per-run JSON file at `analysis/telemetry/run_<run_id>.json`. Required top-level fields: `schema_version`, `captured_at`, `run_id`, `plugin_version`, `canon_policy_version`, `kpi_observations`, `summary`. Per-KPI block carries `value`, `target`, `comparison`, `status` ∈ {at_target, below_target, n/a}, plus optional `numerator` / `denominator` for fail-mode debugging. NOT F5-validated; NOT in POLICY_GLOBS. Deletion is safe (forces fresh capture next run).
+
+**Telemetry collector (P2)** — `scripts/phase_7_telemetry_collector.py`. Stdlib-only. v1.2.4 captures KPI-001 weighted (per `reliability_tier_spec.md` line 142) + KPI-006 story coverage (per `bsa-traceability-matrix/SKILL.md` line 71). Both compute null + `status=n/a` when their upstream artifacts (A59 / A70 / A72) are absent. Optional `validator_observations` + `threshold_trigger_counts` are schema fields but unpopulated in v1.2.4 — operator-side L1b miner work will populate them once a structured marker-emission convention exists.
+
+**v1.2.4 boundary**: ships data capture only. No miner; no patch proposer; no aggregation across runs. Operators may capture snapshots today + retain them for the L1b miner without backend dependencies. The intent is to start collecting real-pilot data NOW so L1b lands with an actual training set instead of synthetic baselines.
 
 ## Open questions for v1.2.x design
 

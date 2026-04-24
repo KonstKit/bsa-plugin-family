@@ -4,6 +4,60 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.4] — 2026-04-24
+
+**Phase 7 telemetry foundation L1a (Sprint 3 / P1+P2).** Ships the data-capture half of Phase 7 L1: a per-run JSON snapshot file shape (P1) + a stdlib-only collector that produces it from the workspace's canonical state (P2). v1.1.14 shipped the L0 foundation (tunable inventory + IMMUTABLE_CONFLICT lint); v1.2.4 opens L1 by giving operators a way to start collecting real-pilot KPI data NOW so the future L1b miner (v1.2.5+) lands with an actual training set instead of synthetic baselines.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.3+hash:f4ac1767` — **unchanged**. Schema + script + tests + design-doc edits all live outside POLICY_GLOBS; manifest stays at 1.2.3, git tag bumps to v1.2.4 (canon-neutral release pattern, same as v1.1.7..v1.1.19).
+
+### Added
+
+- **`governance/schemas/telemetry_run.schema.json`** (P1) — JSON Schema for the per-run telemetry snapshot. 7 required top-level fields (`schema_version`, `captured_at`, `run_id`, `plugin_version`, `canon_policy_version`, `kpi_observations`, `summary`) + optional `workspace_path` / `validator_observations` / `threshold_trigger_counts`. Per-KPI block: `value` (nullable when upstream missing), `target`, `comparison` (>=, <=, ==, >, <), `status` ∈ {at_target, below_target, n/a}, optional `numerator` / `denominator` for fail-mode debugging. NOT F5-validated; NOT in POLICY_GLOBS.
+- **`scripts/phase_7_telemetry_collector.py`** (P2) — stdlib-only collector (~280 lines). Computes:
+  * **KPI-001 weighted** — `sum(ClaimStrength for direct claims with bound SourceID+ExcerptID) / count(direct claims)` per `reliability_tier_spec.md` line 142. Target ≥ 0.75.
+  * **KPI-006 story coverage** — `|A70 stories with at least one direct A72 row| / |A70 stories|` per `bsa-traceability-matrix/SKILL.md` line 71. Target ≥ 0.90.
+  * Returns `value=null` + `status=n/a` when upstream artifact is absent (pre-Stage-1 / pre-Phase-3 runs).
+  * Atomic write (mktemp same-dir + os.replace; matches v1.2.2 a72_incremental_diff atomicity contract).
+  * Schema-conformant `run_id` pattern enforcement (lowercase + hyphen + underscore; 8-64 chars).
+  * CLI: `--workspace`, `--run-id`, `--output-path`, `--workspace-path-override`, `--print-only`, `--quiet`.
+- **`tests/test_phase_7_telemetry_collector.py`** (+20 tests) — pins:
+  * Schema presence + 7 required top-level fields + per-KPI sub-shape.
+  * KPI-001 against real fixture (project_0001).
+  * KPI-001 returns n/a when A59 missing OR no direct claims (denominator=0).
+  * KPI-001 at_target + below_target classification.
+  * KPI-006 against real fixture + at_target case.
+  * KPI-006 returns n/a when A70 missing.
+  * Snapshot validates against schema (jsonschema Draft202012); both real-fixture + null-upstream cases.
+  * `workspace_path` override appears in snapshot when provided.
+  * Atomic write: tmpfile in same dir as target.
+  * Auto-generated `run_id` matches schema pattern.
+  * CLI: missing workspace → exit 2; invalid run_id → exit 2; default output path; `--print-only` doesn't write to disk; `--output-path` honoured.
+
+### Updated
+
+- **`docs/phase_7_design.md`** — layers table refined (L0/L1a/L1b/L2 split; L1a marked done in v1.2.4); new §"L1a status (v1.2.4)" describes shipped capability + boundary.
+
+### Operator workflow
+
+After each Phase-3 dev-handoff cycle (or whenever the operator wants a snapshot):
+
+1. `python3 scripts/phase_7_telemetry_collector.py --workspace <ws>` (auto-generates run_id) OR pass `--run-id <stable-id>` for retrievable handles.
+2. Snapshot lands at `<ws>/analysis/telemetry/run_<run_id>.json`.
+3. Retain snapshots across runs — the L1b miner (v1.2.5+) will aggregate them to detect tunable drift.
+4. Cache file is operator-side observation. Safe to delete + regenerate.
+
+### Codex review trail
+
+- **Round 1**: REJECT — 1 critical.
+  * **CRITICAL**: KPI-006 only guarded the n/a verdict on missing A70. When A70 existed but A72 was missing, `direct_story_ids` was empty + the ratio fell through as `value=0.0, status=below_target`, falsely signalling that the workspace failed coverage when the actual fact was that A72 hadn't been built yet (pre-Phase-3 traceability run). **Fixed**: both A70 + A72 now gate the n/a verdict (`if not a70 or not a72: return n/a`). New regression test `test_kpi_006_returns_na_when_a72_missing` pins the fix.
+- **Round 2**: APPROVE — fix verified against the original false-coverage-fail scenario; no new issues.
+
+### Result
+
+- 1683 → 1704 tests passing (+21 phase_7_telemetry_collector tests; 20 round-1 + 1 round-2 KPI-006 a72-missing regression).
+- Phase 7 L1a foundation closed. Operators can capture KPI snapshots today with zero backend dependencies; L1b miner work has a real schema + capture path to consume.
+- Canon hash unchanged (f4ac1767). Manifest stays at 1.2.3.
+
 ## [v1.2.3] — 2026-04-24
 
 **A71 runnable test export (Sprint 2 / T3).** Closes `TODO-S8-01-RUNNABLE-EXPORT` from `skills/bsa-test-scenario-builder/SKILL.md`. The A71 register is already Gherkin-shaped (Given / When / Then per the v1.1.0 schema), so the export step is a small generator that materialises A71 rows as runnable test artifacts in three formats. Three-way closure of the Phase-3 runnable-tests gap.
