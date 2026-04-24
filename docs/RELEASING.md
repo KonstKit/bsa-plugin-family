@@ -36,6 +36,7 @@ Examples from the v1.1.x line:
 | v1.2.0 | 1.2.0 | `5d8ae8b6` | First canon bump since v1.1.6 — added one-line cross-ref `governance/immutable_invariants.md` → `docs/phase_7_design.md` (H2). Establishes the v1.2.x line; manifest version + canon hash both move. |
 | v1.2.1 | 1.2.1 | `6821009d` | A51 IssueType enum extension `link_strength_override` (T2; closes TODO-S8-02-LINK-STRENGTH-OVERRIDE). Schema + shared-control-surface-contracts.md + bsa-traceability-matrix SKILL.md updated in lockstep. |
 | v1.2.2 | 1.2.2 | `66e2004f` | A72 incremental-diff helper (T1; closes TODO-S8-02-INCREMENTAL-MATRIX). New `scripts/a72_incremental_diff.py` + operator-side cache at `analysis/canonical/.a72_incremental_state.json` (non-canonical). bsa-traceability-matrix SKILL.md edited → canon hash bumps. |
+| v1.2.3 | 1.2.3 | `f4ac1767` | A71 runnable test export (T3; closes TODO-S8-01-RUNNABLE-EXPORT). New `scripts/a71_runnable_export.py` emits Cucumber `.feature` / pytest-bdd / jest-cucumber artifacts. bsa-test-scenario-builder SKILL.md edited (round-1 closure + round-2 wording fix) → canon hash bumps. |
 
 ## Pre-release checklist
 

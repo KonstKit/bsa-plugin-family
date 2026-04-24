@@ -4,6 +4,71 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.3] — 2026-04-24
+
+**A71 runnable test export (Sprint 2 / T3).** Closes `TODO-S8-01-RUNNABLE-EXPORT` from `skills/bsa-test-scenario-builder/SKILL.md`. The A71 register is already Gherkin-shaped (Given / When / Then per the v1.1.0 schema), so the export step is a small generator that materialises A71 rows as runnable test artifacts in three formats. Three-way closure of the Phase-3 runnable-tests gap.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.3+hash:a88484b7` — **bumps from 1.2.2+hash:66e2004f** (bsa-test-scenario-builder SKILL.md in POLICY_GLOBS).
+
+### Added
+
+- **`scripts/a71_runnable_export.py`** (~290 lines, stdlib-only) — A71 → runnable-test generator. Three formats:
+  * **Cucumber** — `.feature` files, one per A70 story (grouped by SourceStoryID). Gherkin structure preserved (Tags line above Scenario, Given/When/Then ordering).
+  * **pytest-bdd** — `.feature` + companion `test_*.py` with `scenarios("...")` + `@given`/`@when`/`@then` stub decorators. Each stub body is `pytest.fail("step not implemented")` so unimplemented work surfaces immediately.
+  * **jest** — `.feature` + companion `*.steps.js` with `jest-cucumber` `defineFeature` + `test()` blocks. Stub bodies throw `Error('step not implemented')`.
+  * Default policy: export only `AutomationStatus=automated` rows. Opt-in flags: `--include-manual`, `--include-deferred` (deferred rows preserve `A51Ref` as a `# A51Ref=...` comment line for operator traceability).
+  * Output lands at `analysis/handoff/runnable_tests/<format>/` (NOT canonical; NOT F5-validated; safe to delete + regenerate).
+  * Same fail-CLOSED CSV parsing as v1.2.2's `a72_incremental_diff` (header validation + truncated-row + extra-field-overflow detection).
+  * CLI: `--workspace`, `--format {cucumber,pytest-bdd,jest}`, `--output-dir`, `--include-manual`, `--include-deferred`, `--quiet`.
+- **`tests/test_a71_runnable_export.py`** (+21 tests) — pins:
+  * `_safe_filename` normalisation (STORY-PERF-001 → `story_perf_001.feature`).
+  * `_split_tags` filters empty values.
+  * A71 real fixture parse (3 scenarios from `project_0001/.../A71_test_scenario_register.csv`).
+  * Missing required column / truncated row / extra-field overflow → parse error.
+  * Filter default drops manual + deferred; `--include-manual` adds manual only; `--include-both` returns all 3.
+  * Cucumber feature body has Gherkin structure (Feature: / Tags / Scenario: / Given / When / Then + auto-generated header).
+  * `A51Ref` emitted as comment for deferred scenarios.
+  * pytest-bdd writes `.feature` + `test_*.py` with `pytest_bdd` imports, `scenarios("...")`, `@given/@when/@then` decorators, `step not implemented` markers.
+  * jest writes `.feature` + `*.steps.js` with `jest-cucumber` `loadFeature`, `defineFeature`, `step not implemented` throws.
+  * Grouping by story handles multi-scenario-per-story (input order preserved).
+  * CLI: missing workspace → exit 2; missing A71 → exit 2; invalid format → exit 2 (argparse); default exports only automated; `--include-manual --include-deferred` exports all 3; `--output-dir` honoured.
+
+### Updated
+
+- **`skills/bsa-test-scenario-builder/SKILL.md`** — `[TODO-S8-01-RUNNABLE-EXPORT]` marked CLOSED with full operator workflow + CLI flag reference.
+- **`.claude-plugin/plugin.json`** — version 1.2.2 → 1.2.3; canonPolicyVersion fields updated to a88484b7.
+- **`docs/RELEASING.md`** — table entry added.
+- **`README.md`, `INSTALL.md`, `docs/getting_started.md`, `docs/faq.md`** — current-release lines refreshed to 1.2.3.
+
+### Operator workflow
+
+After A71 rows are promoted to canonical state (post Phase-3 dev-handoff):
+
+1. Run `python3 scripts/a71_runnable_export.py --workspace <ws> --format cucumber`.
+2. Generated `.feature` files land under `analysis/handoff/runnable_tests/cucumber/<story_id>.feature`.
+3. For pytest-bdd or jest projects, re-run with `--format pytest-bdd` or `--format jest` — the same `.feature` files get companion step-stub files next to them.
+4. Import the generated directory into your test suite. Implement the stub step bodies against your system under test.
+5. If the A71 register changes, delete the output dir + re-run. Runs are idempotent by story (re-running overwrites per-story files).
+
+### Codex review trail
+
+- **Round 1**: REJECT — 2 critical.
+  * **CRITICAL #1**: `filter_scenarios` only handled 3 of the 5 A71 `AutomationStatus` enum values (`automated`, `manual`, `deferred`); `partial` and `not-automated` rows were silently dropped. **Fixed**: full coverage of all 5 enum values with documented policy:
+    - `automated` + `partial` → exported by default (both have automation; partial just has stub bodies for the manual portions).
+    - `manual` + `not-automated` → SKIPPED unless `--include-manual` (semantically equivalent — no automation).
+    - `deferred` → SKIPPED unless `--include-deferred`.
+    New regression test `test_filter_handles_all_5_automation_status_enum_values` pins the policy across all 5 + both opt-in flag combinations.
+  * **CRITICAL #2**: SKILL.md TODO-closure described pytest-bdd output as "with `@scenario` decorators" but the actual generator emits module-level `scenarios("file.feature")` bulk loader + per-scenario `@given`/`@when`/`@then` step-stub functions. **Fixed**: SKILL.md wording rewritten to describe the actual pattern (both `scenarios()` bulk loader and `@given`/`@when`/`@then` decorators are mentioned).
+- **Round 2**: REJECT — non-blocking stale docstrings. Module-level docstring in `scripts/a71_runnable_export.py` + module docstring in `tests/test_a71_runnable_export.py` still described the round-1 (3-status) policy + the old `@scenario decorators` wording. **Fixed**: both docstrings rewritten in lockstep with round-1's filter logic + SKILL.md wording (5-enum-value coverage + actual `scenarios()` bulk loader + `@given`/`@when`/`@then` step stubs).
+- **Round 3**: APPROVE — docstring sweep verified clean; no stale 3-status policy or `@scenario` decorator wording remains.
+
+### Result
+
+- 1661 → 1683 tests passing (+22 a71_runnable_export tests; 21 round-1 + 1 round-2 5-enum coverage regression).
+- TODO-S8-01-RUNNABLE-EXPORT closed. Phase-3 dev-handoff now has a 3-way runnable-test output path (Cucumber / pytest-bdd / jest) — A71 is no longer a terminal-format register only human-readable to QA tooling.
+- Canon hash: 66e2004f → f4ac1767 (round-2 SKILL.md wording fix re-bumped from a88484b7). Manifest version: 1.2.2 → 1.2.3.
+- All three of Sprint 2's Tn tasks (T1 incremental matrix + T2 LinkStrength override + T3 runnable export) now closed; bsa-traceability-matrix + bsa-test-scenario-builder SKILL.md backlogs have ZERO open `[TODO-...]` markers (only `TODO-S8-01-NEGATIVE-PATH-HEURISTICS` remains in test-scenario-builder, deferred to a future release).
+
 ## [v1.2.2] — 2026-04-23
 
 **A72 incremental-matrix diff helper (Sprint 2 / T1).** Closes `TODO-S8-02-INCREMENTAL-MATRIX` from `skills/bsa-traceability-matrix/SKILL.md`. For engagements with thousands of triples, a full A72 matrix re-build on every `bsa-dev-handoff` invocation is wasteful. v1.2.2 ships an operator-side helper that computes per-row hashes of A70/A59/A50/A62 inputs and outputs a diff classifying each upstream row as `added` / `modified` / `removed` / `unchanged`. The skill uses the diff to scope its A72 re-emission — `unchanged` rows carry forward; added/modified/removed trigger recomputation for their triples only.
