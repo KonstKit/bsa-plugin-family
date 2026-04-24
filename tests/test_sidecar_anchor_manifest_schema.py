@@ -43,6 +43,13 @@ BPMN_SCHEMA = (
     / "references"
     / "anchor_manifest.schema.json"
 )
+DBML_SCHEMA = (
+    REPO_ROOT
+    / "skills"
+    / "dbml-from-context"
+    / "references"
+    / "anchor_manifest.schema.json"
+)
 
 
 def _load(path: Path) -> dict:
@@ -154,6 +161,40 @@ BPMN_PREVIOUSLY_MISSING_KINDS = (
 
 
 # ---- meta-schema conformance --------------------------------------------
+
+
+def _dbml_happy_path() -> dict:
+    """Minimal well-formed DBML sidecar manifest (v1.2.11)."""
+    return {
+        "manifest_version": "1.0",
+        "generated_at": "2026-04-25T00:00:00Z",
+        "sidecar": "dbml-from-context",
+        "sidecar_version": "1.0.0",
+        "canon_policy_version": "1.2.11",
+        "view_files": [
+            {
+                "path": "analysis/views/dbml/core_schema.dbml",
+                "bounded_context": "user_management",
+                "anchor_map": [
+                    {
+                        "view_element_id": "users",
+                        "view_element_kind": "Table",
+                        "a61_anchor_id": "ANC-TABLE-001",
+                    },
+                    {
+                        "view_element_id": "users.id",
+                        "view_element_kind": "Column",
+                        "a61_anchor_id": "ANC-COLUMN-001",
+                    },
+                    {
+                        "view_element_id": "ref_orders_user_id_to_users_id",
+                        "view_element_kind": "Ref",
+                        "a61_anchor_id": "ANC-REF-001",
+                    },
+                ],
+            }
+        ],
+    }
 
 
 def test_c4_schema_is_valid_2020_12() -> None:
@@ -494,6 +535,99 @@ def test_bpmn_enum_is_superset_of_documented_taxonomy() -> None:
         f"Either add them to references/anchor_manifest.schema.json, or "
         f"add the token to _BPMN_NON_ELEMENT_TOKENS with justification "
         f"(if it is actually an attribute rather than an element kind)."
+    )
+
+
+# ---- DBML sidecar (v1.2.11) ---------------------------------------
+#
+# The DBML sidecar is the third BSA sidecar, added in v1.2.11 with
+# status=experimental. These tests mirror the c4 + bpmn coverage for
+# the minimum well-formed manifest + three core rejection cases.
+
+
+def test_dbml_schema_is_valid_2020_12() -> None:
+    schema = _load(DBML_SCHEMA)
+    jsonschema.Draft202012Validator.check_schema(schema)
+
+
+def test_dbml_happy_path_validates() -> None:
+    schema = _load(DBML_SCHEMA)
+    jsonschema.Draft202012Validator(schema).validate(_dbml_happy_path())
+
+
+def test_dbml_happy_path_accepts_policy_hash_suffix() -> None:
+    schema = _load(DBML_SCHEMA)
+    doc = _dbml_happy_path()
+    doc["canon_policy_version"] = "1.2.11+hash:abcdef12"
+    jsonschema.Draft202012Validator(schema).validate(doc)
+
+
+def test_dbml_rejects_wrong_sidecar_name() -> None:
+    schema = _load(DBML_SCHEMA)
+    doc = _dbml_happy_path()
+    doc["sidecar"] = "c4-plantuml-from-context"
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(doc))
+    assert errors, "DBML schema accepted wrong sidecar literal"
+
+
+def test_dbml_rejects_unknown_element_kind() -> None:
+    schema = _load(DBML_SCHEMA)
+    doc = _dbml_happy_path()
+    doc["view_files"][0]["anchor_map"][0]["view_element_kind"] = "NotAnElement"
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(doc))
+    assert errors, "DBML schema accepted unknown view_element_kind"
+
+
+def test_dbml_rejects_bad_anchor_id_pattern() -> None:
+    schema = _load(DBML_SCHEMA)
+    doc = _dbml_happy_path()
+    doc["view_files"][0]["anchor_map"][0]["a61_anchor_id"] = "not-an-anchor-id"
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(doc))
+    assert errors
+
+
+def test_dbml_rejects_wrong_path_extension() -> None:
+    """DBML manifest view paths MUST end in `.dbml`. A `.sql` or `.txt`
+    path is a hard fail."""
+    schema = _load(DBML_SCHEMA)
+    doc = _dbml_happy_path()
+    doc["view_files"][0]["path"] = "analysis/views/dbml/core_schema.sql"
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(doc))
+    assert errors
+
+
+def test_dbml_rejects_missing_bounded_context() -> None:
+    """bounded_context is a required per-view-file field — it helps
+    operators distinguish multi-context schemas. Pin rejection."""
+    schema = _load(DBML_SCHEMA)
+    doc = _dbml_happy_path()
+    del doc["view_files"][0]["bounded_context"]
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(doc))
+    assert errors
+
+
+def test_dbml_rejects_empty_bounded_context() -> None:
+    schema = _load(DBML_SCHEMA)
+    doc = _dbml_happy_path()
+    doc["view_files"][0]["bounded_context"] = ""
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = list(validator.iter_errors(doc))
+    assert errors
+
+
+def test_dbml_enum_covers_five_documented_kinds() -> None:
+    """Integration-contract §view_element_id convention documents
+    exactly 5 element kinds: Table, Column, Ref, Enum, TableGroup.
+    Pin that the schema enum lists exactly those 5."""
+    enum = set(_schema_enum(DBML_SCHEMA, "view_element_kind"))
+    expected = {"Table", "Column", "Ref", "Enum", "TableGroup"}
+    assert enum == expected, (
+        f"DBML schema element-kind enum drift: {enum} vs expected {expected}"
     )
 
 

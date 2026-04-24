@@ -75,11 +75,34 @@ def test_committed_registry_lints_clean(lint) -> None:
     )
 
 
-def test_committed_registry_lists_both_shipping_sidecars(yaml_module) -> None:
+def test_committed_registry_lists_all_shipping_sidecars(yaml_module) -> None:
+    """Pre-v1.2.11: 2 sidecars (c4 + bpmn). v1.2.11 adds dbml-from-context
+    as the third (status=experimental). v1.2.11 half-closes the
+    pre-v1.2.11 'DBML / sequence-diagram sidecars' follow-up at
+    docs/sidecar_inventory.md — sequence-diagram remains open."""
     doc = yaml_module.safe_load(REGISTRY_PATH.read_text(encoding="utf-8"))
     names = {e["name"] for e in doc["sidecars"]}
     assert "c4-plantuml-from-context" in names
     assert "camunda-bpmn-from-context" in names
+    assert "dbml-from-context" in names  # v1.2.11
+
+
+def test_committed_registry_dbml_sidecar_is_experimental(yaml_module) -> None:
+    """v1.2.11 ships DBML with status=experimental (first-release
+    convention). A future real-pilot validation pass flips it to
+    ``stable`` — pin so a premature stability bump without paired
+    pilot data surfaces here."""
+    doc = yaml_module.safe_load(REGISTRY_PATH.read_text(encoding="utf-8"))
+    dbml = next(
+        (e for e in doc["sidecars"] if e["name"] == "dbml-from-context"),
+        None,
+    )
+    assert dbml is not None, "dbml-from-context entry missing from registry"
+    assert dbml["status"] == "experimental", (
+        f"DBML sidecar status MUST be `experimental` until real-pilot "
+        f"pass; got {dbml['status']!r}"
+    )
+    assert dbml["added_in"] == "v1.2.11"
 
 
 def test_committed_registry_each_anchor_schema_inherits_base_required(

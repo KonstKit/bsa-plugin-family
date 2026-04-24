@@ -133,6 +133,17 @@ C4_SCHEMA_PATH = (
     / "anchor_manifest.schema.json"
 )
 
+DBML_VIEW_PATH = FIXTURE_OUTPUTS / "views" / "dbml" / "ticket_persistence.dbml"
+DBML_MANIFEST_PATH = FIXTURE_OUTPUTS / "views" / "dbml" / "anchor_manifest.json"
+DBML_PATH_PREFIX = "analysis/views/dbml/"
+DBML_SCHEMA_PATH = (
+    REPO_ROOT
+    / "skills"
+    / "dbml-from-context"
+    / "references"
+    / "anchor_manifest.schema.json"
+)
+
 BPMN_VIEW_PATH = FIXTURE_OUTPUTS / "views" / "bpmn" / "ticket_intake.bpmn"
 BPMN_MANIFEST_PATH = FIXTURE_OUTPUTS / "views" / "bpmn" / "anchor_manifest.json"
 BPMN_PATH_PREFIX = "analysis/views/bpmn/"
@@ -355,6 +366,132 @@ def _load_bpmn_view_elements() -> set[str]:
     return ids
 
 
+# DBML view-element derivation (v1.2.11). The DBML sidecar's
+# view_element_id convention (see skills/dbml-from-context/references/
+# integration-contract.md §"view_element_id convention"):
+#
+#   Table → bare name (`users`)
+#   Column → `<table>.<column>` (`users.id`)
+#   Ref → `ref_<from_table>_<from_col>_to_<to_table>_<to_col>`
+#   Enum → bare name
+#   TableGroup → bare name
+#
+# The helpers below extract these ids from a .dbml source text using
+# regex parsing — sufficient for the e2e test's orphan-view-element
+# check. A future release MAY introduce a full DBML parser; the
+# test then swaps implementations without changing its contract.
+
+_DBML_TABLE_RE = re.compile(
+    r"^\s*Table\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^\]]*\])?\s*\{",
+    re.MULTILINE,
+)
+_DBML_ENUM_RE = re.compile(
+    r"^\s*Enum\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{",
+    re.MULTILINE,
+)
+_DBML_TABLEGROUP_RE = re.compile(
+    r"^\s*TableGroup\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{",
+    re.MULTILINE,
+)
+
+# Column inside a Table block. We match the first identifier on a
+# non-empty non-closer line inside the block + strip ones that are
+# clearly not columns (e.g., `indexes {`). The Table's own name
+# passes in from _DBML_TABLE_RE; we format the column id as
+# `<table>.<column>`.
+_DBML_COLUMN_LINE_RE = re.compile(
+    r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s+[A-Za-z_]"  # column name + type start
+)
+
+# Top-level Ref statement: `Ref[: <name>] <from>.<col> (<|>|-) <to>.<col>`
+# Matches both the anonymous form (`Ref: a.b > c.d`) and the named
+# form (`Ref my_ref: a.b > c.d`). Skips inline column refs (those
+# live inside `[ref: ...]` annotations — currently the convention
+# doesn't extract a distinct view_element_id for inline refs; a
+# future release may add that).
+_DBML_TOPLEVEL_REF_RE = re.compile(
+    r"^\s*Ref(?:\s+[A-Za-z_][A-Za-z0-9_]*)?\s*:\s*"
+    r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)"
+    r"\s*[<>-]\s*"
+    r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)",
+    re.MULTILINE,
+)
+
+
+def _load_dbml_view_elements() -> set[str]:
+    """Extract every view-element identifier from the fixture's .dbml
+    per the v1.2.11 DBML sidecar convention. Returns the set of
+    derived `view_element_id` values."""
+    assert DBML_VIEW_PATH.is_file(), (
+        f"fixture missing DBML view at {DBML_VIEW_PATH}"
+    )
+    text = DBML_VIEW_PATH.read_text(encoding="utf-8")
+    ids: set[str] = set()
+
+    # Tables + Enums + TableGroups → bare name.
+    table_names: list[str] = []
+    for m in _DBML_TABLE_RE.finditer(text):
+        name = m.group(1)
+        ids.add(name)
+        table_names.append(name)
+    for m in _DBML_ENUM_RE.finditer(text):
+        ids.add(m.group(1))
+    for m in _DBML_TABLEGROUP_RE.finditer(text):
+        ids.add(m.group(1))
+
+    # Columns: walk each Table block body + extract column names.
+    # Simple state machine — matches the brace-balance logic of the
+    # validator script.
+    lines = text.splitlines()
+    current_table: str | None = None
+    depth = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//"):
+            continue
+        # Entering a Table block.
+        table_match = re.match(
+            r"^\s*Table\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^\]]*\])?\s*\{",
+            line,
+        )
+        if table_match:
+            current_table = table_match.group(1)
+            depth += line.count("{") - line.count("}")
+            continue
+        # Other block openers (Enum / TableGroup / Ref-block-named) —
+        # we don't extract columns from those.
+        non_table_opener = re.match(
+            r"^\s*(?:Enum|TableGroup|Ref|Project|indexes)\b", line,
+        )
+        if non_table_opener:
+            depth += line.count("{") - line.count("}")
+            if depth == 0:
+                current_table = None
+            continue
+        # Inside a Table block: extract column name.
+        if current_table and depth >= 1:
+            col_match = _DBML_COLUMN_LINE_RE.match(line)
+            if col_match:
+                # Skip lines that are just closers or indexes-block
+                # marker (unlikely to match the regex anyway).
+                col_name = col_match.group(1)
+                # Guard against catching the closer of a nested
+                # annotation; the regex requires column-like shape.
+                if col_name not in {"indexes", "Note", "note"}:
+                    ids.add(f"{current_table}.{col_name}")
+        # Update brace depth; close the Table block when depth → 0.
+        depth += line.count("{") - line.count("}")
+        if depth == 0:
+            current_table = None
+
+    # Top-level Refs → `ref_<from_t>_<from_c>_to_<to_t>_<to_c>`.
+    for m in _DBML_TOPLEVEL_REF_RE.finditer(text):
+        from_t, from_c, to_t, to_c = m.groups()
+        ids.add(f"ref_{from_t}_{from_c}_to_{to_t}_{to_c}")
+
+    return ids
+
+
 def _load_manifest(path: Path) -> dict:
     assert path.is_file(), f"fixture missing manifest at {path}"
     return json.loads(path.read_text(encoding="utf-8"))
@@ -420,15 +557,21 @@ def test_fixture_metadata_present() -> None:
 
 def test_fixture_a61_register_loads() -> None:
     ids = _load_a61_anchor_ids()
-    # Fixture is hand-designed to ship 12 anchors:
+    # Fixture is hand-designed to ship 22 anchors:
     # - 5 C4 declaration anchors (system + person + boundary + 2 containers)
     # - 2 C4 relationship anchors (v1.2.9: ANC-REL-001 + ANC-REL-002)
     # - 5 BPMN anchors (start event + task + 2 sequence flows + end event)
-    assert len(ids) == 12, f"expected 12 anchors in A61; got {len(ids)}"
+    # - 10 DBML anchors (v1.2.11: 2 tables + 6 columns + 1 ref + 1 enum)
+    assert len(ids) == 22, f"expected 22 anchors in A61; got {len(ids)}"
     assert "ANC-SYS-001" in ids
     assert "ANC-REL-001" in ids
     assert "ANC-REL-002" in ids
     assert "ANC-EVT-001" in ids
+    # v1.2.11 DBML spot-checks
+    assert "ANC-TABLE-001" in ids
+    assert "ANC-TABLE-002" in ids
+    assert "ANC-REF-001" in ids
+    assert "ANC-ENUM-001" in ids
 
 
 def test_fixture_a61_no_duplicate_anchor_ids() -> None:
@@ -572,15 +715,112 @@ def test_bpmn_manifest_view_path_prefix_and_disk_resolve() -> None:
         )
 
 
+# ---- DBML sidecar e2e (v1.2.11) --------------------------------------
+
+
+def test_dbml_manifest_validates_against_schema() -> None:
+    schema = _load_schema(DBML_SCHEMA_PATH)
+    manifest = _load_manifest(DBML_MANIFEST_PATH)
+    errors = _schema_errors(manifest, schema)
+    assert not errors, (
+        f"DBML manifest failed schema validation: "
+        f"{[e.message for e in errors]}"
+    )
+
+
+def test_dbml_manifest_anchor_ids_resolve_to_a61() -> None:
+    """ART-VAL-001-07 unmapped-anchor guard, DBML surface."""
+    a61_ids = _load_a61_anchor_ids()
+    manifest = _load_manifest(DBML_MANIFEST_PATH)
+    unmapped = _unmapped_anchor_ids(manifest, a61_ids)
+    assert not unmapped, (
+        f"DBML manifest references {sorted(unmapped)} but A61 has no "
+        f"such anchor row(s). ART-VAL-001-07 hard-fail."
+    )
+
+
+def test_dbml_view_elements_all_in_manifest() -> None:
+    """ART-VAL-001-07 orphan-view-element guard, DBML surface. Every
+    Table / Column / Ref / Enum / TableGroup declared in the .dbml
+    MUST appear in the manifest's anchor_map."""
+    view_ids = _load_dbml_view_elements()
+    manifest = _load_manifest(DBML_MANIFEST_PATH)
+    orphans = _orphan_view_elements(view_ids, manifest, "view_element_id")
+    assert not orphans, (
+        f"DBML view file declares {sorted(orphans)} but the manifest's "
+        f"anchor_map has no entry for them. ART-VAL-001-07 hard-fail "
+        f"(orphan view elements)."
+    )
+
+
+def test_dbml_manifest_view_path_prefix_and_disk_resolve() -> None:
+    manifest = _load_manifest(DBML_MANIFEST_PATH)
+    for view in manifest["view_files"]:
+        rel = view["path"]
+        assert rel.startswith(DBML_PATH_PREFIX), (
+            f"DBML manifest view path {rel!r} does not start with "
+            f"{DBML_PATH_PREFIX!r} (orchestrated-mode contract)"
+        )
+        target = FIXTURE_OUTPUTS / rel[len("analysis/"):]
+        assert target.is_file(), (
+            f"DBML manifest references {rel} but {target} does not exist "
+            f"on disk in the fixture."
+        )
+
+
+def test_dbml_manifest_bounded_context_populated() -> None:
+    """DBML-specific: each view_file MUST declare a non-empty
+    `bounded_context`. Schema enforces minLength>=1; this is a
+    fixture-layer pin that the schema and fixture stay in sync."""
+    manifest = _load_manifest(DBML_MANIFEST_PATH)
+    for view in manifest["view_files"]:
+        assert view.get("bounded_context"), (
+            f"DBML manifest view {view.get('path')!r} missing "
+            f"bounded_context — DBML schema requires it"
+        )
+
+
+def test_dbml_view_extractor_produces_exact_expected_id_set() -> None:
+    """v1.2.11 round-1 Codex Rec #2: the existing orphan-view-element
+    test catches extras (view elements in the .dbml NOT in the
+    manifest). It does NOT catch misses — a regression in
+    `_load_dbml_view_elements` that silently returns fewer IDs would
+    pass the orphan check with flying colors but surface as MANIFEST
+    entries mapping to anchors that nobody references. Pin the exact
+    10-id set so a helper regression fails immediately."""
+    expected = {
+        # 2 tables
+        "agents", "tickets",
+        # 6 columns (all columns in both tables)
+        "agents.id", "agents.username",
+        "tickets.id", "tickets.assigned_agent_id",
+        "tickets.severity", "tickets.created_at",
+        # 1 top-level ref
+        "ref_tickets_assigned_agent_id_to_agents_id",
+        # 1 enum
+        "ticket_severity",
+    }
+    actual = _load_dbml_view_elements()
+    assert actual == expected, (
+        f"DBML view-extractor output drift:\n"
+        f"  missing (in expected, not in actual): "
+        f"{sorted(expected - actual)}\n"
+        f"  extra   (in actual, not in expected): "
+        f"{sorted(actual - expected)}"
+    )
+
+
 # ---- Cross-sidecar invariants ----------------------------------------
 
 
 def test_a61_partitions_cleanly_across_sidecars() -> None:
     """A61 anchors are shared across both sidecars (single source of
     truth) but the fixture is hand-designed so the C4 anchors and BPMN
-    anchors don't collide."""
+    anchors don't collide. v1.2.11 adds DBML as the third sidecar;
+    partition remains 3-way disjoint."""
     c4 = _load_manifest(C4_MANIFEST_PATH)
     bpmn = _load_manifest(BPMN_MANIFEST_PATH)
+    dbml = _load_manifest(DBML_MANIFEST_PATH)
     c4_ids = {
         e["a61_anchor_id"]
         for v in c4["view_files"]
@@ -591,23 +831,35 @@ def test_a61_partitions_cleanly_across_sidecars() -> None:
         for v in bpmn["view_files"]
         for e in v["anchor_map"]
     }
-    overlap = c4_ids & bpmn_ids
-    assert not overlap, (
-        f"fixture-integrity: C4 + BPMN manifests share anchor IDs "
-        f"{sorted(overlap)}. Hand-design intent was disjoint; refresh "
-        f"the fixture or update this test if the partitioning changed."
+    dbml_ids = {
+        e["a61_anchor_id"]
+        for v in dbml["view_files"]
+        for e in v["anchor_map"]
+    }
+    # Pairwise intersections — all three MUST be empty for a clean
+    # 3-way partition.
+    assert not (c4_ids & bpmn_ids), (
+        f"C4 ∩ BPMN overlap: {sorted(c4_ids & bpmn_ids)}"
+    )
+    assert not (c4_ids & dbml_ids), (
+        f"C4 ∩ DBML overlap: {sorted(c4_ids & dbml_ids)}"
+    )
+    assert not (bpmn_ids & dbml_ids), (
+        f"BPMN ∩ DBML overlap: {sorted(bpmn_ids & dbml_ids)}"
     )
 
 
 def test_a61_fully_consumed_by_combined_sidecars() -> None:
     """Every A61 row in the fixture MUST be referenced by at least one
-    sidecar manifest. Unconsumed A61 rows would be dead weight."""
+    sidecar manifest. Unconsumed A61 rows would be dead weight.
+    v1.2.11: now 3 sidecars (C4 + BPMN + DBML)."""
     a61 = _load_a61_anchor_ids()
     c4 = _load_manifest(C4_MANIFEST_PATH)
     bpmn = _load_manifest(BPMN_MANIFEST_PATH)
+    dbml = _load_manifest(DBML_MANIFEST_PATH)
     referenced = {
         e["a61_anchor_id"]
-        for m in (c4, bpmn)
+        for m in (c4, bpmn, dbml)
         for v in m["view_files"]
         for e in v["anchor_map"]
     }
@@ -967,27 +1219,55 @@ def test_derive_relindex_macro_split_across_lines() -> None:
 
 
 def test_fixture_sidecar_manifests_canon_policy_version_matches_fixture_metadata() -> None:
-    """v1.2.9 round-1 Codex Critical #3: the release is canon-bumped to
-    1.2.9+hash:4bb99111, but the fixture's sidecar manifests still
-    emitted 1.2.5+hash:0eb4093d in the round-1 draft — internally
-    inconsistent with the fixture_metadata.json. Round-1 fix refreshed
-    both manifests; this test pins the alignment so a future canon
-    bump that forgets one of the three files (fixture_metadata +
-    c4 manifest + bpmn manifest) surfaces here."""
+    """v1.2.9 round-1 Codex Critical #3: pin that every sidecar
+    manifest's canon_policy_version matches fixture_metadata.json.
+    v1.2.11 round-1 Codex Critical #4: extended to include the DBML
+    manifest (the v1.2.11 addition). A future canon bump that forgets
+    ANY of the sidecar manifests surfaces here."""
     meta = json.loads(
         (FIXTURE_ROOT / "fixture_metadata.json").read_text(encoding="utf-8")
     )
     meta_version = meta["canon_policy_version"]
     c4_manifest = _load_manifest(C4_MANIFEST_PATH)
     bpmn_manifest = _load_manifest(BPMN_MANIFEST_PATH)
+    dbml_manifest = _load_manifest(DBML_MANIFEST_PATH)
     assert c4_manifest["canon_policy_version"] == meta_version, (
         f"C4 manifest canon_policy_version {c4_manifest['canon_policy_version']!r} "
-        f"!= fixture_metadata {meta_version!r}. Canon-bump drift — the "
-        f"fixture's sidecar emission representations got out of sync."
+        f"!= fixture_metadata {meta_version!r}."
     )
     assert bpmn_manifest["canon_policy_version"] == meta_version, (
         f"BPMN manifest canon_policy_version {bpmn_manifest['canon_policy_version']!r} "
         f"!= fixture_metadata {meta_version!r}."
+    )
+    assert dbml_manifest["canon_policy_version"] == meta_version, (
+        f"DBML manifest canon_policy_version {dbml_manifest['canon_policy_version']!r} "
+        f"!= fixture_metadata {meta_version!r}. "
+        f"(v1.2.11 added DBML to the canon-alignment pin.)"
+    )
+
+
+def test_fixture_stage1_marker_canon_policy_matches_plugin() -> None:
+    """v1.2.11 round-1 Codex Critical #4: the stage1 marker in the
+    fixture's `expected_markers/` also carries a `canon_policy_version`
+    + `canon_policy_version_hash` pair. Pin them to match plugin.json
+    so a future canon bump that refreshes plugin.json + fixture
+    manifests but forgets the marker surfaces here."""
+    marker_path = (
+        FIXTURE_ROOT / "expected_markers" / "stage1.excerpts.merged.json"
+    )
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    plugin = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+    canon = plugin["canonPolicyVersion"]
+    assert marker["canon_policy_version"] == canon["semver"], (
+        f"stage1 marker canon_policy_version {marker['canon_policy_version']!r} "
+        f"!= plugin.json semver {canon['semver']!r}."
+    )
+    assert marker["canon_policy_version_hash"] == canon["hash_prefix"], (
+        f"stage1 marker canon_policy_version_hash "
+        f"{marker['canon_policy_version_hash']!r} != plugin.json "
+        f"hash_prefix {canon['hash_prefix']!r}."
     )
 
 

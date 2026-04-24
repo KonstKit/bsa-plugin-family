@@ -1,6 +1,6 @@
 {
   "name": "bsa-full",
-  "version": "1.2.9",
+  "version": "1.2.11",
   "description": "Business/Systems Analysis plugin family: 28 skills for evidence-bound claim-layer authoring, anti-hallucination audits, sidecar-assisted diagrams, H1-H4 handoff packaging, and Phase-3 dev-handoff (NFRs / stories / test scenarios / traceability matrix / backlog-bridge to Jira / Linear / generic / GitHub Projects v2 with optional live-API mode). Directly consumed by Claude Code.",
   "author": {
     "name": "Konstantin Kitanin"
@@ -32,11 +32,11 @@
     "github-projects-v2"
   ],
   "canonPolicyVersion": {
-    "semver": "1.2.9",
-    "hash_prefix": "4548551b",
-    "hash_full": "4548551b3363f36f22ab04eb0159cb1119e6b548263992c85e4090786c4591c6",
+    "semver": "1.2.11",
+    "hash_prefix": "6d91f10e",
+    "hash_full": "6d91f10eace63a0763e6c5b60067de810f22c7313971062f98a808fa05cef035",
     "computed_by": "scripts/compute_canon_hash.py",
     "computed_at": "2026-04-25T02:00:00Z",
-    "_comment": "Custom field — Claude Code preserves unknown top-level fields. Recomputed manually via scripts/compute_canon_hash.py after any POLICY_GLOBS edit; tests/test_plugin_manifest.py::test_manifest_canon_hash_matches_current_script_output fails locally on any drift between this value and the live script output."
+    "_comment": "Custom field \u2014 Claude Code preserves unknown top-level fields. Recomputed manually via scripts/compute_canon_hash.py after any POLICY_GLOBS edit; tests/test_plugin_manifest.py::test_manifest_canon_hash_matches_current_script_output fails locally on any drift between this value and the live script output."
   }
 }

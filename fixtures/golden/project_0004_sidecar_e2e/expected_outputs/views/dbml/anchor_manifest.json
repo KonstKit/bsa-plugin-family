@@ -1,0 +1,75 @@
+{
+  "manifest_version": "1.0",
+  "generated_at": "2026-04-25T00:00:00Z",
+  "sidecar": "dbml-from-context",
+  "sidecar_version": "1.0.0",
+  "canon_policy_version": "1.2.11+hash:6d91f10e",
+  "view_files": [
+    {
+      "path": "analysis/views/dbml/ticket_persistence.dbml",
+      "bounded_context": "support_desk",
+      "anchor_map": [
+        {
+          "view_element_id": "agents",
+          "view_element_kind": "Table",
+          "a61_anchor_id": "ANC-TABLE-001",
+          "notes": "Agent identity table; one row per triaging agent"
+        },
+        {
+          "view_element_id": "tickets",
+          "view_element_kind": "Table",
+          "a61_anchor_id": "ANC-TABLE-002",
+          "notes": "Support-ticket table; one row per incoming ticket"
+        },
+        {
+          "view_element_id": "agents.id",
+          "view_element_kind": "Column",
+          "a61_anchor_id": "ANC-COLUMN-001",
+          "notes": "Primary key; autoincrement integer"
+        },
+        {
+          "view_element_id": "tickets.id",
+          "view_element_kind": "Column",
+          "a61_anchor_id": "ANC-COLUMN-002",
+          "notes": "Primary key; autoincrement integer"
+        },
+        {
+          "view_element_id": "tickets.assigned_agent_id",
+          "view_element_kind": "Column",
+          "a61_anchor_id": "ANC-COLUMN-003",
+          "notes": "Foreign key to agents.id; nullable (unassigned tickets)"
+        },
+        {
+          "view_element_id": "agents.username",
+          "view_element_kind": "Column",
+          "a61_anchor_id": "ANC-COLUMN-004",
+          "notes": "Unique non-null varchar"
+        },
+        {
+          "view_element_id": "tickets.severity",
+          "view_element_kind": "Column",
+          "a61_anchor_id": "ANC-COLUMN-005",
+          "notes": "Non-null reference to the ticket_severity enum"
+        },
+        {
+          "view_element_id": "tickets.created_at",
+          "view_element_kind": "Column",
+          "a61_anchor_id": "ANC-COLUMN-006",
+          "notes": "Non-null timestamp; intake time"
+        },
+        {
+          "view_element_id": "ref_tickets_assigned_agent_id_to_agents_id",
+          "view_element_kind": "Ref",
+          "a61_anchor_id": "ANC-REF-001",
+          "notes": "Many-to-one: one agent triages many tickets; each ticket has at most one currently-assigned agent"
+        },
+        {
+          "view_element_id": "ticket_severity",
+          "view_element_kind": "Enum",
+          "a61_anchor_id": "ANC-ENUM-001",
+          "notes": "Ticket severity levels: Low / Medium / High / Critical"
+        }
+      ]
+    }
+  ]
+}

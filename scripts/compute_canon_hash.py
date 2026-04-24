@@ -100,6 +100,7 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/bsa-validation-readiness/SKILL.md",
     "skills/c4-plantuml-from-context/SKILL.md",
     "skills/camunda-bpmn-from-context/SKILL.md",
+    "skills/dbml-from-context/SKILL.md",
     "skills/d0-context-researcher/SKILL.md",
     "skills/d0-feasibility-assessor/SKILL.md",
     "skills/d0-hypothesis-prioritizer/SKILL.md",
@@ -143,6 +144,8 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/c4-plantuml-from-context/references/anchor_manifest.schema.json",
     "skills/camunda-bpmn-from-context/references/integration-contract.md",
     "skills/camunda-bpmn-from-context/references/anchor_manifest.schema.json",
+    "skills/dbml-from-context/references/integration-contract.md",
+    "skills/dbml-from-context/references/anchor_manifest.schema.json",
     # Repo-level policy docs.
     "docs/sem_audit_rename.md",
 )

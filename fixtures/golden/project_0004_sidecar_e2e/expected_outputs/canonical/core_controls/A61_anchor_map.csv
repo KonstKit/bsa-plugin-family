@@ -6,6 +6,16 @@ ANC-CONTAINER-001,container,C-001,Web UI,Web UI container inside support-desk sy
 ANC-CONTAINER-002,container,C-001,Analytics database,Analytics DB container inside support-desk system
 ANC-REL-001,Rel,C-002,Agent triages via web UI,"v1.2.9 Rel anchor — derived view_element_id rel_agent_to_web_ui"
 ANC-REL-002,Rel,C-002,Web UI to analytics DB,"v1.2.9 Rel anchor — derived view_element_id rel_web_ui_to_analytics_db"
+ANC-TABLE-001,Table,C-005,agents table,"v1.2.11 DBML anchor — view_element_id agents"
+ANC-TABLE-002,Table,C-005,tickets table,"v1.2.11 DBML anchor — view_element_id tickets"
+ANC-COLUMN-001,Column,C-006,agents.id PK,"v1.2.11 DBML anchor — view_element_id agents.id; role primary key"
+ANC-COLUMN-002,Column,C-006,tickets.id PK,"v1.2.11 DBML anchor — view_element_id tickets.id; role primary key"
+ANC-COLUMN-003,Column,C-006,tickets.assigned_agent_id FK,"v1.2.11 DBML anchor — view_element_id tickets.assigned_agent_id; role foreign key"
+ANC-COLUMN-004,Column,C-006,agents.username,"v1.2.11 DBML anchor — view_element_id agents.username; role unique non-null varchar"
+ANC-COLUMN-005,Column,C-006,tickets.severity,"v1.2.11 DBML anchor — view_element_id tickets.severity; role non-null ticket_severity enum reference"
+ANC-COLUMN-006,Column,C-006,tickets.created_at,"v1.2.11 DBML anchor — view_element_id tickets.created_at; role non-null timestamp"
+ANC-REF-001,Ref,C-005,tickets.assigned_agent_id → agents.id,"v1.2.11 DBML anchor — view_element_id ref_tickets_assigned_agent_id_to_agents_id; many-to-one"
+ANC-ENUM-001,Enum,C-006,ticket_severity enum,"v1.2.11 DBML anchor — view_element_id ticket_severity; Low/Medium/High/Critical"
 ANC-EVT-001,startEvent,C-003,Ticket intake,BPMN start event; entry point for ticket flow
 ANC-TASK-001,task,C-003,Assign severity,BPMN service task; routes to page-on-call flow when High or Critical
 ANC-FLOW-001,sequenceFlow,C-003,Page on-call,BPMN sequence flow; triggered when severity is High or Critical

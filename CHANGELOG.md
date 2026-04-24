@@ -4,6 +4,85 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.11] — 2026-04-25
+
+**Third BSA sidecar: `dbml-from-context` (relational-schema text).** v1.1.12 (Section I) codified the two-sidecar inventory (`c4-plantuml-from-context` + `camunda-bpmn-from-context`) and logged an open follow-up for DBML / sequence-diagram sidecars. v1.2.11 ships the DBML half — the third BSA sidecar — at status `experimental`. The sequence-diagram half remains deferred (the `C4_Dynamic` view in the c4 sidecar already covers runtime-scenario diagrams, so a dedicated sequence-diagram sidecar is lower priority than DBML).
+
+**Tag target**: this commit. **Canon policy version**: `1.2.9+hash:4548551b` → `1.2.11+hash:6d91f10e` — **canon-bumping** via the 3 new POLICY_GLOBS files (new SKILL.md + integration-contract.md + anchor_manifest.schema.json). Manifest bumps 1.2.9 → 1.2.11 in lockstep. Second canon-bumping release in the v1.2.x line after v1.2.9.
+
+### Added
+
+- **New sidecar skill `skills/dbml-from-context/`**:
+  * `SKILL.md` (POLICY_GLOBS) — sidecar purpose + workflow + scope. Data-persistence layer peer to `c4-plantuml-from-context` (architecture) and `camunda-bpmn-from-context` (process).
+  * `references/integration-contract.md` (POLICY_GLOBS) — orchestrated + standalone modes + `view_element_id` convention + anchor manifest schema pointer + failure modes + deferrals. Mirrors C4 + BPMN contract shapes.
+  * `references/anchor_manifest.schema.json` (POLICY_GLOBS) — per-sidecar JSON Schema (Draft 2020-12). Extends the base at `governance/schemas/sidecar_anchor_manifest.base.schema.json`. Pins `sidecar` to `"dbml-from-context"`, path to `\.dbml$`, `view_element_kind` enum to `{Table, Column, Ref, Enum, TableGroup}`, and requires `bounded_context` per view_file.
+  * `references/dbml-syntax.md` — pointer document referencing the upstream DBML spec + BSA-specific conventions (one bounded context per file, snake_case, explicit PKs, explicit Refs).
+  * `scripts/validate_dbml.py` — minimal stdlib-only syntax validator. Checks balanced braces, non-empty block bodies, top-level `Ref:` statement shape, inline `[ref: ...]` annotation shape. Deferred: type correctness, FK target resolution, multi-schema files.
+  * `scripts/test_validate_dbml.py` (+17 tests) — positive cases, negative cases per error class, explicit non-goal pins, CLI smoke tests.
+- **`view_element_id` convention for DBML**:
+  * Tables → bare name (`users`).
+  * Columns → `<table>.<column>` (`users.id`).
+  * Refs → `ref_<from_table>_<from_col>_to_<to_table>_<to_col>` (mirrors the v1.2.9 C4 relationship convention).
+  * Enums + TableGroups → bare name.
+  * Multi-occurrence same-(from, to) refs → `__N` suffix starting at `__2` (same as C4 convention).
+- **`config/sidecar_registry.yaml`** — new entry for `dbml-from-context`, `status: experimental`, `added_in: v1.2.11`.
+- **`scripts/compute_canon_hash.py`** — POLICY_GLOBS extended with 3 new DBML-sidecar paths (SKILL.md + integration-contract + anchor_manifest schema). Matches the c4 + camunda entry pattern.
+
+### Fixture extension (`fixtures/golden/project_0004_sidecar_e2e/`)
+
+- New source: `inputs/source_003_dbml_schema.md` — hand-authored database-design note covering 10 DBML anchors (2 tables + 6 columns + 1 ref + 1 enum).
+- A50 gets `S-003` (architecture_note); A58 gets `E-005` + `E-006` (DBML coverage); A59 gets `C-005` + `C-006` (DBML tables + columns claims).
+- A61 gets 10 new anchors: 2 tables (agents, tickets) + 6 columns (agents.id, agents.username, tickets.id, tickets.assigned_agent_id, tickets.severity, tickets.created_at) + 1 ref (tickets.assigned_agent_id → agents.id, many-to-one) + 1 enum (ticket_severity). Total A61 row count: 12 → 22.
+- New view: `expected_outputs/views/dbml/ticket_persistence.dbml` — representative DBML for the `support_desk` bounded context; passes the new `validate_dbml.py`.
+- New manifest: `expected_outputs/views/dbml/anchor_manifest.json` — maps all 10 DBML view elements back to A61 per the v1.2.11 convention.
+- stage1 marker + README coverage table updated.
+
+### Tests extended
+
+- `tests/test_sidecar_e2e_fixture.py` — new `_load_dbml_view_elements()` helper (regex-based DBML parser extracting Tables + Columns + top-level Refs + Enums + TableGroups per the convention). New per-sidecar e2e tests mirror the c4/bpmn shape: schema validation, anchor cross-ref, view-element-in-manifest, view path + prefix + disk resolution, bounded_context pin. Extended cross-sidecar invariants to 3-way partition (pairwise-disjoint) + 3-way consumption. Anchor-count assertion updated 12 → 22.
+- `tests/test_sidecar_anchor_manifest_schema.py` — new DBML schema-shape tests (+9): Draft 2020-12 validity, happy-path validates, policy-hash suffix accepted, wrong-sidecar rejected, unknown element-kind rejected, bad anchor-id pattern rejected, wrong path extension (.sql/.txt) rejected, missing + empty bounded_context rejected, element-kind enum pinned to exactly 5 kinds.
+- `tests/test_sidecar_registry.py` — updated expected sidecars (2 → 3) + new test pinning DBML's `status: experimental` + `added_in: v1.2.11`.
+- `tests/test_sidecar_f5_boundary.py` — DBML paths added to the non-canonical path parametrizations. `SIDECAR_NAMES` tuple extended.
+- `tests/test_schemas_a61.py` — fixture-loads assertion updated to match the 22-anchor set.
+
+### Updated
+
+- **`docs/sidecar_inventory.md`** (POLICY_GLOBS? → no, docs/ is not in POLICY_GLOBS, only `docs/sem_audit_rename.md`): new "At a glance" row for DBML; new dbml-from-context section; F5 boundary description expanded to 3 sidecars; open follow-up marked half-CLOSED (DBML closed in v1.2.11; sequence-diagram remains open with rationale pointing at `C4_Dynamic` as the current workaround).
+- `README.md`, `INSTALL.md`, `docs/faq.md`, `docs/getting_started.md` — current-release lines refreshed: `bsa-full@1.2.9` → `bsa-full@1.2.11`; v1.2.x progression extended to include v1.2.10 + v1.2.11.
+- `docs/RELEASING.md` — release table row.
+- `.claude-plugin/plugin.json` — manifest version 1.2.9 → 1.2.11; canon hash `4548551b` → `6d91f10e`.
+- Fixture metadata + all 3 sidecar anchor manifests refreshed with the new canon policy version in lockstep.
+
+### Operator workflow
+
+Three behavioral changes:
+
+1. **DBML is now a first-class sidecar option.** When an engagement needs a data-persistence-layer diagram (relational schema), authors can use the `dbml-from-context` skill with the same orchestrated-vs-standalone contract as the c4 + bpmn sidecars. Output goes to `analysis/views/dbml/` with an adjacent `anchor_manifest.json`.
+2. **`validate_dbml.py`** is available as an operator tool. `python3 skills/dbml-from-context/scripts/validate_dbml.py path/to/schema.dbml` catches gross-structure errors pre-promotion.
+3. **`status: experimental`** means the anchor-mapping convention is subject to real-pilot feedback. First real engagement that authors a `.dbml` should validate the convention + report any friction; flip status to `stable` in a future release once validated.
+
+### Codex review trail
+
+- **Round 1**: REQUEST CHANGES — 4 critical + 3 recommendations, all acted on.
+  * **CRITICAL #1 (evidence-binding gap)**: `ANC-COLUMN-006` anchored `tickets.created_at` to claim `C-006`, but neither `E-006` nor `C-006` mentioned `created_at` — overclaim in the canonical chain. **Fixed**: `E-006` excerpt text + `C-006` claim statement extended to include `tickets.created_at` (the excerpt continues to quote from the source note).
+  * **CRITICAL #2 (DBML contract drift)**: three docs (`SKILL.md` + `integration-contract.md` + `dbml-syntax.md`) claimed that v1.2.11 does NOT ship a `validate_dbml.py`, but the repo shipped one; SKILL.md also said "only column-as-fk needs anchors" contradicting the shipped scope (all columns anchored). **Fixed**: rewrote the 3 docs to say v1.2.11 ships a minimal validator + all Table / Column / Ref / Enum / TableGroup elements are anchorable.
+  * **CRITICAL #3 (validator under-match on same-line empty block)**: `validate_dbml.py` only rejected multi-line empty blocks (`Table users {\n}\n`). The one-line variant `Table users {}` silently passed. **Fixed**: added a same-line empty-block check BEFORE the multi-line check + 3 new regression tests (one-line empty Table, one-line empty Enum, plus a positive test for legitimate one-line blocks-with-body).
+  * **CRITICAL #4 (canon-pin coverage gap)**: the existing `test_fixture_sidecar_manifests_canon_policy_version_matches_fixture_metadata` only pinned C4 + BPMN; nothing pinned DBML or the stage1 marker. **Fixed**: extended the existing test to include the DBML manifest; added companion `test_fixture_stage1_marker_canon_policy_matches_plugin` pinning the marker's `canon_policy_version` + `canon_policy_version_hash` against `plugin.json`.
+  * **Recommendation #1 (fixture prose/provenance drift)**: fixture `README.md` still said "both stable sidecars"; `fixture_metadata.json` kept `plugin_version: 1.2.9`; `source_003_dbml_schema.md` said "7 anchors" (the original scope before the 3 extra columns landed). **Fixed**: refreshed to 3-sidecar / 1.2.11 / 10-anchor story. `scenario_tags` gained `"dbml"`.
+  * **Recommendation #2 (extractor regression pin)**: `_load_dbml_view_elements` returned the right 10 IDs but had no exact-set pin — the existing orphan test catches extras, not misses. **Fixed**: new `test_dbml_view_extractor_produces_exact_expected_id_set` pins the literal 10-element set.
+  * **Recommendation #3 (inline-ref coverage)**: integration-contract documented both top-level `Ref:` AND inline `[ref: ...]` as anchorable, but `_load_dbml_view_elements` only extracts top-level Refs. **Scoped down**: contract's Deferrals section now explicitly says v1.2.11's fixture + helper cover top-level Refs only; inline-ref extraction is a follow-up.
+  * Side effect of editing 3 POLICY_GLOBS files re-bumped the canon hash: `2ab23576` → `6d91f10e`. All 6 canon-policy-version refs (plugin.json + fixture_metadata + 3 sidecar manifests + stage1 marker) + CHANGELOG + RELEASING updated in lockstep.
+- **Round 2**: REQUEST CHANGES — round-1 fixes all verified ✓ (4 critical + Rec #2 + Rec #3), but Rec #1 (fixture prose drift) had 2 residual stale "7 DBML anchors" refs Codex caught:
+  * `fixtures/golden/project_0004_sidecar_e2e/expected_outputs/canonical/core_controls/A50_source_register.csv` S-003 notes column — updated to "10 DBML anchors (2 tables + 6 columns + 1 ref + 1 enum)".
+  * `CHANGELOG.md` `### Added` section bullet about the new source — updated to "10 DBML anchors (...)".
+- **Round 3**: APPROVE — both round-2 residuals closed; `grep -rn '7 DBML anchors'` returns only the historical round-2 trail mention at `CHANGELOG.md:75`; `grep -rn '3 key columns'` returns zero. No new regressions.
+
+### Result
+
+- 1884 → 1930 tests passing (+46 new across the sidecar + DBML validator test suites; 41 round-1 + 5 round-1-regression).
+- Third BSA sidecar shipped. `docs/sidecar_inventory.md` open follow-up half-CLOSED (DBML done; sequence-diagram deferred).
+- Canon hash bumped `4548551b` → `6d91f10e`. Manifest version 1.2.9 → 1.2.11.
+
 ## [v1.2.10] — 2026-04-25
 
 **Generic cross-row uniqueness extension (extracts A61's logic).** v1.2.8 shipped A61's `x-bsa-anchor-binding-rules` with the first cross-row uniqueness enforcement at the F5 hook layer (AnchorID uniqueness + SourceClaimID FK to A59 bundled in one A61-specific extension). v1.2.10 generalises the uniqueness half: any schema can now declare `x-bsa-uniqueness-rules` to get schema-agnostic cross-row column uniqueness, without pulling in A61's FK semantics. Prerequisite for v1.2.12 (backfilling implicit row-identifier uniqueness across A50/A58/A59/A60/A62/A70/A71/A72).

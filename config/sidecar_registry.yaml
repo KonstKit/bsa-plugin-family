@@ -71,3 +71,14 @@ sidecars:
     status: stable
     added_in: v1.0.0
     summary: Generates BPMN 2.0 XML (with documented Camunda 7/8 extension support) from process notes, transcripts, workshop output. Greenfield + review/fix + preserve-only modes.
+
+  - name: dbml-from-context
+    output_format: "DBML .dbml (Database Markup Language; relational-schema text)"
+    f5_path_prefix: analysis/views/dbml/
+    integration_contract: skills/dbml-from-context/references/integration-contract.md
+    anchor_manifest_schema: skills/dbml-from-context/references/anchor_manifest.schema.json
+    optional_dependencies:
+      - "@dbml/cli (for local rendering to SVG/PNG via dbml2svg; operator-installed; graceful degradation without it)"
+    status: experimental
+    added_in: v1.2.11
+    summary: Generates DBML (relational-schema text — tables, columns, refs, enums, table groups) from data-model notes, SQL DDL, ORM models, stakeholder interviews. Sits at the data-persistence layer, orthogonal to c4-plantuml-from-context (architecture) and camunda-bpmn-from-context (process). Third BSA sidecar; closes half of the pre-v1.2.11 open follow-up at docs/sidecar_inventory.md.

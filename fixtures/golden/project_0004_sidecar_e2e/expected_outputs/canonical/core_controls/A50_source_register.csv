@@ -1,3 +1,4 @@
 SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,Priority,Language,DateOrVersion,Notes
 S-001,architecture_note,Support-desk system context,internal architect,readable,T2,high,en,2026-02-10,Hand-authored Phase-0 architecture overview; covers 5 anchors (1 system + 1 actor + 1 boundary + 2 containers)
 S-002,process_note,Ticket intake BPMN flow,internal ops team lead,readable,T2,high,en,2026-02-12,Hand-authored process narrative; covers 3 BPMN anchors (start event + task + sequence flow)
+S-003,architecture_note,Ticket-persistence data model,internal architect,readable,T2,high,en,2026-02-15,Hand-authored database-design note; covers 10 DBML anchors (2 tables + 6 columns + 1 ref + 1 enum)

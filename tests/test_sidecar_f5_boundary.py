@@ -29,7 +29,11 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SIDECAR_NAMES = ("c4-plantuml-from-context", "camunda-bpmn-from-context")
+SIDECAR_NAMES = (
+    "c4-plantuml-from-context",
+    "camunda-bpmn-from-context",
+    "dbml-from-context",  # v1.2.11
+)
 
 
 # ---- F5 dispatcher must NOT claim sidecar paths -----------------------
@@ -45,6 +49,10 @@ SIDECAR_NAMES = ("c4-plantuml-from-context", "camunda-bpmn-from-context")
         "analysis/views/bpmn/process.bpmn",
         "analysis/views/bpmn/anchor_manifest.json",
         "analysis/views/bpmn/preview.svg",
+        # v1.2.11 — DBML sidecar paths are ALSO non-canonical.
+        "analysis/views/dbml/core_schema.dbml",
+        "analysis/views/dbml/ticket_persistence.dbml",
+        "analysis/views/dbml/anchor_manifest.json",
     ],
 )
 def test_f5_dispatcher_does_not_claim_sidecar_paths(sidecar_path: str) -> None:
@@ -64,6 +72,7 @@ def test_f5_dispatcher_does_not_claim_sidecar_paths(sidecar_path: str) -> None:
 @pytest.mark.parametrize("sidecar_path", [
     "analysis/views/c4/anchor_manifest.json",
     "analysis/views/bpmn/anchor_manifest.json",
+    "analysis/views/dbml/anchor_manifest.json",  # v1.2.11
 ])
 def test_validate_canonical_write_passes_through_sidecar_anchor_manifest(sidecar_path: str) -> None:
     """validate_canonical_write returns (True, []) for paths the

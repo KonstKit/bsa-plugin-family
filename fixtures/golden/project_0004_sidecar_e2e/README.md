@@ -4,7 +4,7 @@
 ("End-to-end test fixture that exercises an orchestrated sidecar
 invocation against a `project_NNNN/` happy-path fixture") by shipping
 the first golden fixture that exercises the full A61-anchor → manifest
-→ view-file cross-product for both stable sidecars
+→ view-file cross-product for all three BSA sidecars
 (`c4-plantuml-from-context` and `camunda-bpmn-from-context`).
 
 Pre-v1.2.6 the sidecars had isolated tests:
@@ -26,12 +26,13 @@ run). It's the smallest workspace that exercises:
 
 | Surface | What's covered |
 |---------|----------------|
-| A50 source register | 2 sources (one architecture note, one process narrative) |
-| A58 evidence excerpts | 4 excerpts (2 per source) |
-| A59 claim register | 4 claims (each excerpt → one claim, each direct) |
-| A61 anchor map | 10 anchors (5 C4 anchors + 5 BPMN anchors) |
-| C4 sidecar | 1 view file (system_context.puml) + manifest mapping all 5 view elements to A61 |
+| A50 source register | 3 sources (architecture note + BPMN process note + DBML data-model note) |
+| A58 evidence excerpts | 6 excerpts |
+| A59 claim register | 6 claims (each excerpt → one claim, each direct) |
+| A61 anchor map | 22 anchors (5 C4 decl + 2 C4 rel + 5 BPMN + 10 DBML: 2 tables + 6 columns + 1 ref + 1 enum) |
+| C4 sidecar | 1 Container view (system_context.puml) + manifest mapping 5 declaration view elements + 2 relationship anchors (v1.2.9 convention) to A61 |
 | BPMN sidecar | 1 view file (ticket_intake.bpmn) + manifest mapping all 5 BPMN elements (start event + task + 2 sequence flows + end event) to A61 |
+| DBML sidecar (v1.2.11) | 1 view file (ticket_persistence.dbml) + manifest mapping 10 view elements (2 tables + 6 columns + 1 ref + 1 enum) to A61; bounded_context=`support_desk` |
 
 A61 deliberately covers BOTH sidecars from a single canonical register
 (matches the sidecar-integration contract: A61 is the single source of

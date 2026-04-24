@@ -1,0 +1,25 @@
+Project support_desk {
+  database_type: 'PostgreSQL'
+  Note: 'Ticket-persistence data model for the support-desk bounded context. Anchored to A61 rows ANC-TABLE-001..ANC-ENUM-001 per the v1.2.11 DBML sidecar convention.'
+}
+
+Enum ticket_severity {
+  Low
+  Medium
+  High
+  Critical
+}
+
+Table agents {
+  id integer [pk, increment]
+  username varchar [not null, unique]
+}
+
+Table tickets {
+  id integer [pk, increment]
+  assigned_agent_id integer [note: 'NULL when unassigned']
+  severity ticket_severity [not null]
+  created_at timestamp [not null]
+}
+
+Ref: tickets.assigned_agent_id > agents.id

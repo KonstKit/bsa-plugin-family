@@ -102,8 +102,9 @@ def test_iter_a61_rows_loads_fixture() -> None:
     )
     rows = list(iter_a61_rows(fixture))
     # v1.2.6 baseline = 10 anchors (5 C4 decl + 5 BPMN).
-    # v1.2.9 added 2 C4 relationship anchors → now 12 total.
-    assert len(rows) == 12
+    # v1.2.9 added 2 C4 relationship anchors → 12.
+    # v1.2.11 added 10 DBML anchors (2 tables + 6 cols + 1 ref + 1 enum) → 22.
+    assert len(rows) == 22
     assert {r["AnchorID"] for r in rows} == {
         # v1.2.6 C4 declaration anchors
         "ANC-SYS-001", "ANC-ACTOR-001", "ANC-BOUNDARY-001",
@@ -113,6 +114,11 @@ def test_iter_a61_rows_loads_fixture() -> None:
         # v1.2.6 BPMN anchors
         "ANC-EVT-001", "ANC-TASK-001", "ANC-FLOW-001",
         "ANC-FLOW-002", "ANC-EVT-002",
+        # v1.2.11 DBML anchors
+        "ANC-TABLE-001", "ANC-TABLE-002",
+        "ANC-COLUMN-001", "ANC-COLUMN-002", "ANC-COLUMN-003",
+        "ANC-COLUMN-004", "ANC-COLUMN-005", "ANC-COLUMN-006",
+        "ANC-REF-001", "ANC-ENUM-001",
     }
 
 
