@@ -4,6 +4,62 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.8] — 2026-04-25
+
+**A61 cross-row enforcement at the F5 hook layer (closes the v1.2.7 deferrals).** v1.2.7 shipped the A61 schema with row-shape validation, but explicitly deferred two cross-row invariants to a follow-up release: (1) `SourceClaimID` foreign-key resolution against A59.ClaimID, and (2) AnchorID uniqueness across rows. The CHANGELOG round-1 trail for v1.2.7 noted both deferrals would land "in the same follow-up release as FK enforcement". v1.2.8 ships them.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.5+hash:0eb4093d` — **unchanged**. Schema extension + handler + tests all live OUTSIDE POLICY_GLOBS; manifest stays at 1.2.5, git tag bumps to v1.2.8 (canon-neutral release pattern, fourth in a row after v1.2.4 + v1.2.6 + v1.2.7).
+
+### Added
+
+- **`x-bsa-anchor-binding-rules`** — new EXECUTABLE extension on `governance/schemas/a61.schema.json`. Bundles two cross-row rules:
+  * `source_claim_id_resolves_in: {table: A59_claim_register.csv, column: ClaimID}` — every non-blank A61.SourceClaimID MUST resolve to an existing A59 row.
+  * `unique_columns: ["AnchorID"]` — every column listed MUST be unique across all rows in the file.
+  * `applies_to_all_rows: true` gate — same convention as A72's `x-bsa-foreign-key-rules`. The handler no-ops silently if the gate is missing or false.
+  * `_comment` block declares the rules EXECUTABLE in v1.2.8 + names the implementation site (`write_validator.py::_apply_anchor_binding_rules`). Test pin enforces the EXECUTABLE marker stays present so a future revert to documentary-only surfaces immediately.
+- **`_apply_anchor_binding_rules(rows, schema, path, sibling_cache)`** — new handler in `governance/schemas/write_validator.py`. Operates on the FULL row list (not per-row) because uniqueness is a cross-row property. Per-row JSON Schema check + the per-row extensions still run in the per-row loop above; this handler is invoked ONCE per write after the loop. Two layers to be aware of:
+  * **Dispatcher layer**: paths that don't match the A61 dispatcher pattern (`analysis/(?:discovery/)?canonical/core_controls/A61_[a-z_]+\.csv`) bypass dispatch entirely — `validate_canonical_write` returns `(True, [])` with no schema check at all. Existing `validate_canonical_write` contract, unchanged.
+  * **Handler layer** (when dispatcher matched): if the sibling cache is unavailable (path matched the dispatcher but `_resolve_sibling_dir` couldn't locate a canonical sibling root), the FK check no-ops silently and the per-row schema check inside the loop above still runs. Sibling A59 missing-or-unreadable surfaces a per-row "sibling-not-readable" violation for every A61 row with a non-blank SourceClaimID (mirrors A72's per-row error style). Blank SourceClaimID → no FK violation emitted (schema-level required check already covers that — avoids double-reporting).
+  * **Fail-CLOSED on partial config** (Codex round-1 critical): if the schema declares `source_claim_id_resolves_in` but omits `table` or `column` (or sets either to a non-string), the handler emits a `<schema config>` violation rather than silently skipping FK enforcement. Pinned by `test_executable_anchor_binding_partial_fk_table_only_fail_closed` + 3 sibling tests.
+- **Cross-row invocation** in `_make_csv_validator._validate`: rows are buffered into `all_rows` during the per-row pass; `_apply_anchor_binding_rules(all_rows, ...)` runs once after the loop. Schemas that don't declare the extension no-op silently — same C2-shaped pattern as the per-row handlers.
+- **`tests/test_schemas_a61.py`** (+13 tests, total now 58; 9 round-1 + 4 round-1-regression):
+  * `test_executable_anchor_binding_well_formed_passes` — sanity baseline.
+  * `test_executable_anchor_binding_orphan_source_claim_id_rejected` — FK guard surfaces "does not resolve" violation with the orphan claim ID inline.
+  * `test_executable_anchor_binding_duplicate_anchor_id_rejected` — uniqueness guard surfaces "duplicate value" violation with the duplicate value AND the first-seen line number for operator triage.
+  * `test_executable_anchor_binding_three_duplicates_emits_two_violations` — pins per-occurrence-after-first reporting (rows 3 + 4 each violate against the row-2 sighting), not a single summary violation per duplicate value.
+  * `test_executable_anchor_binding_missing_a59_emits_sibling_violation` — fail-CLOSED behavior when the sibling artifact is missing.
+  * `test_executable_anchor_binding_blank_source_claim_id_does_not_double_violate` — pins that the FK handler does NOT add a redundant violation when the schema-level required check already fires (would noise the operator output).
+  * `test_executable_anchor_binding_outside_canonical_layout_no_ops` — pins the dispatcher's path matching + the handler's silent no-op; a future loosening that accidentally matches non-canonical paths would surface here.
+  * `test_executable_anchor_binding_v1_2_6_fixture_still_passes` — regression: the v1.2.6 sidecar e2e fixture's A61 register MUST validate cleanly through the v1.2.8 executable rules end-to-end.
+  * `test_executable_anchor_binding_extension_is_present_in_schema` — static pin: the schema MUST declare the executable extension with `applies_to_all_rows: true` AND the EXECUTABLE marker in `_comment`.
+
+### Updated
+
+- **`governance/schemas/a61.schema.json`** — the v1.2.7 documentary `x-bsa-foreign-keys` block is kept as a backward-compat block (any external tooling that read it pre-v1.2.8 doesn't break) but its `_comment` is rewritten to point at the new EXECUTABLE `x-bsa-anchor-binding-rules` extension. New tooling SHOULD read the new extension; the old block is now superseded.
+
+### Operator workflow
+
+Behavioral change is purely additive — the F5 hook now rejects A61 writes that previously passed. Three new failure modes:
+
+1. **Orphan SourceClaimID**: `line N SourceClaimID='C-999': does not resolve in A59_claim_register.csv.ClaimID (x-bsa-anchor-binding-rules → source_claim_id_resolves_in)`. Fix: add the missing claim to A59, OR open an A51 route (IssueType=missing_source) for the unresolved anchor.
+2. **Duplicate AnchorID**: `line N AnchorID='ANC-SYS-001': duplicate value (first seen on line M) — x-bsa-anchor-binding-rules → unique_columns`. Fix: pick a unique AnchorID for one of the two rows (the operator chooses based on which is the "real" canonical anchor).
+3. **Sibling A59 missing**: `line N SourceClaimID='C-001': sibling artifact A59_claim_register.csv is missing or unreadable — cannot verify FK resolution`. Fix: ensure A59 is committed BEFORE A61 writes. Pre-Stage-1 workspaces typically don't have A61 yet anyway; this signal usually means an out-of-order write attempt.
+
+### Codex review trail
+
+- **Round 1**: REQUEST CHANGES — 1 critical + 3 recommendations.
+  * **CRITICAL**: silent FK fail-OPEN on partial executable config. The round-1 `_apply_anchor_binding_rules` checked `if isinstance(fk_spec, dict) and fk_spec.get("table") and fk_spec.get("column")` — if the schema declared `source_claim_id_resolves_in` but omitted either `table` or `column` (or set either to a non-string), the handler silently skipped FK enforcement with no operator-visible error. Codex spot-checked: a schema copy with only `table` set returned zero violations. **Fixed**: present-but-partial `source_claim_id_resolves_in` now emits a `<schema config>` violation listing the missing-or-non-string keys; non-dict values emit a "must be an object" violation. Four new regression tests pin the four shapes (table-only, column-only, wrong-type-not-dict, non-string-table).
+  * **Recommendation #1 (strengthen sibling-missing pin)**: the round-1 test only asserted "at least one" sibling-not-readable message. **Fixed**: test renamed `test_executable_anchor_binding_missing_a59_emits_per_row_sibling_violations`, asserts EXACT count (3 per-row violations for 3 non-blank rows) AND per-row line + claim-id presence in each violation.
+  * **Recommendation #2 (malformed-extension negative test)**: covered by the four round-1-regression tests added for the critical above.
+  * **Recommendation #3 (CHANGELOG wording)**: round-1 said "outside-canonical no-op still keeps per-row schema validation", which conflated dispatcher-layer (paths outside `analysis/...` bypass dispatch entirely) with handler-layer (when the dispatcher matched but the sibling cache resolves to None). **Fixed**: CHANGELOG now separates the two layers explicitly.
+- **Round 2**: APPROVE — all 4 round-1 items verified ✓ via direct-handler runtime checks (Codex spot-checked: `{}` for `source_claim_id_resolves_in` yields one `<schema config>` violation listing both `table, column` as missing; revert tests would fail). The 4 regression tests bypass dispatch + pass `sibling_cache=None` so they isolate the config-shape failure from dispatcher/cache behavior. The well-formed v1.2.6 fixture still validates cleanly. `<schema config>` violation emitted once per write (not per row) because `_apply_anchor_binding_rules` runs once after the row-buffering pass. No new issues.
+
+### Result
+
+- 1803 → 1816 tests passing (+13 new in `test_schemas_a61.py`; 9 round-1 + 4 round-1-regression).
+- The two v1.2.7 deferrals (FK to A59 + AnchorID uniqueness) closed. A61 cross-row invariants are now mechanical at hook time — any writer (orchestrator, skill, operator manual edit) is gated.
+- Canon hash unchanged (0eb4093d). Manifest stays at 1.2.5.
+
 ## [v1.2.7] — 2026-04-25
 
 **A61 schema formalization (Sprint 3 follow-up).** Closes the v1.2.6 sidecar-e2e fixture's documented forward-looking gap: pre-v1.2.7 the A61 anchor map (the canonical bridge between A59 evidence-bound claims and the diagram sidecars) had NO formal `governance/schemas/a61.schema.json`. The v1.2.6 sidecar e2e fixture hand-rolled its A61 row shape; the F5 hook layer silently allowed any A61 write because no schema → no validator → no enforcement. v1.2.7 wires the missing schema in and pins the alignment with both stable sidecars (c4-plantuml-from-context + camunda-bpmn-from-context) plus future sidecars (DBML, sequence-diagram).

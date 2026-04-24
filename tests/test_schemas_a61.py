@@ -399,3 +399,355 @@ def test_dispatcher_a61_validator_accepts_good_row() -> None:
     assert any("a61" in m.lower() for m in findings), (
         f"info message does not mention a61: {findings}"
     )
+
+
+# ---- v1.2.8: x-bsa-anchor-binding-rules (executable cross-row) ----
+#
+# Closes the two cross-row deferrals from v1.2.7:
+#   * SourceClaimID FK to A59.ClaimID
+#   * AnchorID uniqueness across rows
+#
+# Each test sets up an in-memory canonical-layout workspace under
+# tmp_path, writes a sibling A59 register with known ClaimIDs, then
+# routes A61 content through validate_canonical_write to exercise
+# the dispatcher → row-shape → cross-row chain end-to-end.
+
+A59_SIBLING_HEADER = (
+    "ClaimID,SourceID,ExcerptID,ClaimType,Statement,"
+    "JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes\n"
+)
+
+A59_SIBLING_BODY = (
+    "C-001,S-001,E-001,direct,foo,,,0.85,level-2,\n"
+    "C-002,S-001,E-002,direct,bar,,,0.85,level-2,\n"
+    "C-003,S-002,E-003,direct,baz,,,0.85,level-2,\n"
+    "C-004,S-002,E-004,direct,qux,,,0.85,level-2,\n"
+)
+
+
+def _make_canon_workspace(tmp_path: Path, with_a59: bool = True) -> Path:
+    """Create a tmp canonical-layout workspace; return the A61 csv path
+    (not yet written). Optionally writes a sibling A59 register so FK
+    resolution has something to resolve against."""
+    canon = tmp_path / "analysis" / "canonical" / "core_controls"
+    canon.mkdir(parents=True, exist_ok=True)
+    if with_a59:
+        (canon / "A59_claim_register.csv").write_text(
+            A59_SIBLING_HEADER + A59_SIBLING_BODY, encoding="utf-8",
+        )
+    return canon / "A61_anchor_map.csv"
+
+
+def test_executable_anchor_binding_well_formed_passes(tmp_path: Path) -> None:
+    """Sanity: a well-formed A61 with valid FKs + unique AnchorIDs
+    passes the executable cross-row check end-to-end."""
+    from governance.schemas.write_validator import validate_canonical_write
+    a61_path = _make_canon_workspace(tmp_path)
+    good = (
+        "AnchorID,AnchorKind,SourceClaimID,Label,Notes\n"
+        "ANC-SYS-001,system,C-001,System A,note\n"
+        "ANC-EVT-001,startEvent,C-003,Event,note\n"
+    )
+    ok, msgs = validate_canonical_write(str(a61_path), good)
+    assert ok, f"good A61 rejected: {msgs}"
+
+
+def test_executable_anchor_binding_orphan_source_claim_id_rejected(
+    tmp_path: Path,
+) -> None:
+    """An A61 row whose SourceClaimID does not exist in A59 MUST fail
+    with a clear "does not resolve" violation. ART-VAL-001-07-style
+    orphan guard, now executable at the F5 hook layer."""
+    from governance.schemas.write_validator import validate_canonical_write
+    a61_path = _make_canon_workspace(tmp_path)
+    bad = (
+        "AnchorID,AnchorKind,SourceClaimID,Label,Notes\n"
+        "ANC-SYS-001,system,C-999,System,orphan claim\n"
+    )
+    ok, msgs = validate_canonical_write(str(a61_path), bad)
+    assert not ok, f"orphan SourceClaimID accepted: {msgs}"
+    assert any("does not resolve" in m for m in msgs), (
+        f"expected 'does not resolve' violation; got: {msgs}"
+    )
+    assert any("C-999" in m for m in msgs)
+
+
+def test_executable_anchor_binding_duplicate_anchor_id_rejected(
+    tmp_path: Path,
+) -> None:
+    """Two A61 rows with the same AnchorID MUST fail with a clear
+    "duplicate value" violation. Without this guard, two distinct
+    claims would silently project to the same diagram element."""
+    from governance.schemas.write_validator import validate_canonical_write
+    a61_path = _make_canon_workspace(tmp_path)
+    dup = (
+        "AnchorID,AnchorKind,SourceClaimID,Label,Notes\n"
+        "ANC-SYS-001,system,C-001,System A,first\n"
+        "ANC-SYS-001,system,C-002,System B,duplicate id\n"
+    )
+    ok, msgs = validate_canonical_write(str(a61_path), dup)
+    assert not ok, f"duplicate AnchorID accepted: {msgs}"
+    dup_msgs = [m for m in msgs if "duplicate" in m.lower()]
+    assert dup_msgs, f"expected duplicate-value violation; got: {msgs}"
+    # The violation should name BOTH the duplicate value AND the
+    # first-seen line so the operator can find both occurrences.
+    assert any("ANC-SYS-001" in m for m in dup_msgs)
+    assert any("first seen on line 2" in m for m in dup_msgs), (
+        f"violation missed first-seen-line context: {dup_msgs}"
+    )
+
+
+def test_executable_anchor_binding_three_duplicates_emits_two_violations(
+    tmp_path: Path,
+) -> None:
+    """When the same AnchorID appears 3 times, expect exactly 2
+    violations (rows 3 + 4 each violate against the row-2 sighting).
+    Pins that the duplicate detection is per-occurrence-after-first,
+    not just one summary violation per duplicate value."""
+    from governance.schemas.write_validator import validate_canonical_write
+    a61_path = _make_canon_workspace(tmp_path)
+    triple = (
+        "AnchorID,AnchorKind,SourceClaimID,Label,Notes\n"
+        "ANC-SYS-001,system,C-001,A,first\n"
+        "ANC-SYS-001,system,C-002,B,2nd\n"
+        "ANC-SYS-001,system,C-003,C,3rd\n"
+    )
+    ok, msgs = validate_canonical_write(str(a61_path), triple)
+    assert not ok
+    dup_msgs = [m for m in msgs if "duplicate" in m.lower()]
+    assert len(dup_msgs) == 2, (
+        f"expected 2 duplicate violations (rows 3 + 4); got {len(dup_msgs)}: "
+        f"{dup_msgs}"
+    )
+
+
+def test_executable_anchor_binding_missing_a59_emits_per_row_sibling_violations(
+    tmp_path: Path,
+) -> None:
+    """v1.2.8 round-1 Codex recommendation #1: when A59 is missing,
+    EVERY A61 row with a non-blank SourceClaimID MUST emit a
+    "sibling not readable" violation — pinned per-row, not just
+    "at least one". This matches A72's per-row behavior + gives the
+    operator the full scope of affected rows in one error report."""
+    from governance.schemas.write_validator import validate_canonical_write
+    # Don't write A59 — it's intentionally missing.
+    a61_path = _make_canon_workspace(tmp_path, with_a59=False)
+    content = (
+        "AnchorID,AnchorKind,SourceClaimID,Label,Notes\n"
+        "ANC-SYS-001,system,C-001,System,note\n"  # row 2 — non-blank
+        "ANC-EVT-001,startEvent,C-003,Event,note\n"  # row 3 — non-blank
+        "ANC-TASK-001,task,C-004,Task,note\n"  # row 4 — non-blank
+    )
+    ok, msgs = validate_canonical_write(str(a61_path), content)
+    assert not ok, "A61 silently passed despite missing A59 sibling"
+    sibling_msgs = [
+        m for m in msgs
+        if "missing or unreadable" in m or "sibling artifact" in m
+    ]
+    # Three rows, three non-blank SourceClaimIDs → exactly three
+    # sibling-not-readable violations (one per row).
+    assert len(sibling_msgs) == 3, (
+        f"expected exactly 3 per-row sibling violations (one per "
+        f"non-blank SourceClaimID row); got {len(sibling_msgs)}: "
+        f"{sibling_msgs}"
+    )
+    # Each violation should reference its own row line + claim id.
+    assert any("line 2" in m and "C-001" in m for m in sibling_msgs)
+    assert any("line 3" in m and "C-003" in m for m in sibling_msgs)
+    assert any("line 4" in m and "C-004" in m for m in sibling_msgs)
+
+
+# ---- v1.2.8 round-1 Codex recommendation #2: malformed-extension
+#       fail-CLOSED tests. Each pins that a partial / wrong-typed
+#       executable extension surfaces a `<schema config>` violation
+#       at the F5 hook layer rather than silently skipping FK
+#       enforcement (the round-1 critical fail-open path).
+
+
+def _make_a61_schema_with_partial_fk(table_only: bool, column_only: bool) -> dict:
+    """Helper: return an in-memory A61 schema copy with a partially
+    configured ``source_claim_id_resolves_in``. Caller picks which
+    side is missing."""
+    from governance.schemas.loader import load_schema
+    schema = json.loads(json.dumps(load_schema("a61")))  # deep copy
+    fk = {}
+    if table_only:
+        fk["table"] = "A59_claim_register.csv"
+    if column_only:
+        fk["column"] = "ClaimID"
+    schema["x-bsa-anchor-binding-rules"]["source_claim_id_resolves_in"] = fk
+    return schema
+
+
+def _run_handler(schema: dict, rows: list[dict]) -> list[str]:
+    """Helper: invoke `_apply_anchor_binding_rules` directly (bypassing
+    the dispatcher) so the malformed-extension path is exercised
+    independent of any specific path / sibling-cache state."""
+    from governance.schemas.write_validator import (
+        _apply_anchor_binding_rules,
+    )
+    # sibling_cache=None — these tests are about config-shape errors,
+    # which surface BEFORE the cache is consulted.
+    return _apply_anchor_binding_rules(rows, schema, "fake/path.csv", None)
+
+
+def test_executable_anchor_binding_partial_fk_table_only_fail_closed() -> None:
+    """v1.2.8 round-1 Codex critical: present-but-partial
+    ``source_claim_id_resolves_in`` must NOT silently skip FK
+    enforcement. Schema with only `table` set → `<schema config>`
+    violation surfaces."""
+    schema = _make_a61_schema_with_partial_fk(table_only=True, column_only=False)
+    rows = [{"AnchorID": "ANC-X-001", "AnchorKind": "system",
+             "SourceClaimID": "C-001", "Label": "L", "Notes": ""}]
+    violations = _run_handler(schema, rows)
+    config_violations = [v for v in violations if "<schema config>" in v]
+    assert config_violations, (
+        f"partial FK config (table-only) silently skipped — "
+        f"fail-CLOSED expected. Got: {violations}"
+    )
+    assert any("column" in v for v in config_violations), (
+        f"violation missed 'column' as the missing key: {config_violations}"
+    )
+
+
+def test_executable_anchor_binding_partial_fk_column_only_fail_closed() -> None:
+    """Same critical, mirror case: only `column` set → fail-CLOSED."""
+    schema = _make_a61_schema_with_partial_fk(table_only=False, column_only=True)
+    rows = [{"AnchorID": "ANC-X-001", "AnchorKind": "system",
+             "SourceClaimID": "C-001", "Label": "L", "Notes": ""}]
+    violations = _run_handler(schema, rows)
+    config_violations = [v for v in violations if "<schema config>" in v]
+    assert config_violations
+    assert any("table" in v for v in config_violations)
+
+
+def test_executable_anchor_binding_fk_spec_wrong_type_fail_closed() -> None:
+    """If `source_claim_id_resolves_in` is a string (not an object),
+    that's also misconfig — fail-CLOSED with a clear message."""
+    from governance.schemas.loader import load_schema
+    schema = json.loads(json.dumps(load_schema("a61")))
+    schema["x-bsa-anchor-binding-rules"]["source_claim_id_resolves_in"] = (
+        "A59_claim_register.csv"  # wrong shape — should be an object
+    )
+    rows = [{"AnchorID": "ANC-X-001", "AnchorKind": "system",
+             "SourceClaimID": "C-001", "Label": "L", "Notes": ""}]
+    violations = _run_handler(schema, rows)
+    config_violations = [v for v in violations if "<schema config>" in v]
+    assert config_violations
+    assert any("must be an object" in v for v in config_violations)
+
+
+def test_executable_anchor_binding_non_string_table_fail_closed() -> None:
+    """Field present but not a string (e.g., null / int) → fail-CLOSED."""
+    from governance.schemas.loader import load_schema
+    schema = json.loads(json.dumps(load_schema("a61")))
+    schema["x-bsa-anchor-binding-rules"]["source_claim_id_resolves_in"] = {
+        "table": None,  # null instead of string
+        "column": "ClaimID",
+    }
+    rows = [{"AnchorID": "ANC-X-001", "AnchorKind": "system",
+             "SourceClaimID": "C-001", "Label": "L", "Notes": ""}]
+    violations = _run_handler(schema, rows)
+    assert any("<schema config>" in v for v in violations), (
+        f"non-string table silently accepted — fail-CLOSED expected. "
+        f"Got: {violations}"
+    )
+
+
+def test_executable_anchor_binding_blank_source_claim_id_does_not_double_violate(
+    tmp_path: Path,
+) -> None:
+    """Schema's per-row required check already rejects a blank
+    SourceClaimID. The cross-row FK handler MUST NOT add a redundant
+    "doesn't resolve" violation on top — that would noise the operator's
+    output (e.g., a single missing cell would emit 2 messages, one
+    per layer)."""
+    from governance.schemas.write_validator import validate_canonical_write
+    a61_path = _make_canon_workspace(tmp_path)
+    bad = (
+        "AnchorID,AnchorKind,SourceClaimID,Label,Notes\n"
+        "ANC-SYS-001,system,,System,blank claim\n"
+    )
+    ok, msgs = validate_canonical_write(str(a61_path), bad)
+    assert not ok  # schema-level required check rejects
+    # Make sure the FK handler did NOT add a "does not resolve" message
+    # — only the schema-level "required" / pattern violation should fire.
+    fk_msgs = [m for m in msgs if "does not resolve" in m]
+    assert not fk_msgs, (
+        f"FK handler double-reported on blank SourceClaimID: {fk_msgs}"
+    )
+
+
+def test_executable_anchor_binding_outside_canonical_layout_no_ops(
+    tmp_path: Path,
+) -> None:
+    """When the path is outside the canonical layout (e.g., the
+    fixture's `expected_outputs/` mirror), the FK check no-ops
+    silently — the dispatcher doesn't even match. Same convention
+    as the A72 handler. Uniqueness check ALSO no-ops because the
+    dispatcher never runs."""
+    from governance.schemas.write_validator import validate_canonical_write
+    # Path outside analysis/canonical/...
+    bogus_path = str(tmp_path / "fixtures/golden/x/expected_outputs/A61_anchor_map.csv")
+    content = (
+        "AnchorID,AnchorKind,SourceClaimID,Label,Notes\n"
+        "ANC-SYS-001,system,C-999,System,orphan but path outside canon\n"
+        "ANC-SYS-001,system,C-001,Dup,duplicate but path outside canon\n"
+    )
+    ok, msgs = validate_canonical_write(bogus_path, content)
+    # Outside-canon paths are not dispatched at all → unconditional pass
+    # with no info message. Pin this so a future dispatcher loosening
+    # that accidentally matches non-canonical paths surfaces.
+    assert ok
+    assert msgs == []
+
+
+def test_executable_anchor_binding_v1_2_6_fixture_still_passes(
+    tmp_path: Path,
+) -> None:
+    """Regression: the v1.2.6 sidecar e2e fixture's A61 register
+    + A59 register together MUST validate cleanly through the v1.2.8
+    executable rules. Copies both fixtures into a tmp canonical
+    workspace + runs validate_canonical_write."""
+    from governance.schemas.write_validator import validate_canonical_write
+    src_root = REPO_ROOT / "fixtures" / "golden" / "project_0004_sidecar_e2e" / "expected_outputs" / "canonical" / "core_controls"
+    a61_src = src_root / "A61_anchor_map.csv"
+    a59_src = src_root / "A59_claim_register.csv"
+    canon = tmp_path / "analysis" / "canonical" / "core_controls"
+    canon.mkdir(parents=True, exist_ok=True)
+    (canon / "A59_claim_register.csv").write_text(
+        a59_src.read_text(encoding="utf-8"), encoding="utf-8",
+    )
+    a61_path = canon / "A61_anchor_map.csv"
+    ok, msgs = validate_canonical_write(
+        str(a61_path), a61_src.read_text(encoding="utf-8"),
+    )
+    assert ok, (
+        f"v1.2.6 fixture rejected by v1.2.8 executable rules — "
+        f"would break the existing e2e test: {msgs}"
+    )
+
+
+def test_executable_anchor_binding_extension_is_present_in_schema() -> None:
+    """Static pin: the schema MUST declare the executable extension
+    with applies_to_all_rows=true. Without this gate the handler
+    would no-op even if the schema appears to declare the rules."""
+    from governance.schemas.loader import load_schema
+    schema = load_schema("a61")
+    ext = schema.get("x-bsa-anchor-binding-rules")
+    assert isinstance(ext, dict), "x-bsa-anchor-binding-rules block missing"
+    assert ext.get("applies_to_all_rows") is True, (
+        "applies_to_all_rows gate missing or false — handler would no-op"
+    )
+    fk_spec = ext.get("source_claim_id_resolves_in")
+    assert isinstance(fk_spec, dict)
+    assert fk_spec.get("table") == "A59_claim_register.csv"
+    assert fk_spec.get("column") == "ClaimID"
+    assert ext.get("unique_columns") == ["AnchorID"]
+    # The _comment must explicitly say EXECUTABLE so a future revert
+    # to documentary-only surfaces here.
+    comment = ext.get("_comment", "").upper()
+    assert "EXECUTABLE" in comment, (
+        f"executable marker missing from _comment: "
+        f"{ext.get('_comment', '')[:200]!r}"
+    )

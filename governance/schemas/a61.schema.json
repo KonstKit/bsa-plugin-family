@@ -49,11 +49,21 @@
     ]
   },
   "x-bsa-foreign-keys": {
-    "_comment": "DOCUMENTARY ONLY in v1.2.7 — this block declares the FK SourceClaimID → A59.ClaimID for human + tooling readers, but it is NOT executed at the F5 hook layer. The pre-v1.2.7 cross-artifact validator at governance/schemas/write_validator.py executes the differently-named extension `x-bsa-foreign-key-rules` (used by a72.schema.json line 82) — A61 does not yet ship that executable extension. Schema-row validation IS active in v1.2.7 (the dispatcher routes A61_*.csv to this schema), but cross-row FK resolution is a deferred follow-up release. Do NOT confuse this declarative block with a72's executable FK rules.",
+    "_comment": "DOCUMENTARY backward-compat block. The v1.2.7 documentary FK block has been superseded by the EXECUTABLE `x-bsa-anchor-binding-rules` extension below (v1.2.8). Kept here so external tooling that read the v1.2.7 documentary block doesn't break — the FK semantic is unchanged, only the enforcement layer changed (documentary → executable). New tooling SHOULD read `x-bsa-anchor-binding-rules` instead.",
     "SourceClaimID": {
       "table": "A59_claim_register.csv",
       "column": "ClaimID",
-      "rationale": "Every anchor must trace back to an evidence-bound claim (no orphan anchors). Enforcement: deferred follow-up release."
+      "rationale": "Every anchor must trace back to an evidence-bound claim (no orphan anchors). Enforced executable in v1.2.8 via x-bsa-anchor-binding-rules below."
     }
+  },
+  "x-bsa-anchor-binding-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.8. Closes the two cross-row deferrals from v1.2.7: (a) every A61.SourceClaimID MUST resolve to an existing A59.ClaimID — orphan anchors would let diagrams over-reach beyond the canonical claim layer (the trace-chain invariant from skills/c4-plantuml-from-context/references/integration-contract.md §'Relationship to canonical claim-layer'); (b) every A61.AnchorID MUST be unique across rows — duplicate anchors would let two claims silently share one diagram element. Implementation: governance/schemas/write_validator.py::_apply_anchor_binding_rules + _SiblingArtifactCache (per-validation-run memoized sibling reads). Pre-v1.2.8 these were enforced only at the per-fixture test layer (test_fixture_a61_no_duplicate_anchor_ids) — v1.2.8 makes them mechanical at hook time so any writer (orchestrator, skill, operator manual edit) is gated. Same shape conventions as A72's x-bsa-foreign-key-rules (applies_to_all_rows gate; sibling-not-readable surfaces a clear violation).",
+    "applies_to_all_rows": true,
+    "source_claim_id_resolves_in": {
+      "table": "A59_claim_register.csv",
+      "column": "ClaimID"
+    },
+    "unique_columns": ["AnchorID"],
+    "rationale": "Without these rules, A61 could emit phantom anchors (SourceClaimID points at a ClaimID A59 doesn't have) or shadow anchors (two rows share AnchorID, so two distinct claims silently project to the same diagram element). Both defeat A61's purpose as the canonical bridge between claims and diagrams."
   }
 }

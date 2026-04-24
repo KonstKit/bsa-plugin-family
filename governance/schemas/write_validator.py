@@ -912,6 +912,142 @@ def _apply_nfr_coverage_rules(
     return violations
 
 
+def _apply_anchor_binding_rules(
+    rows: list[dict], schema: dict, path: str,
+    sibling_cache: _SiblingArtifactCache | None,
+) -> list[str]:
+    """Apply A61's ``x-bsa-anchor-binding-rules`` extension (v1.2.8).
+
+    Closes the two cross-row deferrals from v1.2.7:
+
+    * **FK resolution**: every ``A61.SourceClaimID`` MUST resolve to an
+      existing row in the sibling artifact named under
+      ``source_claim_id_resolves_in.table`` (typically
+      ``A59_claim_register.csv``), keyed by
+      ``source_claim_id_resolves_in.column`` (typically ``ClaimID``).
+      Orphan SourceClaimIDs would let A61 promise diagram bindings
+      for claims A59 has never seen — defeats the trace-chain
+      invariant.
+    * **AnchorID uniqueness**: every column listed in
+      ``unique_columns`` MUST be unique across ALL rows in the file.
+      Duplicate AnchorIDs would let two distinct claims silently
+      project to the same diagram element.
+
+    Unlike :func:`_apply_foreign_key_rules` (A72-specific, per-row),
+    this handler takes the FULL row list because uniqueness is a
+    cross-row property. The per-row JSON Schema check + the per-row
+    extensions still run in the per-row loop above; this handler is
+    invoked ONCE per write after the loop.
+
+    Same fail-soft cache contract as the A72 handler: when the
+    sibling cache is unavailable (path outside the canonical
+    layout), the FK check no-ops silently; when a sibling file is
+    missing, the FK check emits a clear "sibling-not-readable"
+    violation. The uniqueness check NEVER no-ops — it's a self-
+    contained cross-row check that requires no sibling reads.
+    """
+    ext = schema.get("x-bsa-anchor-binding-rules", {})
+    if not isinstance(ext, dict) or not ext.get("applies_to_all_rows"):
+        return []
+    violations: list[str] = []
+
+    # ---- FK resolution -------------------------------------------
+    # Fail-CLOSED on partial config: if the schema declares
+    # `source_claim_id_resolves_in` but omits `table` or `column`, that
+    # is a SCHEMA-LEVEL bug — silently skipping enforcement (as an
+    # earlier draft did) hides the misconfig. Codex v1.2.8 round-1
+    # critical: emit a `<schema config>` violation that surfaces at
+    # the F5 hook layer just like any other rejection.
+    fk_spec = ext.get("source_claim_id_resolves_in")
+    if fk_spec is not None and not isinstance(fk_spec, dict):
+        violations.append(
+            "<schema config>: x-bsa-anchor-binding-rules."
+            "source_claim_id_resolves_in must be an object — "
+            f"got {type(fk_spec).__name__}"
+        )
+    elif isinstance(fk_spec, dict):
+        table = fk_spec.get("table")
+        column = fk_spec.get("column")
+        missing_keys = [
+            k for k in ("table", "column")
+            if not fk_spec.get(k) or not isinstance(fk_spec.get(k), str)
+        ]
+        if missing_keys:
+            violations.append(
+                "<schema config>: x-bsa-anchor-binding-rules."
+                "source_claim_id_resolves_in missing or non-string "
+                f"key(s): {', '.join(missing_keys)} — fail-CLOSED to "
+                f"surface schema misconfig at the F5 hook layer "
+                f"rather than silently skipping FK enforcement"
+            )
+        else:
+            target_csv = table
+            target_column = column
+            if sibling_cache is None:
+                # Sibling cache unavailable — typically because the
+                # path didn't resolve to the canonical layout. Skip
+                # silently (per-row schema check still applies via
+                # the per-row loop above). Same convention as
+                # _apply_foreign_key_rules.
+                pass
+            else:
+                sibling = sibling_cache.load(target_csv, target_column)
+                if sibling is None:
+                    # Sibling file missing or unreadable. One
+                    # violation per affected row so the operator sees
+                    # the full scope (mirrors A72's per-row
+                    # "sibling-not-readable" style).
+                    for row_idx, row in enumerate(rows, start=2):  # +2 for header
+                        value = (row.get("SourceClaimID") or "").strip()
+                        if not value:
+                            # Blank cell — schema-level required check covers it.
+                            continue
+                        violations.append(
+                            f"line {row_idx} SourceClaimID={value!r}: sibling "
+                            f"artifact {target_csv} is missing or unreadable — "
+                            f"cannot verify FK resolution "
+                            f"(x-bsa-anchor-binding-rules → "
+                            f"source_claim_id_resolves_in)"
+                        )
+                else:
+                    for row_idx, row in enumerate(rows, start=2):
+                        value = (row.get("SourceClaimID") or "").strip()
+                        if not value:
+                            continue  # schema-level required check covers it
+                        if value not in sibling:
+                            violations.append(
+                                f"line {row_idx} SourceClaimID={value!r}: does "
+                                f"not resolve in {target_csv}.{target_column} "
+                                f"(x-bsa-anchor-binding-rules → "
+                                f"source_claim_id_resolves_in)"
+                            )
+
+    # ---- AnchorID uniqueness (cross-row) ------------------------
+    unique_columns = ext.get("unique_columns") or []
+    if isinstance(unique_columns, list):
+        for column in unique_columns:
+            if not isinstance(column, str) or not column:
+                continue
+            seen: dict[str, int] = {}  # value → first row line where it was seen
+            for row_idx, row in enumerate(rows, start=2):
+                value = (row.get(column) or "").strip()
+                if not value:
+                    # Blank cell — schema-level required + minLength check
+                    # covers it. Don't emit a uniqueness violation that would
+                    # noise on top.
+                    continue
+                if value in seen:
+                    violations.append(
+                        f"line {row_idx} {column}={value!r}: duplicate value "
+                        f"(first seen on line {seen[value]}) — "
+                        f"x-bsa-anchor-binding-rules → unique_columns"
+                    )
+                else:
+                    seen[value] = row_idx
+
+    return violations
+
+
 def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
     """Build a CSV-row validator for the named schema.
 
@@ -921,6 +1057,13 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
       3. Cross-field x-bsa-*-rules (v1.0.2 C2): currently
          x-bsa-claim-type-rules for A59 (INV-01 + INV-07 executable
          enforcement). Documentary-only invariants become mechanical.
+
+    Cross-row x-bsa-*-rules (v1.2.8 C3 — A61):
+      4. After the per-row loop, x-bsa-anchor-binding-rules is invoked
+         ONCE with the full row list to enforce cross-row invariants
+         (FK resolution + column uniqueness). Schemas that don't
+         declare the extension no-op silently — same C2-shaped
+         pattern.
 
     Path argument is accepted for uniformity with the dispatcher
     signature but not used by CSV validators (per-row checks are
@@ -939,6 +1082,11 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
         sibling_dir = _resolve_sibling_dir(path)
         sibling_cache = _SiblingArtifactCache(sibling_dir) if sibling_dir else None
         violations: list[str] = []
+        # Collect rows so cross-row handlers (v1.2.8 — A61's
+        # x-bsa-anchor-binding-rules) can scan the whole file after
+        # the per-row loop. Per-row handlers still see one row at a
+        # time inside the loop.
+        all_rows: list[dict] = []
         try:
             reader = csv.DictReader(io.StringIO(content))
             actual = set(reader.fieldnames or [])
@@ -955,6 +1103,7 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
             for row_idx, row in enumerate(reader, start=2):  # +2 for header
                 # Drop the None key DictReader inserts on column-mismatched rows.
                 row = {k: v for k, v in row.items() if k is not None}
+                all_rows.append(row)
                 for err in sorted(validator.iter_errors(row), key=lambda e: list(e.absolute_path)):
                     field = ".".join(str(p) for p in err.absolute_path) or "<row>"
                     violations.append(f"line {row_idx} {field}: {err.message}")
@@ -992,6 +1141,16 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
                 violations.extend(_apply_nfr_coverage_rules(
                     row, schema, row_idx, path, sibling_cache,
                 ))
+            # Cross-row extension rules (v1.2.8 — A61's
+            # x-bsa-anchor-binding-rules). Invoked ONCE after the per-
+            # row loop because the rules (FK resolution + column
+            # uniqueness) need the full row list, not one row at a
+            # time. Schemas that don't declare the extension no-op
+            # silently — same C2-shaped pattern as the per-row
+            # handlers above.
+            violations.extend(_apply_anchor_binding_rules(
+                all_rows, schema, path, sibling_cache,
+            ))
         except csv.Error as exc:
             violations.append(f"CSV parse error: {exc}")
         return violations
