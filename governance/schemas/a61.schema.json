@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a61.schema.json",
+  "title": "A61 Anchor Map row",
+  "description": "Schema for one row of analysis/canonical/core_controls/A61_anchor_map.csv. The anchor map is the canonical bridge between A59 evidence-bound claims and the diagram sidecars (c4-plantuml-from-context + camunda-bpmn-from-context, plus future DBML / sequence-diagram sidecars). Every diagram view-element traces back to an A61 row, which in turn traces back to a SourceClaimID in A59 — closing the diagram-to-evidence chain documented in skills/c4-plantuml-from-context/references/integration-contract.md (\"canonical A59 claim → A61 anchor row → anchor_manifest.json entry → .puml view_element_id\"). Producer: bsa-anchor-auditor (via the anchor-binding stage). Consumers: c4-plantuml-from-context + camunda-bpmn-from-context sidecars (orchestrated mode), plus the F5 hook layer's sibling-artifact cache when sidecar manifests need cross-referencing. Pre-v1.2.7 this schema did not exist and A61 was hand-rolled per fixture (closes the v1.2.6 sidecar-fixture forward-looking gap at fixtures/golden/project_0004_sidecar_e2e/README.md).",
+  "type": "object",
+  "required": [
+    "AnchorID",
+    "AnchorKind",
+    "SourceClaimID",
+    "Label",
+    "Notes"
+  ],
+  "properties": {
+    "AnchorID": {
+      "type": "string",
+      "pattern": "^ANC-[A-Z0-9_-]+$",
+      "description": "Stable identifier matching the per-sidecar anchor_manifest.schema.json a61_anchor_id pattern (^ANC-[A-Z0-9_-]+$). Conventional category prefixes (e.g., ANC-SYS-001 for systems, ANC-EVT-001 for BPMN events) are recommended but not enforced — the pattern is intentionally permissive so per-engagement vocabulary can extend without schema bumps."
+    },
+    "AnchorKind": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "description": "The kind of architecture / process element this anchor represents. Intentionally a loose identifier pattern (not an enum) so that BOTH C4-PlantUML conventions (camelCase or PascalCase: System, Person, Container, System_Boundary, Deployment_Node, Rel) AND BPMN conventions (camelCase: startEvent, task, sequenceFlow, exclusiveGateway, etc.) AND future sidecar conventions (DBML, sequence-diagram) can populate it without forcing a coupled-enum bump in this schema. The strict per-kind enum lives downstream in each sidecar's anchor_manifest.schema.json (view_element_kind for C4, element_kind for BPMN). A61 stays sidecar-agnostic by design — it is the shared bridge layer."
+    },
+    "SourceClaimID": {
+      "type": "string",
+      "pattern": "^C-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
+      "description": "Foreign key into A59_claim_register.csv. Every anchor MUST trace back to an evidence-bound claim — anchors without a source claim would let diagrams over-reach beyond the canonical claim layer (the trace-chain invariant from skills/c4-plantuml-from-context/references/integration-contract.md §\"Relationship to canonical claim-layer\"). Same prefix conventions as A59.ClaimID (C-NNN or C-XXX-NNN). When a desired diagram element has no A59 backing claim, the anchor is NOT authored here — instead an A51 route is opened (IssueType=missing_source or boundary_risk) per the integration-contract escalation rule."
+    },
+    "Label": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable label (system name, actor role, BPMN task name, etc.) — what shows up in the diagram as the visible element name. Free-form but never empty; label-less anchors cannot be cross-referenced in diagram review."
+    },
+    "Notes": {
+      "type": "string",
+      "description": "Free-form analyst notes on the anchor's role / scope / boundaries. May be empty. Common content: which sidecar(s) consume this anchor, scoping caveats, cross-references to A51 routes for adjacent unresolved items."
+    }
+  },
+  "additionalProperties": false,
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for A61 CSV. Producers should write columns in this order for stability; consumers tolerate any order via DictReader. The loader's iter_a61_rows enforces order on read for diff cleanliness (matches the x-bsa-csv-columns-order convention in a51/a58/a59/a60/a62/a70/a71/a72).",
+    "order": [
+      "AnchorID",
+      "AnchorKind",
+      "SourceClaimID",
+      "Label",
+      "Notes"
+    ]
+  },
+  "x-bsa-foreign-keys": {
+    "_comment": "DOCUMENTARY ONLY in v1.2.7 — this block declares the FK SourceClaimID → A59.ClaimID for human + tooling readers, but it is NOT executed at the F5 hook layer. The pre-v1.2.7 cross-artifact validator at governance/schemas/write_validator.py executes the differently-named extension `x-bsa-foreign-key-rules` (used by a72.schema.json line 82) — A61 does not yet ship that executable extension. Schema-row validation IS active in v1.2.7 (the dispatcher routes A61_*.csv to this schema), but cross-row FK resolution is a deferred follow-up release. Do NOT confuse this declarative block with a72's executable FK rules.",
+    "SourceClaimID": {
+      "table": "A59_claim_register.csv",
+      "column": "ClaimID",
+      "rationale": "Every anchor must trace back to an evidence-bound claim (no orphan anchors). Enforcement: deferred follow-up release."
+    }
+  }
+}

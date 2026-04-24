@@ -4,6 +4,61 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.7] — 2026-04-25
+
+**A61 schema formalization (Sprint 3 follow-up).** Closes the v1.2.6 sidecar-e2e fixture's documented forward-looking gap: pre-v1.2.7 the A61 anchor map (the canonical bridge between A59 evidence-bound claims and the diagram sidecars) had NO formal `governance/schemas/a61.schema.json`. The v1.2.6 sidecar e2e fixture hand-rolled its A61 row shape; the F5 hook layer silently allowed any A61 write because no schema → no validator → no enforcement. v1.2.7 wires the missing schema in and pins the alignment with both stable sidecars (c4-plantuml-from-context + camunda-bpmn-from-context) plus future sidecars (DBML, sequence-diagram).
+
+**Tag target**: this commit. **Canon policy version**: `1.2.5+hash:0eb4093d` — **unchanged**. Schema + loader + dispatcher + tests all live OUTSIDE POLICY_GLOBS (POLICY_GLOBS lists `governance/immutable_invariants.md` + per-skill SKILL.md + selected reference docs but NOT `governance/schemas/*.json` or `governance/schemas/*.py`); manifest stays at 1.2.5, git tag bumps to v1.2.7 (canon-neutral release pattern, same as v1.2.4 + v1.2.6).
+
+### Added
+
+- **`governance/schemas/a61.schema.json`** (Draft 2020-12) — pins the A61 anchor-map row shape:
+  * `AnchorID` — `^ANC-[A-Z0-9_-]+$` (matches the per-sidecar anchor_manifest.schema.json `a61_anchor_id` pattern; intentionally permissive prefix-vocabulary so per-engagement extensions don't bump this schema).
+  * `AnchorKind` — loose pattern `^[A-Za-z][A-Za-z0-9_]*$` (NOT a coupled enum). Accepts BOTH C4-PlantUML conventions (PascalCase: `System`, `Person`, `Container`, `System_Boundary`, `Deployment_Node`, `Rel`) AND BPMN conventions (camelCase: `startEvent`, `task`, `sequenceFlow`, `exclusiveGateway`) AND future sidecar conventions (DBML `table`/`column`/`fk_relation`, sequence-diagram `actor`/`lifeline`/`activation`). The strict per-kind enum lives downstream in each sidecar's `anchor_manifest.schema.json` (`view_element_kind` for C4, `element_kind` for BPMN). A61 stays sidecar-agnostic by design — it's the shared bridge layer.
+  * `SourceClaimID` — `^C-(?:[A-Z]{2,5}-)?[0-9]{3,4}$` (byte-identical with `governance/schemas/a59.schema.json` `ClaimID` pattern — pinned by the new test `test_a61_source_claim_id_pattern_matches_a59_claim_id_pattern` so a future schema refactor cannot silently desync). Foreign-key relationship to A59.ClaimID is documented in the schema's `x-bsa-foreign-keys` block but **NOT executed at the F5 hook layer in v1.2.7** — the executable FK rules use a differently-named extension (`x-bsa-foreign-key-rules`, see `a72.schema.json:82` + `write_validator.py:744`); cross-row FK enforcement for A61 is a deferred follow-up release. The block is documentary in v1.2.7.
+  * `Label` — `minLength: 1` (label-less anchors break diagram review).
+  * `Notes` — free-form (may be empty).
+  * `additionalProperties: false` — unknown columns rejected.
+  * `x-bsa-csv-columns-order` block — canonical column order for producer/consumer alignment (matches the convention in a51/a58/a59/a60/a62/a70/a71/a72).
+- **`iter_a61_rows()`** in `governance/schemas/loader.py` — standard `_iter_canonical_csv("a61", path)` wrapper matching the `iter_a*_rows()` pattern of the other A* canonical artifacts. Module docstring `Quick reference` table updated to list the new helper.
+- **A61 dispatcher entry** in `governance/schemas/write_validator.py` — routes `analysis/(?:discovery/)?canonical/core_controls/A61_[a-z_]+\.csv` to the `a61` schema's row validator. Pre-v1.2.7 such writes were silently allowed; post-v1.2.7 every A61 write is gated at the F5 hook layer.
+- **`tests/test_schemas_a61.py`** (+44 tests) — pins:
+  * Schema meta-validity (Draft 2020-12 self-check).
+  * `required` and `x-bsa-csv-columns-order.order` match set-wise (the most common drift class).
+  * `additionalProperties: false`.
+  * Loader API: `iter_a61_rows()` loads the v1.2.6 fixture; all 10 expected `AnchorID` values are present.
+  * Positive case: every A61 row in every golden fixture validates against the schema (glob-based — future fixtures with A61 are auto-included).
+  * 9 negative cases: AnchorID without `ANC-` prefix; lowercase AnchorID; SourceClaimID with wrong prefix (`S-001`); SourceClaimID too short (`C-1`); empty Label; missing required field; AnchorKind with whitespace (`system_ boundary`); AnchorKind starting with a digit (`1stClass`); unknown column.
+  * Parametrized positive sweep: 22 representative AnchorKind values from C4 + BPMN + hypothetical DBML/sequence-diagram conventions all accepted.
+  * `x-bsa-foreign-keys` block shape pin (FK → A59.ClaimID; **documentary only in v1.2.7** — A61's `x-bsa-foreign-keys` is a different extension name from a72.schema.json's executable `x-bsa-foreign-key-rules`, see `write_validator.py:744`; cross-row FK enforcement for A61 is a deferred follow-up release).
+  * Dispatcher pin: `_DISPATCHER` table contains exactly one A61 entry; pattern matches both main-cycle + discovery paths; doesn't match adjacent shapes (no `_suffix`, numeric drift).
+  * End-to-end: `validate_canonical_write` rejects a malformed A61 row + accepts a well-formed one.
+- **`tests/test_sidecar_e2e_fixture.py`** — new test `test_fixture_a61_validates_against_a61_schema` validates the v1.2.6 fixture's A61 register against the v1.2.7 schema; closes the schema-fixture alignment loop.
+
+### Updated
+
+- **`fixtures/golden/project_0004_sidecar_e2e/README.md`** — "What this fixture does NOT cover" section: the A61 schema-enforcement bullet is now marked CLOSED in v1.2.7 with a back-pointer to the new test.
+
+### Operator workflow
+
+This is schema infrastructure — operators don't invoke it directly. Three behavioral changes:
+
+1. **F5 hook now validates A61 writes**. Pre-v1.2.7: A61 writes were silently allowed (no schema). Post-v1.2.7: any A61 row that doesn't conform to `AnchorID + AnchorKind + SourceClaimID + Label + Notes` (with the documented patterns) fails the write at the F5 hook layer with a structured BLOCKED message. Existing v1.2.6 fixture rows continue to validate cleanly (the schema was designed to accept the fixture shape).
+2. **`iter_a61_rows()` is available** for downstream tooling. Same shape as the other `iter_a*_rows()` helpers.
+3. **Sidecar e2e tests now cross-check the A61 schema**, not just the manifest schemas — closes the cross-product gap from v1.2.6.
+
+### Codex review trail
+
+- **Round 1**: REQUEST CHANGES — 1 critical + 1 recommendation acted on.
+  * **CRITICAL**: the new schema's `x-bsa-foreign-keys` block was described in the schema, in a test docstring, and in the CHANGELOG as "mirrors the convention in a72.schema.json" — but `governance/schemas/a72.schema.json:82` actually uses the differently-named extension `x-bsa-foreign-key-rules`, which IS executable at the F5 hook layer (`write_validator.py:744`). A61's `x-bsa-foreign-keys` block (different name) is purely documentary in v1.2.7 — no FK enforcement happens. Claiming it "mirrors a72" overstated shipped behavior. **Fixed**: schema's `_comment` rewritten to "DOCUMENTARY ONLY in v1.2.7" with explicit pointer to the executable extension's different name; CHANGELOG explicitly says cross-row FK enforcement is deferred to a follow-up release; test renamed `test_x_bsa_foreign_keys_documents_a59_link_documentary_only` and now ALSO pins (a) the schema must NOT add the executable `x-bsa-foreign-key-rules` extension without paired write_validator wire-up, and (b) the `_comment` MUST contain the literal "DOCUMENTARY" marker — drift surfaces immediately.
+  * **Recommendation #1 (added)**: new test `test_a61_source_claim_id_pattern_matches_a59_claim_id_pattern` loads BOTH schemas and asserts the `SourceClaimID` regex is byte-identical with `A59.ClaimID`. Pre-fix the patterns were equal but only by manual lockstep; post-fix any future refactor of either schema will break the test if they desync.
+  * **Recommendation #2 (deferred)**: cross-row duplicate-AnchorID detection — the `test_fixture_a61_no_duplicate_anchor_ids` test only catches duplicates in the v1.2.6 fixture. Generic duplicate-row enforcement at write time would need a multi-row validator and a new x-bsa-extension; deferred to the same follow-up release as FK enforcement (both are "cross-row" concerns).
+- **Round 2**: REQUEST CHANGES — round-1 critical fixes verified ✓ at the schema + test layer, but ONE residual line in the CHANGELOG `### Added` section repeated the round-1 overstatement (claiming the documentary FK block matches a72's convention) — same misleading framing as round-1, just at a different location in the same v1.2.7 entry. **Fixed**: that line now explicitly says "documentary only in v1.2.7" + names a72's actually-executable extension (`x-bsa-foreign-key-rules`) so the contrast is unambiguous. The historical quote inside the round-1 trail entry above stays as-is (the trail is documenting what was originally written, not asserting current behavior).
+- **Round 3**: REQUEST CHANGES — round-2 fix at the `### Added` line was good, but the round-2 trail entry itself repeated the literal misleading phrase verbatim ("mirrors a72.schema.json"), leaving a second grep hit. **Fixed**: round-2 trail rephrased to describe the round-2 issue without repeating the original phrase verbatim — the round-1 historical quote at the top of the trail stays as-is (it's the canonical documentation of what was originally written).
+- **Round 4**: APPROVE — only the round-1 historical quote remains as a `mirrors a72` grep hit; both `### Added` and the round-2 trail now describe current behavior accurately. No new issues.
+- A61 schema gap from v1.2.6 retired. The bsa-plugin-family canonical surface (A48/A50/A51/A58/A59/A60/A61/A62/A70/A71/A72) is now fully schema-pinned.
+- Canon hash unchanged (0eb4093d). Manifest stays at 1.2.5.
+
 ## [v1.2.6] — 2026-04-25
 
 **End-to-end sidecar fixture (Sprint 3 / S3).** Closes the open follow-up at `docs/sidecar_inventory.md` (pre-v1.2.6 line 108: "End-to-end test fixture that exercises an orchestrated sidecar invocation against a `project_NNNN/` happy-path fixture. Today the sidecars are tested in isolation; a full-pipeline-with-sidecar test would catch orchestrator integration drift."). Pre-v1.2.6 sidecar test coverage was schema-shape-only — the per-sidecar JSON Schemas were validated, the F5/POLICY_GLOBS boundary was enforced, the `config/sidecar_registry.yaml` was lint-checked, but no test took a real-shaped A61 register, walked it through a real-shaped sidecar manifest, and asserted every cross-reference resolved back to a real view-file element id. v1.2.6 ships the first such walk for both stable sidecars.

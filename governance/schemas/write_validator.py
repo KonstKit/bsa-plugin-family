@@ -1041,6 +1041,18 @@ _DISPATCHER: list[_DispatcherEntry] = [
         "a60",
         _make_csv_validator("a60"),
     ),
+    # Sidecar bridge layer (v1.2.7 schema formalization): A61 anchor
+    # map. Pre-v1.2.7 A61 was hand-rolled per fixture (the v1.2.6
+    # sidecar-e2e fixture documented this as forward-looking). Schema
+    # at governance/schemas/a61.schema.json. Required column shape:
+    # AnchorID + AnchorKind + SourceClaimID (FK into A59) + Label +
+    # Notes. Foreign-key enforcement via _SiblingArtifactCache lands
+    # in a follow-up release; v1.2.7 ships the row-shape gate only.
+    (
+        re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A61_[a-z_]+\.csv$"),
+        "a61",
+        _make_csv_validator("a61"),
+    ),
     # Phase 3 (Sprint 6+): A62 NFR register.
     (
         re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A62_[a-z_]+\.csv$"),

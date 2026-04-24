@@ -77,12 +77,15 @@ here on the next pytest run.
   represents what an orchestrated sidecar pass would emit; the test
   walks that representation. A live-run fixture would be a separate
   Sprint 4.5+ deliverable.
-- A61 schema enforcement at the F5 hook layer. As of v1.2.6 there
-  is no formal `governance/schemas/a61.schema.json` — the sidecar
-  contracts reference `analysis/canonical/core_controls/A61*` but
-  the schema is forward-looking. The fixture's A61 row shape is
-  hand-designed to match the sidecar-side requirements
-  (`AnchorID` matches `^ANC-[A-Z0-9_-]+$`).
+- ~~A61 schema enforcement at the F5 hook layer.~~ — **CLOSED in
+  v1.2.7.** `governance/schemas/a61.schema.json` (Draft 2020-12)
+  pins the row shape (AnchorID + AnchorKind + SourceClaimID + Label
+  + Notes); `iter_a61_rows()` lives in `governance/schemas/loader.py`;
+  the F5 dispatcher in `governance/schemas/write_validator.py` routes
+  `analysis/canonical/core_controls/A61_*.csv` to the new validator.
+  This fixture's A61 register validates against the v1.2.7 schema —
+  see `test_fixture_a61_validates_against_a61_schema` in
+  `tests/test_sidecar_e2e_fixture.py`.
 - **Relationship coverage** for C4 (`Rel`, `BiRel`, `RelIndex`).
   These macros ARE listed as anchorable per the integration contract
   + the manifest schema's `view_element_kind` enum, but C4-PlantUML

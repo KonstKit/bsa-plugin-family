@@ -324,6 +324,26 @@ def test_fixture_a61_no_duplicate_anchor_ids() -> None:
     )
 
 
+def test_fixture_a61_validates_against_a61_schema() -> None:
+    """v1.2.7 closure: the v1.2.6 fixture's A61 register MUST validate
+    against the new ``governance/schemas/a61.schema.json`` (added in
+    v1.2.7). Pre-v1.2.7 there was no schema — the fixture's A61 row
+    shape was hand-rolled. This test pins the schema-fixture
+    alignment so any future schema tightening or fixture refresh is
+    caught here."""
+    from governance.schemas.loader import iter_a61_rows, load_schema
+    schema = load_schema("a61")
+    validator = jsonschema.Draft202012Validator(schema)
+    rows = list(iter_a61_rows(A61_PATH))
+    for row_no, row in enumerate(rows, start=1):
+        errors = list(validator.iter_errors(row))
+        assert not errors, (
+            f"A61:row {row_no} ({row.get('AnchorID', '?')}) failed "
+            f"v1.2.7 a61.schema.json validation: "
+            f"{[e.message for e in errors]}"
+        )
+
+
 # ---- C4 sidecar e2e --------------------------------------------------
 
 

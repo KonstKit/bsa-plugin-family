@@ -20,6 +20,7 @@ Public API:
     iter_a58_rows(path)         -> Iterator[dict]              (A58 evidence excerpts rows)
     iter_a59_rows(path)         -> Iterator[dict]              (A59 claim register rows)
     iter_a60_rows(path)         -> Iterator[dict]              (A60 negative evidence rows)
+    iter_a61_rows(path)         -> Iterator[dict]              (A61 anchor map rows, v1.2.7+)
     iter_a62_rows(path)         -> Iterator[dict]              (A62 NFR register rows, Phase 3)
     iter_a70_rows(path)         -> Iterator[dict]              (A70 story register rows, Phase 3)
     iter_a71_rows(path)         -> Iterator[dict]              (A71 test scenario register rows, Phase 3)
@@ -325,6 +326,18 @@ def iter_a59_rows(path: Path) -> Iterator[dict[str, str]]:
 def iter_a60_rows(path: Path) -> Iterator[dict[str, str]]:
     """Yield A60 negative-evidence-register rows."""
     return _iter_canonical_csv("a60", path)
+
+
+def iter_a61_rows(path: Path) -> Iterator[dict[str, str]]:
+    """Yield A61 anchor-map rows (v1.2.7 schema formalization).
+
+    A61 is the canonical bridge between A59 evidence-bound claims and
+    the diagram sidecars. See ``governance/schemas/a61.schema.json``
+    for the row shape; the schema was added in v1.2.7 — pre-v1.2.7
+    A61 was hand-rolled per fixture (closed the v1.2.6 sidecar-fixture
+    forward-looking gap).
+    """
+    return _iter_canonical_csv("a61", path)
 
 
 def iter_a62_rows(path: Path) -> Iterator[dict[str, str]]:
