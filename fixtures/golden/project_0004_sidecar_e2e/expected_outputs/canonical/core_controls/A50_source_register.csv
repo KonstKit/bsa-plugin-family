@@ -1,0 +1,3 @@
+SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,Priority,Language,DateOrVersion,Notes
+S-001,architecture_note,Support-desk system context,internal architect,readable,T2,high,en,2026-02-10,Hand-authored Phase-0 architecture overview; covers 5 anchors (1 system + 1 actor + 1 boundary + 2 containers)
+S-002,process_note,Ticket intake BPMN flow,internal ops team lead,readable,T2,high,en,2026-02-12,Hand-authored process narrative; covers 3 BPMN anchors (start event + task + sequence flow)

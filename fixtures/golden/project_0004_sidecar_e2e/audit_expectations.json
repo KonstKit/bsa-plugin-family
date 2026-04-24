@@ -1,0 +1,19 @@
+{
+  "fixture_id": "project_0004_sidecar_e2e",
+  "scenario": "End-to-end sidecar fixture exercising A61-anchor → sidecar-manifest → view-file cross-product for c4-plantuml-from-context + camunda-bpmn-from-context. Closes the docs/sidecar_inventory.md follow-up at line 108. Sidecar-focused fixture: ships only the canonical surface that the sidecar contracts touch (A50/A58/A59/A61) plus header-only A51/A60 to satisfy the runner's required-files sweep.",
+  "expected_verdicts": {
+    "stage1.excerpts.merged": "merged"
+  },
+  "expected_kpi_bounds": {
+    "_comment": "This fixture is sidecar-focused, not Phase-3 KPI-focused. KPI bounds intentionally omitted — see project_0001/0002 for the canonical KPI-bound fixtures."
+  },
+  "expected_invariants": [
+    "every A59 row has SourceID+ExcerptID (no analyst_judgment in this fixture)",
+    "every A61 AnchorID matches ^ANC-[A-Z0-9_-]+$ (sidecar contract requirement)",
+    "every sidecar manifest's a61_anchor_id resolves to a row in A61 (ART-VAL-001-07 cross-ref)",
+    "every view-element id declared in .puml/.bpmn appears in the corresponding manifest's anchor_map (ART-VAL-001-07 orphan-view-element guard)"
+  ],
+  "expected_a51_routes": [],
+  "_a51_routes_comment": "No A51 routes in this fixture — every claim is direct + sourced; A51 ships header-only.",
+  "_extension_note": "Fixture intentionally omits Phase-3 surface (A62/A70/A71/A72) — sidecar concern is upstream of those (operates on A61 anchors, which derive from A59 claims). A future cross-Phase-3 sidecar fixture would compose this surface with the project_0001 Phase-3 surface."
+}

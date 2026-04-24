@@ -1,0 +1,13 @@
+{
+  "fixture_id": "project_0004_sidecar_e2e",
+  "schema_version": 1,
+  "captured_at": "2026-04-25T00:00:00Z",
+  "authoring_mode": "synthetic_representative",
+  "_authoring_mode_comment": "Hand-authored Sprint 3 / v1.2.6 fixture exercising the full A61-anchor → sidecar-manifest → view-file cross-product for both stable sidecars (c4-plantuml-from-context + camunda-bpmn-from-context). Closes the 'end-to-end test fixture' open follow-up at docs/sidecar_inventory.md. Live-run fixture remains a Sprint 4.5+ deliverable.",
+  "canon_policy_version": "1.2.5+hash:0eb4093d",
+  "plugin_version": "1.2.5",
+  "model_used": "n/a (synthetic fixture)",
+  "model_version_hash": "n/a (synthetic fixture)",
+  "_model_fields_comment": "model_used / model_version_hash will be populated by Sprint 4.5 live-run fixtures (per plan US-S05-01 AC-5) to enable model-drift regression warnings.",
+  "scenario_tags": ["direct-mode", "sidecar-e2e", "c4-plantuml", "camunda-bpmn", "anchor-binding"]
+}

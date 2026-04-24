@@ -1,0 +1,16 @@
+@startuml
+!include <C4/C4_Container>
+
+LAYOUT_WITH_LEGEND()
+
+title Support-Desk — Container View
+
+System_Boundary(corporate_intranet, "Corporate Intranet") {
+  System(support_desk, "Support-Desk System", "Ticket triage + agent workflow")
+  Container(web_ui, "Web UI", "Browser app", "Agent-facing ticket UI")
+  Container(analytics_db, "Analytics Database", "Postgres", "Backs reporting features")
+}
+
+Person(agent, "Agent", "Triages incoming tickets")
+
+@enduml

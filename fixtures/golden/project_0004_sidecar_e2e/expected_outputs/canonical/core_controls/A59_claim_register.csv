@@ -1,0 +1,5 @@
+ClaimID,SourceID,ExcerptID,ClaimType,Statement,JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes
+C-001,S-001,E-001,direct,"The support-desk system has agents as the primary actor and contains a web UI + analytics database, sitting inside the corporate intranet boundary.",,,0.85,level-2,Direct quote; covers 5 C4 anchors
+C-002,S-001,E-002,direct,"Agents authenticate via the corporate SSO gateway; the web UI uses the analytics database for reporting.",,,0.85,level-3,Direct quote; relationship-level claim
+C-003,S-002,E-003,direct,"Ticket flow starts with an intake event, then routes through a severity-assignment task; high-severity tickets follow the page-on-call sequence flow.",,,0.85,level-2,Direct quote; covers 3 BPMN anchors
+C-004,S-002,E-004,direct,"The severity-assignment task ALWAYS runs within one hour; the page-on-call flow ALWAYS triggers for High or Critical severity.",,,0.85,level-2,Process-rule claim

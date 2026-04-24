@@ -1,0 +1,14 @@
+{
+  "marker_id": "stage1.excerpts.merged",
+  "stage": "stage1",
+  "verdict": "MERGED",
+  "timestamp": "2026-04-25T00:00:00Z",
+  "canon_policy_version": "1.2.5",
+  "source_count": 2,
+  "excerpt_count": 4,
+  "claim_count": 4,
+  "negative_evidence_count": 0,
+  "a51_count": 0,
+  "notes": "Sidecar-e2e fixture (project_0004_sidecar_e2e). Stage 1 composite promoted with the minimal claim layer needed to support the A61 anchor map: 2 sources (one architecture note, one BPMN process note), 4 excerpts, 4 direct claims. No A51 routes; no negative evidence — sidecar concern is upstream of those.",
+  "canon_policy_version_hash": "0eb4093d"
+}

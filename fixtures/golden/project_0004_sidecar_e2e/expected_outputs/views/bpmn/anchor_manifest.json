@@ -1,0 +1,45 @@
+{
+  "manifest_version": "1.0",
+  "generated_at": "2026-04-25T00:00:00Z",
+  "sidecar": "camunda-bpmn-from-context",
+  "sidecar_version": "1.0.0",
+  "canon_policy_version": "1.2.5+hash:0eb4093d",
+  "view_files": [
+    {
+      "path": "analysis/views/bpmn/ticket_intake.bpmn",
+      "bpmn_profile": "documentation",
+      "anchor_map": [
+        {
+          "element_id": "StartEvent_intake",
+          "element_kind": "startEvent",
+          "a61_anchor_id": "ANC-EVT-001",
+          "notes": "Entry point for ticket flow"
+        },
+        {
+          "element_id": "Task_assign_severity",
+          "element_kind": "task",
+          "a61_anchor_id": "ANC-TASK-001",
+          "notes": "Routes to page-on-call when severity is High or Critical"
+        },
+        {
+          "element_id": "SequenceFlow_high_to_page",
+          "element_kind": "sequenceFlow",
+          "a61_anchor_id": "ANC-FLOW-001",
+          "notes": "Triggered for High or Critical"
+        },
+        {
+          "element_id": "SequenceFlow_intake_to_assign",
+          "element_kind": "sequenceFlow",
+          "a61_anchor_id": "ANC-FLOW-002",
+          "notes": "Intake event into severity-assignment task"
+        },
+        {
+          "element_id": "EndEvent_paged",
+          "element_kind": "endEvent",
+          "a61_anchor_id": "ANC-EVT-002",
+          "notes": "On-call paged outcome"
+        }
+      ]
+    }
+  ]
+}

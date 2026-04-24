@@ -4,6 +4,63 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.6] — 2026-04-25
+
+**End-to-end sidecar fixture (Sprint 3 / S3).** Closes the open follow-up at `docs/sidecar_inventory.md` (pre-v1.2.6 line 108: "End-to-end test fixture that exercises an orchestrated sidecar invocation against a `project_NNNN/` happy-path fixture. Today the sidecars are tested in isolation; a full-pipeline-with-sidecar test would catch orchestrator integration drift."). Pre-v1.2.6 sidecar test coverage was schema-shape-only — the per-sidecar JSON Schemas were validated, the F5/POLICY_GLOBS boundary was enforced, the `config/sidecar_registry.yaml` was lint-checked, but no test took a real-shaped A61 register, walked it through a real-shaped sidecar manifest, and asserted every cross-reference resolved back to a real view-file element id. v1.2.6 ships the first such walk for both stable sidecars.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.5+hash:0eb4093d` — **unchanged**. Fixture + test + sidecar-inventory doc edit all live outside POLICY_GLOBS; manifest stays at 1.2.5, git tag bumps to v1.2.6 (canon-neutral release pattern, same as v1.2.4).
+
+### Added
+
+- **`fixtures/golden/project_0004_sidecar_e2e/`** — first golden fixture exercising the full A61-anchor → sidecar-manifest → view-file cross-product for both stable sidecars. Hand-authored (synthetic; live-run fixture remains a Sprint 4.5+ deliverable). Per-surface coverage:
+  * `expected_outputs/canonical/core_controls/A50_source_register.csv` — 2 sources (1 architecture note + 1 BPMN process note).
+  * `A58_evidence_excerpts.csv` — 4 excerpts (2 per source).
+  * `A59_claim_register.csv` — 4 direct claims.
+  * `A61_anchor_map.csv` — 10 anchors (5 C4: system + person + boundary + 2 containers; 5 BPMN: start event + task + 2 sequence flows + end event). Hand-designed with NO formal `governance/schemas/a61.schema.json` (A61 schema remains forward-looking pre-Sprint-4); per-row AnchorID matches the sidecar contract pattern `^ANC-[A-Z0-9_-]+$`.
+  * `A51`/`A60` — header-only (no rows; sidecar concern is upstream of A51 routes / negative evidence).
+  * `expected_outputs/views/c4/system_context.puml` + `anchor_manifest.json` — sample C4 diagram + manifest mapping all 5 view elements to A61.
+  * `expected_outputs/views/bpmn/ticket_intake.bpmn` + `anchor_manifest.json` — sample BPMN process + manifest mapping all 5 BPMN elements to A61.
+  * `inputs/source_001_arch_note.md` + `source_002_bpmn_note.md` — source files referenced by A58 locators.
+  * `expected_markers/stage1.excerpts.merged.json` — minimal stage marker (sidecar fixture is Stage-1-only, NOT a Phase-3 KPI fixture).
+  * `audit_expectations.json` + `fixture_metadata.json` + `README.md` — standard fixture descriptors. README explains the fixture's purpose, per-surface coverage, what the test pins, and what's out of scope.
+- **`tests/test_sidecar_e2e_fixture.py`** (+16 tests, jsonschema-gated via `pytest.importorskip`) — pins:
+  * **Sanity (3)**: fixture metadata loads; A61 register loads + all 10 anchors match the contract pattern; A61 has no duplicate AnchorIDs.
+  * **C4 e2e (4)**: manifest validates against `skills/c4-plantuml-from-context/references/anchor_manifest.schema.json`; every `a61_anchor_id` resolves to A61 (ART-VAL-001-07 unmapped-anchor guard); every C4 view element declared in the `.puml` appears in the manifest's `anchor_map` (ART-VAL-001-07 orphan-view-element guard); every manifest `view_files[].path` exists on disk.
+  * **BPMN e2e (4)**: same four checks against `skills/camunda-bpmn-from-context/references/anchor_manifest.schema.json` + `.bpmn`.
+  * **Cross-sidecar invariants (2)**: A61 partitions cleanly across the two sidecars (no overlap — fixture-design intent); every A61 row is consumed by some manifest (no dead-weight anchors).
+  * **Negative-path pins (3)**: mutating the C4 manifest to point at a non-existent A61 row → cross-ref check raises; dropping one anchor_map entry → orphan-view-element check raises; mutating the C4 manifest's `sidecar` field to the BPMN literal → schema check raises (proves schema validation is doing real work, not just JSON parsing).
+
+### Updated
+
+- **`docs/sidecar_inventory.md`** — open follow-up at the end of the file marked CLOSED in v1.2.6; entry now describes the fixture + test surface inline.
+
+### Operator workflow
+
+This is test infrastructure — operators don't invoke it directly. The test runs as part of the standard pytest suite (CI gate: `pytest`). Sidecar developers can:
+
+1. `python3 -m pytest tests/test_sidecar_e2e_fixture.py -v` — full e2e walk against the new fixture.
+2. `python3 scripts/fixture_runner.py --mode=validate` — confirm the fixture itself is well-formed (header validation, locator-file resolution, A59 invariants).
+3. The fixture lives at `fixtures/golden/project_0004_sidecar_e2e/` and follows the same skeleton as `project_0001/0002/0003`. Future fixture refreshes (e.g., when DBML or sequence-diagram sidecars land) can extend this fixture or fork a sibling.
+
+### Codex review trail
+
+- **Round 1**: REQUEST CHANGES — 3 critical + 3 recommendations.
+  * **CRITICAL #1 (C4 fixture is not validator-acceptable)**: the shipped `system_context.puml` declared `!include <C4/C4_Context>` but used `Container(...)` macros AND was missing the `LAYOUT_WITH_LEGEND()` directive. Running `python3 skills/c4-plantuml-from-context/scripts/validate_c4_plantuml.py` against the fixture surfaced two hard errors. **Fixed**: converted to a proper Container diagram (`!include <C4/C4_Container>` + `LAYOUT_WITH_LEGEND()`); manifest's `diagram_type` updated from `"System Context"` to `"Container"` to match. Validator now reports `Validation passed: 1 file(s), 0 warning(s)`.
+  * **CRITICAL #2 (negative-path tests reimplemented logic inline)**: the three negative tests reimplemented the set/schema cross-ref logic instead of calling the SAME helpers as the positive tests. A future weakening of the positive helpers would silently leave negatives green. **Fixed**: extracted shared helpers (`_unmapped_anchor_ids`, `_orphan_view_elements`, `_schema_errors`); positives + negatives both call them. Now weakening any helper would break BOTH.
+  * **CRITICAL #3 (C4 contract under-covered)**: the integration contract + the manifest schema's `view_element_kind` enum BOTH treat `Rel`/`BiRel`/`RelIndex` as anchorable view elements, but `_load_c4_view_elements()` skipped relationship macros. The original fixture had two `Rel(...)` calls with no manifest entries — the test could pass while a contract violation remained. **Fixed (scope-down)**: the C4-PlantUML relationship macros have no explicit ID and the contract has no documented `view_element_id` convention for them yet — closing this gap requires a separate work item to formalise the convention. The fixture now ships a Container view with NO `Rel(...)` calls; the test docstring + fixture README + this CHANGELOG entry all explicitly call out the relationship-coverage gap as deferred to a future fixture refresh.
+  * **Recommendation #1 (assert path prefix)**: positive view-path test only proved file existence; did not enforce the orchestrated-mode `analysis/views/<sidecar>/` prefix. **Fixed**: combined the prefix + existence checks in `test_c4_manifest_view_path_prefix_and_disk_resolve` and the BPMN equivalent.
+  * **Recommendation #2 (parser-aware extraction)**: BPMN element-id extraction was regex-based + brittle around namespacing. **Fixed**: switched to `xml.etree.ElementTree` with a `BPMN_DECL_LOCALNAMES` allow-list keyed off the schema-defined element-kind enum.
+  * **Recommendation #3 (enable schema format checks)**: `Draft202012Validator` does not check the `format: date-time` constraint by default — it depends on optional rfc3339 libs (the repo is stdlib-only). **Fixed**: registered a custom `date-time` checker on a module-level `_FORMAT_CHECKER` using `datetime.fromisoformat` (handles both bare-`Z` and `+00:00` UTC offsets). New regression test `test_negative_bad_timestamp_fails_format_check` mutates `generated_at` to a non-RFC-3339 string and asserts the helper raises — pins that the format-checker is actually wired in.
+- **Round 2**: REQUEST CHANGES — round-1 fixes verified ✓ (all 6), but 1 new precision issue found in the round-1 fix.
+  * **NEW**: the round-1 `_check_date_time_rfc3339()` delegated straight to `datetime.fromisoformat`, which is too permissive for RFC 3339. It silently accepted (a) timezone-less timestamps like `2026-04-25T00:00:00` (RFC 3339 §5.6 requires a UTC offset — `Z` or `[+-]HH:MM`) AND (b) the space separator `2026-04-25 00:00:00+00:00` (only the literal `T` separator is RFC-3339-legal). That weakened the "RFC-3339" guarantee in the README + CHANGELOG. **Fixed**: prepended a strict regex precheck (`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$`) — rejects naive + space-separator shapes BEFORE delegating to `fromisoformat` for calendar-validity (`fromisoformat` is good at rejecting 2026-02-30 / 2026-13-01 etc., but does not enforce the format preconditions). Two new regression tests: `test_negative_naive_timestamp_fails_format_check` (no UTC offset) + `test_negative_space_separator_timestamp_fails_format_check` (space instead of `T`).
+- **Round 3**: APPROVE — round-2 strict-regex precheck verified; checker accepts all legal RFC-3339 §5.6 shapes the manifests use (`...Z`, `...+00:00`, `...-05:00`, sub-second variants) and rejects all illegal shapes (naive, space separator, lowercase `z`, 4-digit offsets, 2-digit years). Lowercase `t`/`z` rejection matches the uppercase-only contract already in use across `governance/schemas/telemetry_run.schema.json`, `live_api_response.schema.json`, `backlog_export_jira.schema.json`, `marker.schema.json`. No new issues.
+
+### Result
+
+- 1738 → 1757 tests passing (+19 sidecar e2e tests; 16 round-1 + 1 round-1-regression + 2 round-2-regression for the RFC-3339 strictness pins).
+- Sidecar inventory open follow-up retired. Now-stable sidecars (c4-plantuml-from-context + camunda-bpmn-from-context) have explicit end-to-end cross-reference coverage in addition to the pre-existing isolated schema/F5/registry tests.
+- Canon hash unchanged (0eb4093d). Manifest stays at 1.2.5.
+
 ## [v1.2.5] — 2026-04-25
 
 **A70 negative-path scenario suggestions (Sprint 3 / T4).** Closes `[TODO-S8-01-NEGATIVE-PATH-HEURISTICS]` from `skills/bsa-test-scenario-builder/SKILL.md`. Pre-v1.2.5 the boundary + negative-path coverage rule (line 14 of the SKILL.md: "a 'within 60s' criterion implies both an 'exactly at SLA' scenario and a 'past SLA' rollover scenario") was operator-manual — the operator had to read every A70 acceptance criterion and remember to author the off-by-one A71 row. v1.2.5 ships a deterministic helper that scans A70 for measurable language + emits per-story suggestions the operator can copy-paste into A71.

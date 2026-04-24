@@ -1,0 +1,45 @@
+{
+  "manifest_version": "1.0",
+  "generated_at": "2026-04-25T00:00:00Z",
+  "sidecar": "c4-plantuml-from-context",
+  "sidecar_version": "1.0.0",
+  "canon_policy_version": "1.2.5+hash:0eb4093d",
+  "view_files": [
+    {
+      "path": "analysis/views/c4/system_context.puml",
+      "diagram_type": "Container",
+      "anchor_map": [
+        {
+          "view_element_id": "support_desk",
+          "view_element_kind": "System",
+          "a61_anchor_id": "ANC-SYS-001",
+          "notes": "Primary system in scope"
+        },
+        {
+          "view_element_id": "agent",
+          "view_element_kind": "Person",
+          "a61_anchor_id": "ANC-ACTOR-001",
+          "notes": "Primary human actor"
+        },
+        {
+          "view_element_id": "corporate_intranet",
+          "view_element_kind": "System_Boundary",
+          "a61_anchor_id": "ANC-BOUNDARY-001",
+          "notes": "Corporate intranet boundary"
+        },
+        {
+          "view_element_id": "web_ui",
+          "view_element_kind": "Container",
+          "a61_anchor_id": "ANC-CONTAINER-001",
+          "notes": "Browser-side UI"
+        },
+        {
+          "view_element_id": "analytics_db",
+          "view_element_kind": "Container",
+          "a61_anchor_id": "ANC-CONTAINER-002",
+          "notes": "Analytics / reporting database"
+        }
+      ]
+    }
+  ]
+}

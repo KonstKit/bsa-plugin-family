@@ -1,0 +1,11 @@
+AnchorID,AnchorKind,SourceClaimID,Label,Notes
+ANC-SYS-001,system,C-001,Support-desk system,Primary system in scope (C4 system context)
+ANC-ACTOR-001,person,C-001,Agent,Primary human actor (C4 person)
+ANC-BOUNDARY-001,system_boundary,C-001,Corporate intranet,C4 enterprise / system boundary container
+ANC-CONTAINER-001,container,C-001,Web UI,Web UI container inside support-desk system
+ANC-CONTAINER-002,container,C-001,Analytics database,Analytics DB container inside support-desk system
+ANC-EVT-001,startEvent,C-003,Ticket intake,BPMN start event; entry point for ticket flow
+ANC-TASK-001,task,C-003,Assign severity,BPMN service task; routes to page-on-call flow when High or Critical
+ANC-FLOW-001,sequenceFlow,C-003,Page on-call,BPMN sequence flow; triggered when severity is High or Critical
+ANC-FLOW-002,sequenceFlow,C-003,Intake to assign,BPMN sequence flow; intake event into severity-assignment task
+ANC-EVT-002,endEvent,C-003,On-call paged,BPMN end event; on-call paged outcome

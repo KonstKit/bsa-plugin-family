@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  id="Definitions_ticket_intake"
+                  targetNamespace="http://example.test/bsa/ticket-intake">
+  <bpmn:process id="ticket_intake_process" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_intake" name="Ticket intake">
+      <bpmn:outgoing>SequenceFlow_intake_to_assign</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Task_assign_severity" name="Assign severity">
+      <bpmn:incoming>SequenceFlow_intake_to_assign</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_high_to_page</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:sequenceFlow id="SequenceFlow_intake_to_assign"
+                       sourceRef="StartEvent_intake"
+                       targetRef="Task_assign_severity"/>
+    <bpmn:sequenceFlow id="SequenceFlow_high_to_page"
+                       sourceRef="Task_assign_severity"
+                       targetRef="EndEvent_paged"/>
+    <bpmn:endEvent id="EndEvent_paged" name="On-call paged">
+      <bpmn:incoming>SequenceFlow_high_to_page</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>
