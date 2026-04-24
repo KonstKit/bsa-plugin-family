@@ -912,6 +912,100 @@ def _apply_nfr_coverage_rules(
     return violations
 
 
+def _check_unique_columns(
+    rows: list[dict],
+    unique_columns: object,
+    ext_name: str,
+) -> list[str]:
+    """Shared cross-row uniqueness-check (v1.2.10).
+
+    Emits a ``line N <column>=<value>: duplicate value (first seen on
+    line M) — <ext_name> → unique_columns`` violation for each
+    occurrence-after-first of a duplicate value in any column listed
+    in ``unique_columns``. Empty / blank-after-strip cells are
+    skipped — the schema-level required + minLength check covers them
+    (avoids double-reporting on a single missing cell).
+
+    ``unique_columns`` is validated defensively: non-list values
+    no-op (empty violations list); list items that aren't non-empty
+    strings are skipped (no crash, no silent no-op for the whole
+    extension). ``ext_name`` is the extension block name used in the
+    violation message (e.g., ``x-bsa-anchor-binding-rules`` for A61;
+    ``x-bsa-uniqueness-rules`` for the generic extension).
+
+    Pre-v1.2.10 this logic was inlined in :func:`_apply_anchor_binding_rules`.
+    v1.2.10 extracts it so the new generic :func:`_apply_uniqueness_rules`
+    + the existing A61 handler can both call the same implementation.
+    Behavior for A61 is byte-identical pre/post-refactor
+    (``test_executable_anchor_binding_duplicate_anchor_id_rejected`` +
+    siblings regression-pin this).
+    """
+    violations: list[str] = []
+    if not isinstance(unique_columns, list):
+        return violations
+    for column in unique_columns:
+        if not isinstance(column, str) or not column:
+            continue
+        seen: dict[str, int] = {}  # value → first row line where it was seen
+        for row_idx, row in enumerate(rows, start=2):  # +2 for header
+            value = (row.get(column) or "").strip()
+            if not value:
+                # Blank cell — schema-level required + minLength check
+                # covers it. Don't emit a uniqueness violation that
+                # would noise on top.
+                continue
+            if value in seen:
+                violations.append(
+                    f"line {row_idx} {column}={value!r}: duplicate value "
+                    f"(first seen on line {seen[value]}) — "
+                    f"{ext_name} → unique_columns"
+                )
+            else:
+                seen[value] = row_idx
+    return violations
+
+
+def _apply_uniqueness_rules(
+    rows: list[dict], schema: dict, path: str,
+    sibling_cache: _SiblingArtifactCache | None,
+) -> list[str]:
+    """Apply the generic ``x-bsa-uniqueness-rules`` extension (v1.2.10).
+
+    Schema-agnostic cross-row uniqueness enforcement. Any schema can
+    declare:
+
+    .. code-block:: json
+
+        "x-bsa-uniqueness-rules": {
+            "applies_to_all_rows": true,
+            "unique_columns": ["ColumnName1", "ColumnName2"],
+            "_comment": "..."
+        }
+
+    The handler reads the extension, delegates to
+    :func:`_check_unique_columns`, and emits line-numbered violations
+    for any duplicate-after-first value in any listed column.
+
+    **Deliberately independent of A61's ``x-bsa-anchor-binding-rules``.**
+    A schema can declare EITHER extension (or both). A61 declares
+    ``x-bsa-anchor-binding-rules`` for historical + semantic-coupling
+    reasons (the FK + uniqueness rules are bundled under one
+    "anchor-binding" concept); new schemas SHOULD declare
+    ``x-bsa-uniqueness-rules`` directly when only cross-row
+    uniqueness is needed.
+
+    Same ``sibling_cache`` signature as the other cross-row handlers,
+    but uniqueness is self-contained — no sibling reads are needed.
+    The arg is kept for uniform handler-calling.
+    """
+    ext = schema.get("x-bsa-uniqueness-rules", {})
+    if not isinstance(ext, dict) or not ext.get("applies_to_all_rows"):
+        return []
+    return _check_unique_columns(
+        rows, ext.get("unique_columns"), "x-bsa-uniqueness-rules",
+    )
+
+
 def _apply_anchor_binding_rules(
     rows: list[dict], schema: dict, path: str,
     sibling_cache: _SiblingArtifactCache | None,
@@ -1023,27 +1117,15 @@ def _apply_anchor_binding_rules(
                             )
 
     # ---- AnchorID uniqueness (cross-row) ------------------------
-    unique_columns = ext.get("unique_columns") or []
-    if isinstance(unique_columns, list):
-        for column in unique_columns:
-            if not isinstance(column, str) or not column:
-                continue
-            seen: dict[str, int] = {}  # value → first row line where it was seen
-            for row_idx, row in enumerate(rows, start=2):
-                value = (row.get(column) or "").strip()
-                if not value:
-                    # Blank cell — schema-level required + minLength check
-                    # covers it. Don't emit a uniqueness violation that would
-                    # noise on top.
-                    continue
-                if value in seen:
-                    violations.append(
-                        f"line {row_idx} {column}={value!r}: duplicate value "
-                        f"(first seen on line {seen[value]}) — "
-                        f"x-bsa-anchor-binding-rules → unique_columns"
-                    )
-                else:
-                    seen[value] = row_idx
+    # v1.2.10 refactor: delegate to the shared _check_unique_columns
+    # helper so both this A61-specific extension AND the new generic
+    # x-bsa-uniqueness-rules extension apply the same column-uniqueness
+    # semantics. The ext_name arg keeps the violation message source-
+    # attributed to x-bsa-anchor-binding-rules (so A61 operators see
+    # the A61-specific block name in failures, not the generic one).
+    violations.extend(_check_unique_columns(
+        rows, ext.get("unique_columns"), "x-bsa-anchor-binding-rules",
+    ))
 
     return violations
 
@@ -1141,14 +1223,19 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
                 violations.extend(_apply_nfr_coverage_rules(
                     row, schema, row_idx, path, sibling_cache,
                 ))
-            # Cross-row extension rules (v1.2.8 — A61's
-            # x-bsa-anchor-binding-rules). Invoked ONCE after the per-
-            # row loop because the rules (FK resolution + column
-            # uniqueness) need the full row list, not one row at a
-            # time. Schemas that don't declare the extension no-op
-            # silently — same C2-shaped pattern as the per-row
-            # handlers above.
+            # Cross-row extension rules. Invoked ONCE after the per-
+            # row loop because the rules need the full row list, not
+            # one row at a time. Schemas that don't declare an
+            # extension no-op silently — same C2-shaped pattern as
+            # the per-row handlers above.
+            #   * x-bsa-anchor-binding-rules (v1.2.8 — A61):
+            #     FK SourceClaimID → A59.ClaimID + AnchorID uniqueness.
+            #   * x-bsa-uniqueness-rules (v1.2.10 — generic):
+            #     schema-agnostic cross-row column uniqueness.
             violations.extend(_apply_anchor_binding_rules(
+                all_rows, schema, path, sibling_cache,
+            ))
+            violations.extend(_apply_uniqueness_rules(
                 all_rows, schema, path, sibling_cache,
             ))
         except csv.Error as exc:

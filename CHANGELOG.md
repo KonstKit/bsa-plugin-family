@@ -4,6 +4,59 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.10] — 2026-04-25
+
+**Generic cross-row uniqueness extension (extracts A61's logic).** v1.2.8 shipped A61's `x-bsa-anchor-binding-rules` with the first cross-row uniqueness enforcement at the F5 hook layer (AnchorID uniqueness + SourceClaimID FK to A59 bundled in one A61-specific extension). v1.2.10 generalises the uniqueness half: any schema can now declare `x-bsa-uniqueness-rules` to get schema-agnostic cross-row column uniqueness, without pulling in A61's FK semantics. Prerequisite for v1.2.12 (backfilling implicit row-identifier uniqueness across A50/A58/A59/A60/A62/A70/A71/A72).
+
+**Tag target**: this commit. **Canon policy version**: `1.2.9+hash:4548551b` — **unchanged**. Handler extraction + new extension + tests all live OUTSIDE POLICY_GLOBS (governance/schemas/write_validator.py is not in POLICY_GLOBS); manifest stays at 1.2.9, git tag bumps to v1.2.10 (canon-neutral release).
+
+### Added
+
+- **`x-bsa-uniqueness-rules`** — new schema extension. Same shape as A61's `unique_columns` sub-block, but as a standalone extension any schema can declare:
+  ```json
+  "x-bsa-uniqueness-rules": {
+    "applies_to_all_rows": true,
+    "unique_columns": ["ColumnName1", "ColumnName2"],
+    "_comment": "..."
+  }
+  ```
+- **`_check_unique_columns(rows, unique_columns, ext_name)`** — shared helper in `governance/schemas/write_validator.py` extracted from the inlined uniqueness block that shipped in v1.2.8. Schema-agnostic: the `ext_name` parameter attributes the violation message to the source extension (A61 violations still name `x-bsa-anchor-binding-rules`; generic-extension violations name `x-bsa-uniqueness-rules`). Defensively handles non-list `unique_columns`, non-string items, blank cells, and whitespace-padded values (strip-match).
+- **`_apply_uniqueness_rules(rows, schema, path, sibling_cache)`** — new cross-row handler. Reads `x-bsa-uniqueness-rules`, delegates to `_check_unique_columns`. Wired into `_make_csv_validator._validate` after the per-row loop alongside the existing `_apply_anchor_binding_rules` call. Schemas that don't declare the extension no-op silently — same C2-shaped pattern.
+- **`tests/test_schemas_uniqueness_rules.py`** (+17 tests):
+  * Happy path + gates: no-dup happy path, no-ext no-op, `applies_to_all_rows: false` no-op, missing-gate no-op, empty-rows no-op.
+  * Per-occurrence: 3-occurrence → 2 violations (rows 3 + 4 vs row 2).
+  * Violation-message shape: attributes to `x-bsa-uniqueness-rules`, NOT `x-bsa-anchor-binding-rules`.
+  * Blank-cell interaction: blank cells NOT flagged as duplicates (schema-level required check covers them); whitespace-only cells strip to empty; whitespace-padded-value duplicates still strip-match.
+  * Multiple columns: `[X, Y]` enforces each independently; violation ordering by (column-index, row-index) preserved.
+  * A61 + generic coexistence: schema declaring BOTH extensions fires BOTH handlers on the same duplicate; each violation attributed to its source.
+  * Defensive config: non-list `unique_columns` no-ops; non-string list items skipped; None no-ops.
+  * Shared helper: `_check_unique_columns` direct-invocation test with 3 different `ext_name` values pins the attribution contract.
+
+### Updated
+
+- **`governance/schemas/write_validator.py`**: 
+  * `_apply_anchor_binding_rules` refactored — the inlined uniqueness block now delegates to `_check_unique_columns`. Behavior for A61 is byte-identical pre/post-refactor (all existing A61 tests pass unchanged — `tests/test_schemas_a61.py` 58 → 58).
+  * `_make_csv_validator._validate` invokes both `_apply_anchor_binding_rules` AND `_apply_uniqueness_rules` after the per-row loop. Order: A61 first, generic second. Both emit independent violation lists that the caller concatenates.
+
+### Operator workflow
+
+Zero behavioral change at the canonical-write layer — no existing canonical CSV declares `x-bsa-uniqueness-rules` yet. v1.2.10 ships the plumbing; v1.2.12 will opt-in schemas that have implicit row-identifier uniqueness (A50.SourceID, A58.ExcerptID, A59.ClaimID, A60.NegEvID, A62.NFRID, A70.StoryID, A71.ScenarioID, A72.TraceID). Each opt-in needs a fixture-level regression pass to confirm the existing fixtures don't have duplicate IDs that would suddenly fail schema validation — hence the incremental per-schema rollout in v1.2.12 rather than bundling everything in v1.2.10.
+
+New schemas authored after v1.2.10 MAY declare the extension immediately as part of their initial shape.
+
+### Codex review trail
+
+- **Round 1**: APPROVE — implementation looks correct; A61 behavior invariant preserved byte-for-byte. 2 recommendations, both applied in the same release:
+  * **Rec #1 (validator-level wire-up pin)**: the direct-handler tests exercise `_apply_anchor_binding_rules` + `_apply_uniqueness_rules` independently — they don't pin that `_make_csv_validator._validate` actually calls BOTH on a single CSV write with the correct order. **Applied**: new test `test_validator_path_invokes_both_handlers_on_schema_with_both_extensions` uses monkeypatch to route a synthetic schema (declaring both extensions) through the real `_make_csv_validator` path, asserts exactly 2 duplicate-value violations with A61-first + generic-second order.
+  * **Rec #2 (delegation pin for the extraction)**: the refactor's invariant is that `_apply_anchor_binding_rules` CALLS `_check_unique_columns` — not that it re-implements the uniqueness logic inline. Without this pin, reverting the refactor to an inline block would still pass all behavioral tests (the shared helper is tested directly). **Applied**: two new spy tests (`test_anchor_binding_delegates_to_check_unique_columns` + `test_uniqueness_handler_delegates_to_check_unique_columns`) monkeypatch `_check_unique_columns` and assert exactly-one-call with the correct `ext_name` from each handler. A future inline-block regression fails immediately.
+
+### Result
+
+- 1864 → 1884 tests passing (+20 new in `test_schemas_uniqueness_rules.py`; 17 round-1 + 3 round-1-recommendation regression pins).
+- A61's v1.2.8 uniqueness behavior preserved byte-for-byte (pinned by 58 existing A61 tests passing unchanged after the refactor + the new spy delegation test).
+- Generic cross-row uniqueness now available for any canonical CSV schema — unblocks v1.2.12 backfill.
+- Canon hash unchanged (`4548551b`). Manifest stays at 1.2.9.
+
 ## [v1.2.9] — 2026-04-25
 
 **C4 relationship `view_element_id` convention (closes the v1.2.6 round-1 scope-down).** v1.2.6 shipped the end-to-end sidecar fixture with a documented scope-down: C4-PlantUML relationship macros (`Rel`, `BiRel`, `RelIndex` and their directional variants) ARE listed as anchorable per the integration contract + the manifest schema's `view_element_kind` enum, BUT the contract didn't specify how the corresponding `view_element_id` should be derived (relationships have no explicit ID in C4-PlantUML source text). The v1.2.6 fixture therefore shipped a Container view with NO `Rel(...)` calls. v1.2.9 closes the gap by documenting a deterministic derivation, extending the fixture + loader + tests together.
