@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bsa-plugin-family.local/schemas/a62.schema.json",
   "title": "A62 NFR Register row",
-  "description": "Schema for one row of analysis/canonical/core_controls/A62_nfr_register.csv (Phase 3, US-S6-01). An NFR row captures a non-functional requirement (performance / availability / scalability / security / usability / compliance / maintainability / observability / portability) extracted from upstream A59 claims. Producer: bsa-nfr-collector. Consumers: bsa-story-writer (links NFRs into story acceptance criteria), bsa-test-scenario-builder (turns measurable NFRs into automated test targets), bsa-traceability-matrix. Invariants: INV-09 (measurability — see x-bsa-measurability-rules).",
+  "description": "Schema for one row of analysis/canonical/core_controls/A62_nfr_register.csv (Phase 3, US-S6-01). An NFR row captures a non-functional requirement (performance / availability / scalability / security / usability / compliance / maintainability / observability / portability) extracted from upstream A59 claims. Producer: bsa-nfr-collector. Consumers: bsa-story-writer (links NFRs into story acceptance criteria), bsa-test-scenario-builder (turns measurable NFRs into automated test targets), bsa-traceability-matrix. Invariants: INV-09 (measurability \u2014 see x-bsa-measurability-rules).",
   "type": "object",
   "required": [
     "NFRID",
@@ -50,7 +50,11 @@
     },
     "MeasurabilityType": {
       "type": "string",
-      "enum": ["quantitative", "qualitative", "hybrid"],
+      "enum": [
+        "quantitative",
+        "qualitative",
+        "hybrid"
+      ],
       "description": "quantitative = has numeric metric + target; qualitative = defined by policy/checklist; hybrid = has both a numeric target AND a qualitative gate (e.g., 'p95 < 500ms AND accessibility audit PASS')."
     },
     "Metric": {
@@ -64,17 +68,21 @@
     "TestabilityNotes": {
       "type": "string",
       "minLength": 1,
-      "description": "How to verify the NFR. Required non-empty regardless of MeasurabilityType — an NFR with no verification path is an aspiration, not a requirement. Examples: 'k6 load test with 50 VUs', 'WCAG 2.1 AA audit by accessibility team', 'SOC2 control C-04 quarterly review'."
+      "description": "How to verify the NFR. Required non-empty regardless of MeasurabilityType \u2014 an NFR with no verification path is an aspiration, not a requirement. Examples: 'k6 load test with 50 VUs', 'WCAG 2.1 AA audit by accessibility team', 'SOC2 control C-04 quarterly review'."
     },
     "Criticality": {
       "type": "string",
-      "enum": ["level-1", "level-2", "level-3"],
+      "enum": [
+        "level-1",
+        "level-2",
+        "level-3"
+      ],
       "description": "level-1 = must-have for launch; level-2 = important but post-launch acceptable; level-3 = nice-to-have / future. Aligns with A59.Criticality semantics."
     },
     "A51Ref": {
       "type": "string",
       "pattern": "^(?:A51-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]A51-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
-      "description": "Optional. Populated when the NFR derivation surfaced an unresolved / contradicted / decision-needed item — routes through A51 in the usual way."
+      "description": "Optional. Populated when the NFR derivation surfaced an unresolved / contradicted / decision-needed item \u2014 routes through A51 in the usual way."
     },
     "Notes": {
       "type": "string",
@@ -98,6 +106,14 @@
       "Notes"
     ]
   },
+  "x-bsa-uniqueness-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.12 via governance/schemas/write_validator.py::_apply_uniqueness_rules. Schema-agnostic generic extension (see v1.2.10 CHANGELOG). NFRs are per-requirement; duplicates would break A70.RelatedNFRIDs + A71.RelatedNFRID cross-references. Pre-v1.2.12 duplicate NFRIDs were caught only at fixture-review time; v1.2.12 makes it mechanical at hook time.",
+    "applies_to_all_rows": true,
+    "unique_columns": [
+      "NFRID"
+    ],
+    "rationale": "Without this rule, duplicate NFRID values could land at promote-gate + silently break every downstream cross-reference. NFRID is the row-identifier."
+  },
   "x-bsa-measurability-rules": {
     "_comment": "INV-09 cross-field rules enforced by bsa-nfr-collector's own validator (not by json-schema directly because the rule is category-conditional). F5 write-validator catches the per-row schema shape; bsa-nfr-collector catches the category-conditional semantics.",
     "quantitative_categories_requiring_metric_and_target": [
@@ -106,6 +122,6 @@
       "scalability"
     ],
     "testability_notes_required_for_all": true,
-    "rationale": "An NFR with no metric, no target, and no testability notes is an aspiration — it cannot be validated or used to drive test-scenario-builder output."
+    "rationale": "An NFR with no metric, no target, and no testability notes is an aspiration \u2014 it cannot be validated or used to drive test-scenario-builder output."
   }
 }

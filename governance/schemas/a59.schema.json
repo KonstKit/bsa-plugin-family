@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bsa-plugin-family.local/schemas/a59.schema.json",
   "title": "A59 Claim Register row",
-  "description": "Schema for one row of analysis/canonical/core_controls/A59_claim_register.csv. The claim register is the foundational evidence-bound layer — every promoted positive claim of ClaimType=direct or inference MUST carry SourceID+ExcerptID per INV-01, OR an explicit A51Ref. ClaimType=analyst_judgment is exempt from evidence-binding but MUST carry a JustificationRationale referencing >= 1 upstream ClaimID per INV-07. Producer: bsa-claim-binder. Consumers: every downstream stage skill plus the auditors. This schema is the first line of defense against the Pilot-1-class ClaimType drift (legacy values like policy_statement / factual_state / process_step / decision_pending).",
+  "description": "Schema for one row of analysis/canonical/core_controls/A59_claim_register.csv. The claim register is the foundational evidence-bound layer \u2014 every promoted positive claim of ClaimType=direct or inference MUST carry SourceID+ExcerptID per INV-01, OR an explicit A51Ref. ClaimType=analyst_judgment is exempt from evidence-binding but MUST carry a JustificationRationale referencing >= 1 upstream ClaimID per INV-07. Producer: bsa-claim-binder. Consumers: every downstream stage skill plus the auditors. This schema is the first line of defense against the Pilot-1-class ClaimType drift (legacy values like policy_statement / factual_state / process_step / decision_pending).",
   "type": "object",
   "required": [
     "ClaimID",
@@ -34,8 +34,12 @@
     },
     "ClaimType": {
       "type": "string",
-      "enum": ["direct", "inference", "analyst_judgment"],
-      "description": "Closed enum per INV-07. NEVER one of the legacy strings (policy_statement / factual_state / process_step / decision_pending) — those are the Pilot-1 drift class and the schema explicitly rejects them. direct = quotes/reproduces source; inference = derived via recorded reasoning; analyst_judgment = recommendation/risk-assessment requiring JustificationRationale."
+      "enum": [
+        "direct",
+        "inference",
+        "analyst_judgment"
+      ],
+      "description": "Closed enum per INV-07. NEVER one of the legacy strings (policy_statement / factual_state / process_step / decision_pending) \u2014 those are the Pilot-1 drift class and the schema explicitly rejects them. direct = quotes/reproduces source; inference = derived via recorded reasoning; analyst_judgment = recommendation/risk-assessment requiring JustificationRationale."
     },
     "Statement": {
       "type": "string",
@@ -44,7 +48,7 @@
     },
     "JustificationRationale": {
       "type": "string",
-      "description": "Reasoning chain. REQUIRED non-empty when ClaimType=analyst_judgment (per INV-07: must reference >= 1 upstream ClaimID). MAY be empty for direct/inference. Cross-field constraint enforced via x-bsa-claim-type-rules below — jsonschema can express this with allOf+if/then but we keep it as documented x- extension to remain schema-Draft-2020-12 portable."
+      "description": "Reasoning chain. REQUIRED non-empty when ClaimType=analyst_judgment (per INV-07: must reference >= 1 upstream ClaimID). MAY be empty for direct/inference. Cross-field constraint enforced via x-bsa-claim-type-rules below \u2014 jsonschema can express this with allOf+if/then but we keep it as documented x- extension to remain schema-Draft-2020-12 portable."
     },
     "A51Ref": {
       "type": "string",
@@ -58,7 +62,11 @@
     },
     "Criticality": {
       "type": "string",
-      "enum": ["level-1", "level-2", "level-3"],
+      "enum": [
+        "level-1",
+        "level-2",
+        "level-3"
+      ],
       "description": "level-1 = critical (blocks downstream); level-2 = important; level-3 = informational. Used by handoff-packager to prioritize H1/H4 content."
     },
     "Notes": {
@@ -82,20 +90,34 @@
       "Notes"
     ]
   },
+  "x-bsa-uniqueness-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.12 via governance/schemas/write_validator.py::_apply_uniqueness_rules. Schema-agnostic generic extension (see v1.2.10 CHANGELOG). A59 is the canonical claim register; duplicate ClaimIDs would break every downstream cross-reference (A60.RelatedClaimID, A61.SourceClaimID, A62.SourceClaimIDs, A70.SourceClaimIDs, A72.ClaimID, etc.). Pre-v1.2.12 duplicate ClaimIDs were caught only at fixture-review time; v1.2.12 makes it mechanical at hook time.",
+    "applies_to_all_rows": true,
+    "unique_columns": [
+      "ClaimID"
+    ],
+    "rationale": "Without this rule, duplicate ClaimID values could land at promote-gate + silently break every downstream cross-reference. ClaimID is the row-identifier."
+  },
   "x-bsa-claim-type-rules": {
     "_comment": "Cross-field validation rules enforced by validators (not by jsonschema directly because the rules need access to upstream files for full enforcement). Validators: bsa-claim-binder, bsa-citation-auditor, F5 write-time hook.",
     "direct": {
-      "requires_non_empty": ["ExcerptID"],
+      "requires_non_empty": [
+        "ExcerptID"
+      ],
       "or_a51ref_set": true,
       "rationale": "INV-01: every positive direct/inference claim needs SourceID+ExcerptID OR A51Ref"
     },
     "inference": {
-      "requires_non_empty": ["ExcerptID"],
+      "requires_non_empty": [
+        "ExcerptID"
+      ],
       "or_a51ref_set": true,
       "rationale": "INV-01: same scope as direct"
     },
     "analyst_judgment": {
-      "requires_non_empty": ["JustificationRationale"],
+      "requires_non_empty": [
+        "JustificationRationale"
+      ],
       "rationale": "INV-07: analyst_judgment exempt from evidence-binding but MUST carry JustificationRationale referencing >= 1 upstream ClaimID"
     }
   },

@@ -38,17 +38,33 @@
     },
     "AccessStatus": {
       "type": "string",
-      "enum": ["readable", "unreadable", "denied", "expired", "missing"],
+      "enum": [
+        "readable",
+        "unreadable",
+        "denied",
+        "expired",
+        "missing"
+      ],
       "description": "Whether the source content is currently accessible. Anything other than 'readable' triggers an A51 missing_source route per workflow-contract."
     },
     "ReliabilityTier": {
       "type": "string",
-      "enum": ["T1", "T2", "T3", "T4", "T5"],
+      "enum": [
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5"
+      ],
       "description": "Epistemic-proximity tier per reliability_tier_spec.md: T1 empirical / T2 authored-primary / T3 authored-secondary / T4 attestation / T5 reported. ClaimStrength derives from this (T1=1.00, T2=0.85, T3=0.65, T4=0.45, T5=0.20)."
     },
     "Priority": {
       "type": "string",
-      "enum": ["low", "medium", "high"],
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
       "description": "Triage priority for evidence-intake processing order."
     },
     "Language": {
@@ -81,12 +97,20 @@
       "Notes"
     ]
   },
+  "x-bsa-uniqueness-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.12 via governance/schemas/write_validator.py::_apply_uniqueness_rules. Schema-agnostic generic extension (see v1.2.10 CHANGELOG). Every A50 row declares a distinct source; duplicate SourceIDs would break every downstream cross-reference (A58 excerpts, A59 claims, etc.) by making the FK resolution ambiguous. Pre-v1.2.12 duplicate SourceIDs were caught only at fixture-review time; v1.2.12 makes it mechanical at hook time.",
+    "applies_to_all_rows": true,
+    "unique_columns": [
+      "SourceID"
+    ],
+    "rationale": "Without this rule, duplicate SourceID values could land at promote-gate + silently break every downstream cross-reference. SourceID is the row-identifier."
+  },
   "x-bsa-tier-claim-strength": {
-    "_comment": "ReliabilityTier → ClaimStrength mapping per reliability_tier_spec.md. Used by A59 schema validation to verify upstream tier consistency.",
-    "T1": 1.00,
+    "_comment": "ReliabilityTier \u2192 ClaimStrength mapping per reliability_tier_spec.md. Used by A59 schema validation to verify upstream tier consistency.",
+    "T1": 1.0,
     "T2": 0.85,
     "T3": 0.65,
     "T4": 0.45,
-    "T5": 0.20
+    "T5": 0.2
   }
 }

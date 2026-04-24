@@ -20,17 +20,17 @@
     "SourceID": {
       "type": "string",
       "pattern": "^S-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
-      "description": "Foreign key into A50_source_register.csv. Every excerpt MUST trace back to a registered source — no orphan excerpts. Same prefix conventions as A50.SourceID."
+      "description": "Foreign key into A50_source_register.csv. Every excerpt MUST trace back to a registered source \u2014 no orphan excerpts. Same prefix conventions as A50.SourceID."
     },
     "Locator": {
       "type": "string",
       "minLength": 1,
-      "description": "Position within the source: page number, paragraph index, line range, timestamp (HH:MM:SS for transcripts), CSS selector for HTML, JSONPath for JSON, etc. Free-form but never empty — locator-less excerpts cannot be re-verified."
+      "description": "Position within the source: page number, paragraph index, line range, timestamp (HH:MM:SS for transcripts), CSS selector for HTML, JSONPath for JSON, etc. Free-form but never empty \u2014 locator-less excerpts cannot be re-verified."
     },
     "ExcerptText": {
       "type": "string",
       "minLength": 1,
-      "description": "The verbatim or near-verbatim text content of the excerpt. Required non-empty. Length not capped here — large excerpts are valid (a contract clause or process diagram caption may run several hundred chars)."
+      "description": "The verbatim or near-verbatim text content of the excerpt. Required non-empty. Length not capped here \u2014 large excerpts are valid (a contract clause or process diagram caption may run several hundred chars)."
     },
     "Notes": {
       "type": "string",
@@ -47,5 +47,13 @@
       "ExcerptText",
       "Notes"
     ]
+  },
+  "x-bsa-uniqueness-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.12 via governance/schemas/write_validator.py::_apply_uniqueness_rules. Schema-agnostic generic extension (see v1.2.10 CHANGELOG). Each excerpt is a verbatim text snippet; duplicate ExcerptIDs would let two different excerpts claim the same identifier and break A59's ExcerptID \u2192 excerpt resolution. Pre-v1.2.12 duplicate ExcerptIDs were caught only at fixture-review time; v1.2.12 makes it mechanical at hook time.",
+    "applies_to_all_rows": true,
+    "unique_columns": [
+      "ExcerptID"
+    ],
+    "rationale": "Without this rule, duplicate ExcerptID values could land at promote-gate + silently break every downstream cross-reference. ExcerptID is the row-identifier."
   }
 }

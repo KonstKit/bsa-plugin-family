@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bsa-plugin-family.local/schemas/a72.schema.json",
   "title": "A72 Traceability Matrix row",
-  "description": "Schema for one row of analysis/canonical/core_controls/A72_traceability_matrix.csv (Phase 3, US-S8-02). Each row is a single Story↔Claim↔Source link triple; the matrix is a JOIN over A70 + A59 + A50, with one row per traceable connection. Producer: bsa-traceability-matrix (pure derivation skill — never authors net-new content; rejects rows whose IDs don't resolve in upstream artifacts). Consumers: bsa-backlog-bridge (uses the matrix to attach claim/source provenance to exported stories), and human reviewers querying for orphan / coverage gaps. Cross-field invariants are documentary at this layer (cross-artifact lookups outside F5's path-bound dispatch); the skill self-validates before write.",
+  "description": "Schema for one row of analysis/canonical/core_controls/A72_traceability_matrix.csv (Phase 3, US-S8-02). Each row is a single Story\u2194Claim\u2194Source link triple; the matrix is a JOIN over A70 + A59 + A50, with one row per traceable connection. Producer: bsa-traceability-matrix (pure derivation skill \u2014 never authors net-new content; rejects rows whose IDs don't resolve in upstream artifacts). Consumers: bsa-backlog-bridge (uses the matrix to attach claim/source provenance to exported stories), and human reviewers querying for orphan / coverage gaps. Cross-field invariants are documentary at this layer (cross-artifact lookups outside F5's path-bound dispatch); the skill self-validates before write.",
   "type": "object",
   "required": [
     "TraceID",
@@ -23,7 +23,7 @@
     "StoryID": {
       "type": "string",
       "pattern": "^STORY-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
-      "description": "Singular A70 story ID. Composite trace rows are forbidden — one row = one Story↔Claim↔Source triple. If a story relates to multiple claims, emit multiple A72 rows."
+      "description": "Singular A70 story ID. Composite trace rows are forbidden \u2014 one row = one Story\u2194Claim\u2194Source triple. If a story relates to multiple claims, emit multiple A72 rows."
     },
     "ClaimID": {
       "type": "string",
@@ -33,7 +33,7 @@
     "SourceID": {
       "type": "string",
       "pattern": "^S-(?:[A-Z]{2,5}-)?[0-9]{3,4}$",
-      "description": "Singular A50 source ID. Same singularity discipline. Cross-artifact integrity (this SourceID must equal the ClaimID's own SourceID in A59) is the skill's responsibility — F5's path-bound dispatch can't naturally reach a sibling artifact at write time. The consistency rule applies to EVERY row regardless of LinkType (a51-routed rows defer ACCEPTANCE, not ID resolution)."
+      "description": "Singular A50 source ID. Same singularity discipline. Cross-artifact integrity (this SourceID must equal the ClaimID's own SourceID in A59) is the skill's responsibility \u2014 F5's path-bound dispatch can't naturally reach a sibling artifact at write time. The consistency rule applies to EVERY row regardless of LinkType (a51-routed rows defer ACCEPTANCE, not ID resolution)."
     },
     "LinkType": {
       "type": "string",
@@ -42,17 +42,21 @@
         "nfr-mediated",
         "a51-routed"
       ],
-      "description": "How the Story↔Claim link was established. 'direct' — A70.SourceClaimIDs explicitly listed this ClaimID. 'nfr-mediated' — derived through a transitive A62 NFR (story relates to NFR via RelatedNFRIDs; NFR's SourceClaimIDs lists this ClaimID). When the SAME (Story, Claim, Source) triple is reachable both directly and via NFR-mediation, emit ONE 'direct' row only — the matrix's row identity is the triple itself; multi-route reachability is annotated in traceability_coverage.md, not duplicated as multiple A72 rows. 'a51-routed' — the trace is fully resolved (all three IDs known + claim-source consistency satisfied) but acceptance is deferred (e.g., link strength contested, claim under review); MUST co-populate A51Ref via x-bsa-deferral-rules. Unresolved IDs never appear in A72 — those go to traceability_orphans.md + an A51 'missing_source' route only."
+      "description": "How the Story\u2194Claim link was established. 'direct' \u2014 A70.SourceClaimIDs explicitly listed this ClaimID. 'nfr-mediated' \u2014 derived through a transitive A62 NFR (story relates to NFR via RelatedNFRIDs; NFR's SourceClaimIDs lists this ClaimID). When the SAME (Story, Claim, Source) triple is reachable both directly and via NFR-mediation, emit ONE 'direct' row only \u2014 the matrix's row identity is the triple itself; multi-route reachability is annotated in traceability_coverage.md, not duplicated as multiple A72 rows. 'a51-routed' \u2014 the trace is fully resolved (all three IDs known + claim-source consistency satisfied) but acceptance is deferred (e.g., link strength contested, claim under review); MUST co-populate A51Ref via x-bsa-deferral-rules. Unresolved IDs never appear in A72 \u2014 those go to traceability_orphans.md + an A51 'missing_source' route only."
     },
     "LinkStrength": {
       "type": "string",
-      "enum": ["high", "medium", "low"],
-      "description": "Confidence in the link. Default: derive from the upstream A59 claim's ClaimStrength × A50 source's ReliabilityTier (T1/T2 → high; T3 → medium; T4/T5 → low). Operator may explicitly override (raise OR lower) with A51 rationale."
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "description": "Confidence in the link. Default: derive from the upstream A59 claim's ClaimStrength \u00d7 A50 source's ReliabilityTier (T1/T2 \u2192 high; T3 \u2192 medium; T4/T5 \u2192 low). Operator may explicitly override (raise OR lower) with A51 rationale."
     },
     "A51Ref": {
       "type": "string",
       "pattern": "^(?:A51-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]A51-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
-      "description": "Optional A51 cross-reference. REQUIRED (non-empty) when LinkType == 'a51-routed' — every routed-trace row must have a decision / action route recorded in A51 (parallel to A70.INVESTStatus + A71.AutomationStatus deferral patterns). Enforced at the cross-field level (x-bsa-deferral-rules)."
+      "description": "Optional A51 cross-reference. REQUIRED (non-empty) when LinkType == 'a51-routed' \u2014 every routed-trace row must have a decision / action route recorded in A51 (parallel to A70.INVESTStatus + A71.AutomationStatus deferral patterns). Enforced at the cross-field level (x-bsa-deferral-rules)."
     },
     "Notes": {
       "type": "string",
@@ -73,14 +77,22 @@
       "Notes"
     ]
   },
+  "x-bsa-uniqueness-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.12 via governance/schemas/write_validator.py::_apply_uniqueness_rules. Schema-agnostic generic extension (see v1.2.10 CHANGELOG). Every A72 row is a distinct story-claim-source triple binding; duplicate TraceIDs would let two distinct traces collapse into one. Pre-v1.2.12 duplicate TraceIDs were caught only at fixture-review time; v1.2.12 makes it mechanical at hook time.",
+    "applies_to_all_rows": true,
+    "unique_columns": [
+      "TraceID"
+    ],
+    "rationale": "Without this rule, duplicate TraceID values could land at promote-gate + silently break every downstream cross-reference. TraceID is the row-identifier."
+  },
   "x-bsa-deferral-rules": {
     "_comment": "Generalized status+A51-coupling pattern (mirrors A71.x-bsa-deferral-rules; same _apply_deferral_rules handler in write_validator.py). LinkType == 'a51-routed' MUST co-populate A51Ref. Configurable via status_field override (the handler defaults to AutomationStatus for A71; we override to LinkType here).",
     "status_field": "LinkType",
     "requires_a51_when_status": "a51-routed",
-    "rationale": "A trace row marked a51-routed without an A51 route is an undocumented punt — the gap appears later in coverage reports with no decision trail. Co-populating A51Ref keeps the routing explicit."
+    "rationale": "A trace row marked a51-routed without an A51 route is an undocumented punt \u2014 the gap appears later in coverage reports with no decision trail. Co-populating A51Ref keeps the routing explicit."
   },
   "x-bsa-foreign-key-rules": {
-    "_comment": "EXECUTABLE at the F5 hook layer as of v1.1.3 (closes TODO-S8-02-X-ARTIFACT-FK). EVERY A72 row's StoryID, ClaimID, and SourceID MUST resolve to an existing row in the corresponding canonical artifact (A70 / A59 / A50) — including a51-routed rows (those defer ACCEPTANCE, not ID resolution). Additionally, the row's ClaimID's own SourceID (per A59) MUST equal this row's SourceID — the matrix join must be internally consistent. The applies_to_all_rows flag is an explicit pin: any future loosening that exempts a LinkType class from FK/consistency would be a contract regression. Implementation: governance/schemas/write_validator.py::_apply_foreign_key_rules + _SiblingArtifactCache (per-validation-run memoized sibling reads from analysis/canonical/core_controls/). Pre-v1.1.3 enforcement was bsa-traceability-matrix self-validation only; v1.1.3 makes the rule mechanical at hook time so any writer (orchestrator, skill, operator manual edit) is gated. Same shape as A71's x-bsa-nfr-coverage-rules.",
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.1.3 (closes TODO-S8-02-X-ARTIFACT-FK). EVERY A72 row's StoryID, ClaimID, and SourceID MUST resolve to an existing row in the corresponding canonical artifact (A70 / A59 / A50) \u2014 including a51-routed rows (those defer ACCEPTANCE, not ID resolution). Additionally, the row's ClaimID's own SourceID (per A59) MUST equal this row's SourceID \u2014 the matrix join must be internally consistent. The applies_to_all_rows flag is an explicit pin: any future loosening that exempts a LinkType class from FK/consistency would be a contract regression. Implementation: governance/schemas/write_validator.py::_apply_foreign_key_rules + _SiblingArtifactCache (per-validation-run memoized sibling reads from analysis/canonical/core_controls/). Pre-v1.1.3 enforcement was bsa-traceability-matrix self-validation only; v1.1.3 makes the rule mechanical at hook time so any writer (orchestrator, skill, operator manual edit) is gated. Same shape as A71's x-bsa-nfr-coverage-rules.",
     "applies_to_all_rows": true,
     "story_id_resolves_in": "A70_story_register.csv",
     "claim_id_resolves_in": "A59_claim_register.csv",

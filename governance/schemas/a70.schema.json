@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bsa-plugin-family.local/schemas/a70.schema.json",
   "title": "A70 Story Register row",
-  "description": "Schema for one row of analysis/canonical/core_controls/A70_story_register.csv (Phase 3, US-S7-02). Each row is a user story derived from promoted A59 claims and/or A62 NFRs. Producer: bsa-story-writer. Consumers: bsa-test-scenario-builder (keys test scenarios off StoryID), bsa-traceability-matrix (walks Story → Claim → Source), bsa-backlog-bridge (ships stories to Jira/Linear/generic). INV-08 applies: every row MUST carry non-empty SourceClaimIDs OR non-empty RelatedNFRIDs (or both) — stories authored from thin air are rejected at the hook layer. INVEST criteria recorded as INVESTStatus column; deferred checks trigger an A51 route.",
+  "description": "Schema for one row of analysis/canonical/core_controls/A70_story_register.csv (Phase 3, US-S7-02). Each row is a user story derived from promoted A59 claims and/or A62 NFRs. Producer: bsa-story-writer. Consumers: bsa-test-scenario-builder (keys test scenarios off StoryID), bsa-traceability-matrix (walks Story \u2192 Claim \u2192 Source), bsa-backlog-bridge (ships stories to Jira/Linear/generic). INV-08 applies: every row MUST carry non-empty SourceClaimIDs OR non-empty RelatedNFRIDs (or both) \u2014 stories authored from thin air are rejected at the hook layer. INVEST criteria recorded as INVESTStatus column; deferred checks trigger an A51 route.",
   "type": "object",
   "required": [
     "StoryID",
@@ -44,7 +44,7 @@
     "AcceptanceCriteria": {
       "type": "string",
       "minLength": 1,
-      "description": "One or more acceptance criteria. Multi-criterion rows join with ';' or newline. Each criterion should be a testable observable state or outcome. This field drives bsa-test-scenario-builder in Sprint 8 — non-testable criteria are blocked upstream via INVESTStatus."
+      "description": "One or more acceptance criteria. Multi-criterion rows join with ';' or newline. Each criterion should be a testable observable state or outcome. This field drives bsa-test-scenario-builder in Sprint 8 \u2014 non-testable criteria are blocked upstream via INVESTStatus."
     },
     "SourceClaimIDs": {
       "type": "string",
@@ -58,13 +58,24 @@
     },
     "Priority": {
       "type": "string",
-      "enum": ["level-1", "level-2", "level-3"],
+      "enum": [
+        "level-1",
+        "level-2",
+        "level-3"
+      ],
       "description": "level-1 = must-have for launch; level-2 = important / next release; level-3 = backlog / nice-to-have. Inherited from the highest source-claim Criticality by default; may be raised (never lowered) by explicit override with A51 rationale."
     },
     "EstimationHint": {
       "type": "string",
-      "enum": ["xs", "s", "m", "l", "xl", "unknown"],
-      "description": "T-shirt size hint, NOT story points. The plugin does not estimate — this is a coarse producer-hint to help the consuming team triage. 'unknown' is valid and expected when the story is INVEST-deferred on estimability."
+      "enum": [
+        "xs",
+        "s",
+        "m",
+        "l",
+        "xl",
+        "unknown"
+      ],
+      "description": "T-shirt size hint, NOT story points. The plugin does not estimate \u2014 this is a coarse producer-hint to help the consuming team triage. 'unknown' is valid and expected when the story is INVEST-deferred on estimability."
     },
     "INVESTStatus": {
       "type": "string",
@@ -76,12 +87,12 @@
         "needs-negotiation",
         "escalate"
       ],
-      "description": "INVEST acceptance state. 'pass' = all 6 criteria met (Independent, Negotiable, Valuable, Estimable, Small, Testable). 'needs-splitting' = S failed (story too large); producer should split. 'needs-estimation' = E deferred (team input required). 'needs-testable-acceptance' = T deferred (acceptance criteria insufficiently concrete). 'needs-negotiation' = N failed (story is a mandate, not negotiable — review with PO). 'escalate' = multiple criteria failed → raise via A51Ref and let the PO triage. Any value other than 'pass' MUST co-populate A51Ref per INV-08+ conventions."
+      "description": "INVEST acceptance state. 'pass' = all 6 criteria met (Independent, Negotiable, Valuable, Estimable, Small, Testable). 'needs-splitting' = S failed (story too large); producer should split. 'needs-estimation' = E deferred (team input required). 'needs-testable-acceptance' = T deferred (acceptance criteria insufficiently concrete). 'needs-negotiation' = N failed (story is a mandate, not negotiable \u2014 review with PO). 'escalate' = multiple criteria failed \u2192 raise via A51Ref and let the PO triage. Any value other than 'pass' MUST co-populate A51Ref per INV-08+ conventions."
     },
     "A51Ref": {
       "type": "string",
       "pattern": "^(?:A51-(?:[A-Z]{2,5}-)?[0-9]{3,4}(?:[;/]A51-(?:[A-Z]{2,5}-)?[0-9]{3,4})*)?$",
-      "description": "Optional A51 cross-reference. REQUIRED (non-empty) whenever INVESTStatus != 'pass' — every INVEST-deferred story must have a decision / action route recorded in A51. Enforced at the cross-field level."
+      "description": "Optional A51 cross-reference. REQUIRED (non-empty) whenever INVESTStatus != 'pass' \u2014 every INVEST-deferred story must have a decision / action route recorded in A51. Enforced at the cross-field level."
     },
     "Notes": {
       "type": "string",
@@ -106,13 +117,24 @@
       "Notes"
     ]
   },
+  "x-bsa-uniqueness-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.12 via governance/schemas/write_validator.py::_apply_uniqueness_rules. Schema-agnostic generic extension (see v1.2.10 CHANGELOG). Stories are per-deliverable; duplicates would break A71.SourceStoryID + A72.StoryID cross-references. Pre-v1.2.12 duplicate StoryIDs were caught only at fixture-review time; v1.2.12 makes it mechanical at hook time.",
+    "applies_to_all_rows": true,
+    "unique_columns": [
+      "StoryID"
+    ],
+    "rationale": "Without this rule, duplicate StoryID values could land at promote-gate + silently break every downstream cross-reference. StoryID is the row-identifier."
+  },
   "x-bsa-provenance-rules": {
     "_comment": "INV-08 cross-field rules enforced by bsa-story-writer's own output validator. JSON Schema can't express 'at least one of [A,B] is non-empty' cleanly for CSV-string values that are 'empty' vs 'non-empty' rather than null vs set; the skill and F5 write-time path use this extension as a lookup table.",
-    "at_least_one_of_non_empty": ["SourceClaimIDs", "RelatedNFRIDs"],
+    "at_least_one_of_non_empty": [
+      "SourceClaimIDs",
+      "RelatedNFRIDs"
+    ],
     "rationale": "INV-08: stories authored from thin air are drift. Every story must trace back to a claim (from A59) or an NFR (from A62 which itself traces back to claims)."
   },
   "x-bsa-invest-rules": {
-    "_comment": "INVESTStatus ≠ 'pass' MUST co-populate A51Ref. Enforced by the skill's own output validator (cross-field rule outside JSON Schema comfort zone for CSV semantics). INVEST expansion: Independent / Negotiable / Valuable / Estimable / Small / Testable.",
+    "_comment": "INVESTStatus \u2260 'pass' MUST co-populate A51Ref. Enforced by the skill's own output validator (cross-field rule outside JSON Schema comfort zone for CSV semantics). INVEST expansion: Independent / Negotiable / Valuable / Estimable / Small / Testable.",
     "requires_a51_when_status_not_pass": true,
     "deferrable_criteria": [
       "needs-splitting",
@@ -123,12 +145,12 @@
     "fail_fast_status": "escalate"
   },
   "x-bsa-banned-story-patterns": {
-    "_comment": "Common anti-patterns that bsa-story-writer MUST refuse to emit. Documentation only — the skill's own output validator rejects; the schema catches obvious shape-level cases via StoryText pattern + AcceptanceCriteria minLength.",
+    "_comment": "Common anti-patterns that bsa-story-writer MUST refuse to emit. Documentation only \u2014 the skill's own output validator rejects; the schema catches obvious shape-level cases via StoryText pattern + AcceptanceCriteria minLength.",
     "values": [
       "As a user I want feature X (no benefit clause, no persona specificity)",
       "As a developer I want clean code (dev-facing; not a user story)",
       "As an admin I want to configure (persona is a proxy; real actor is vague)",
-      "The system shall <X> (requirement, not a story — belongs in A62 if quality, A59 if observed fact)"
+      "The system shall <X> (requirement, not a story \u2014 belongs in A62 if quality, A59 if observed fact)"
     ]
   }
 }

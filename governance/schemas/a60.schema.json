@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bsa-plugin-family.local/schemas/a60.schema.json",
   "title": "A60 Negative Evidence Register row",
-  "description": "Schema for one row of analysis/canonical/core_controls/A60_negative_evidence_register.csv. Negative evidence captures what is explicitly NOT supported by the corpus — absence of expected statements, refutations, gaps that map back to claims. Used by bsa-skeptical-reviewer + bsa-no-new-claims-auditor to surface unsupported assertions.",
+  "description": "Schema for one row of analysis/canonical/core_controls/A60_negative_evidence_register.csv. Negative evidence captures what is explicitly NOT supported by the corpus \u2014 absence of expected statements, refutations, gaps that map back to claims. Used by bsa-skeptical-reviewer + bsa-no-new-claims-auditor to surface unsupported assertions.",
   "type": "object",
   "required": [
     "NegEvID",
@@ -60,5 +60,13 @@
       "A51Ref",
       "Notes"
     ]
+  },
+  "x-bsa-uniqueness-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.12 via governance/schemas/write_validator.py::_apply_uniqueness_rules. Schema-agnostic generic extension (see v1.2.10 CHANGELOG). Each negative-evidence entry is per-finding; duplicates would shadow one finding with another. Pre-v1.2.12 duplicate NegEvIDs were caught only at fixture-review time; v1.2.12 makes it mechanical at hook time.",
+    "applies_to_all_rows": true,
+    "unique_columns": [
+      "NegEvID"
+    ],
+    "rationale": "Without this rule, duplicate NegEvID values could land at promote-gate + silently break every downstream cross-reference. NegEvID is the row-identifier."
   }
 }

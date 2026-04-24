@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bsa-plugin-family.local/schemas/a51.schema.json",
   "title": "A51 Issue Route Register row",
-  "description": "Schema for one row of analysis/canonical/core_controls/A51_issue_route_register.csv (and the discovery mirror). Columns are documented in skills/bsa-orchestrator/references/shared-control-surface-contracts.md (A51 Minimal Columns). Validation flow: governance.schemas.loader.iter_a51_rows(path) → list[dict]; each row dict is validated against this schema.",
+  "description": "Schema for one row of analysis/canonical/core_controls/A51_issue_route_register.csv (and the discovery mirror). Columns are documented in skills/bsa-orchestrator/references/shared-control-surface-contracts.md (A51 Minimal Columns). Validation flow: governance.schemas.loader.iter_a51_rows(path) \u2192 list[dict]; each row dict is validated against this schema.",
   "type": "object",
   "required": [
     "A51Ref",
@@ -31,16 +31,25 @@
         "cross_tier_contradiction",
         "link_strength_override"
       ],
-      "description": "Closed enum per shared-control-surface-contracts.md. Adding a value requires editing that doc + this schema together. Categories: 'uncertainty' = unresolved doubt about a specific claim or value; 'contradiction' = two or more sources disagree (handled by claim-binder + Phase-3 contradiction-propagation contract); 'missing_source' = a referenced source is unreadable / unauthored / not yet provided; 'decision_needed' = stakeholder input required before downstream work can proceed; 'boundary_risk' = the boundary of analysis vs implementation is at risk of being crossed (architectural / scope concern); 'inventory_gap' = the artifact / source / reference inventory is incomplete in a way that's broader than a single missing source — e.g., a category of evidence is acknowledged-but-unsourced, an entire reference document set hasn't been produced yet, or a coverage gap on a known list of expected artifacts. Distinct from 'missing_source' in that 'missing_source' targets ONE specific source; 'inventory_gap' targets a CATEGORY or SET of expected items. Pilot-validated v1.1.1 — Pilot-1 engagement raised inventory-gap routes as a distinct category from missing-source single-item routes. 'cross_tier_contradiction' = the orchestrator-emitted variant of 'contradiction' specifically for the reliability-tier-delta ≤ 1 contested rule — both A59 rows are at similar tiers, neither wins automatically, both are routed via A51 with this IssueType + BlockingStatus=hard until manually reconciled. Distinct from generic 'contradiction' so downstream filters (KPI roll-up, H3 / H4 packets) can route the contested-by-tier subset separately. Promoted to a first-class enum value in v1.1.1 to align with reliability_tier_spec.md §Conflict Resolution + the existing test_tier_conflict_scenarios coverage. 'link_strength_override' = added in v1.2.1 (closes TODO-S8-02-LINK-STRENGTH-OVERRIDE per skills/bsa-traceability-matrix/SKILL.md). Operator override of the default A72 LinkStrength derivation (tier × ClaimStrength → high/medium/low). When the operator explicitly raises OR lowers a LinkStrength below what the default formula produces, an A51 row with IssueType=link_strength_override MUST be referenced from the A72 row — the rationale captures WHY the override (e.g., 'low-tier source corroborated by independent observation that wasn't bound at intake', or 'high-tier source applies only partially to this story scope'). BlockingStatus=informational is the typical choice (override is informational, not a gate). Distinct from generic 'decision_needed' because it specifically annotates a divergence from the formula; downstream KPI tooling can filter overrides separately to detect a class of fixture-shape drift."
+      "description": "Closed enum per shared-control-surface-contracts.md. Adding a value requires editing that doc + this schema together. Categories: 'uncertainty' = unresolved doubt about a specific claim or value; 'contradiction' = two or more sources disagree (handled by claim-binder + Phase-3 contradiction-propagation contract); 'missing_source' = a referenced source is unreadable / unauthored / not yet provided; 'decision_needed' = stakeholder input required before downstream work can proceed; 'boundary_risk' = the boundary of analysis vs implementation is at risk of being crossed (architectural / scope concern); 'inventory_gap' = the artifact / source / reference inventory is incomplete in a way that's broader than a single missing source \u2014 e.g., a category of evidence is acknowledged-but-unsourced, an entire reference document set hasn't been produced yet, or a coverage gap on a known list of expected artifacts. Distinct from 'missing_source' in that 'missing_source' targets ONE specific source; 'inventory_gap' targets a CATEGORY or SET of expected items. Pilot-validated v1.1.1 \u2014 Pilot-1 engagement raised inventory-gap routes as a distinct category from missing-source single-item routes. 'cross_tier_contradiction' = the orchestrator-emitted variant of 'contradiction' specifically for the reliability-tier-delta \u2264 1 contested rule \u2014 both A59 rows are at similar tiers, neither wins automatically, both are routed via A51 with this IssueType + BlockingStatus=hard until manually reconciled. Distinct from generic 'contradiction' so downstream filters (KPI roll-up, H3 / H4 packets) can route the contested-by-tier subset separately. Promoted to a first-class enum value in v1.1.1 to align with reliability_tier_spec.md \u00a7Conflict Resolution + the existing test_tier_conflict_scenarios coverage. 'link_strength_override' = added in v1.2.1 (closes TODO-S8-02-LINK-STRENGTH-OVERRIDE per skills/bsa-traceability-matrix/SKILL.md). Operator override of the default A72 LinkStrength derivation (tier \u00d7 ClaimStrength \u2192 high/medium/low). When the operator explicitly raises OR lowers a LinkStrength below what the default formula produces, an A51 row with IssueType=link_strength_override MUST be referenced from the A72 row \u2014 the rationale captures WHY the override (e.g., 'low-tier source corroborated by independent observation that wasn't bound at intake', or 'high-tier source applies only partially to this story scope'). BlockingStatus=informational is the typical choice (override is informational, not a gate). Distinct from generic 'decision_needed' because it specifically annotates a divergence from the formula; downstream KPI tooling can filter overrides separately to detect a class of fixture-shape drift."
     },
     "Severity": {
       "type": "string",
-      "enum": ["low", "medium", "high", "critical"],
-      "description": "Severity tier. 4-tier as of v1.1.1 (was 3-tier through v1.1.0). 'low' = informational / minor; 'medium' = warrants attention but does not block; 'high' = blocks promotion until resolved when BlockingStatus=hard; 'critical' = exceeds 'high' — used for issues that block multiple downstream stages OR have customer-facing / contractual impact (e.g., contract-binding SLA breach, regulatory non-compliance, security exposure). Run-profile-gates use Severity in conjunction with BlockingStatus to decide promotion gating; 'critical' + 'hard' is the maximum-blocking combination. Pilot-validated v1.1.1 — Pilot-1 engagement classified contractual-SLA risks as 'critical' rather than diluting the 'high' tier."
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "description": "Severity tier. 4-tier as of v1.1.1 (was 3-tier through v1.1.0). 'low' = informational / minor; 'medium' = warrants attention but does not block; 'high' = blocks promotion until resolved when BlockingStatus=hard; 'critical' = exceeds 'high' \u2014 used for issues that block multiple downstream stages OR have customer-facing / contractual impact (e.g., contract-binding SLA breach, regulatory non-compliance, security exposure). Run-profile-gates use Severity in conjunction with BlockingStatus to decide promotion gating; 'critical' + 'hard' is the maximum-blocking combination. Pilot-validated v1.1.1 \u2014 Pilot-1 engagement classified contractual-SLA risks as 'critical' rather than diluting the 'high' tier."
     },
     "BlockingStatus": {
       "type": "string",
-      "enum": ["hard", "soft", "informational"],
+      "enum": [
+        "hard",
+        "soft",
+        "informational"
+      ],
       "description": "hard = blocks promotion until resolved or routed; soft = warning only; informational = annotation, no gating."
     },
     "RaisedByStage": {
@@ -68,7 +77,7 @@
         "discovery.exit",
         "discovery.complete"
       ],
-      "description": "Pipeline stage that emitted this route. Aligned with — but not strictly identical to — A48.CurrentStage. A51 additionally accepts the prefixed `discovery.dN` forms (N=1..5) used by some discovery workers when they want to disambiguate from the bare `dN` orchestrator-state value (e.g., Pilot-1-class engagements where the discovery workers emit `discovery.d1` for traceability into runtime markers like `discovery.d1.ready.json`). The bare `dN` form remains valid for fixtures + orchestrator-level tracking; the prefixed form is for raised-by-this-discovery-step provenance."
+      "description": "Pipeline stage that emitted this route. Aligned with \u2014 but not strictly identical to \u2014 A48.CurrentStage. A51 additionally accepts the prefixed `discovery.dN` forms (N=1..5) used by some discovery workers when they want to disambiguate from the bare `dN` orchestrator-state value (e.g., Pilot-1-class engagements where the discovery workers emit `discovery.d1` for traceability into runtime markers like `discovery.d1.ready.json`). The bare `dN` form remains valid for fixtures + orchestrator-level tracking; the prefixed form is for raised-by-this-discovery-step provenance."
     },
     "RelatedSourceID": {
       "type": "string",
@@ -111,5 +120,13 @@
       "NextAction",
       "ResolutionStatus"
     ]
+  },
+  "x-bsa-uniqueness-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.12 via governance/schemas/write_validator.py::_apply_uniqueness_rules. Schema-agnostic generic extension (see v1.2.10 CHANGELOG). A51 issue routes are per-issue; a duplicate A51Ref would let two separate issues collide into one route and lose the distinct resolution trail. Pre-v1.2.12 duplicate A51Refs were caught only at fixture-review time; v1.2.12 makes it mechanical at hook time.",
+    "applies_to_all_rows": true,
+    "unique_columns": [
+      "A51Ref"
+    ],
+    "rationale": "Without this rule, duplicate A51Ref values could land at promote-gate + silently break every downstream cross-reference. A51Ref is the row-identifier."
   }
 }

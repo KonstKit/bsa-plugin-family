@@ -4,6 +4,59 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.12] — 2026-04-25
+
+**Backfill cross-row uniqueness enforcement across all canonical schemas.** v1.2.10 shipped the generic `x-bsa-uniqueness-rules` extension as plumbing; v1.2.12 opts in every existing canonical schema (A50/A51/A58/A59/A60/A62/A70/A71/A72) to enforce row-identifier uniqueness at the F5 hook layer. Pre-v1.2.12 duplicate row-identifiers were caught only at fixture-review or adjacent-artifact cross-ref time; post-v1.2.12 every canonical CSV write with a duplicate identifier fails at the hook with a line-numbered message.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.11+hash:6d91f10e` — **unchanged**. Schema edits + test additions all live OUTSIDE POLICY_GLOBS (schemas under `governance/schemas/*.schema.json` are not tracked); manifest stays at 1.2.11, git tag bumps to v1.2.12 (canon-neutral release).
+
+### Added
+
+- `x-bsa-uniqueness-rules` block added to 9 canonical schemas pinning the row-identifier column:
+  * `a50.schema.json` → `SourceID`
+  * `a51.schema.json` → `A51Ref`
+  * `a58.schema.json` → `ExcerptID`
+  * `a59.schema.json` → `ClaimID`
+  * `a60.schema.json` → `NegEvID`
+  * `a62.schema.json` → `NFRID`
+  * `a70.schema.json` → `StoryID`
+  * `a71.schema.json` → `ScenarioID`
+  * `a72.schema.json` → `TraceID`
+- Each block carries `applies_to_all_rows: true`, the row-identifier column, a `_comment` explaining the rationale + downstream-FK-breakage risk, and a `rationale` field. Same shape convention the v1.2.10 generic extension established.
+- **A61 intentionally stays on `x-bsa-anchor-binding-rules`** (not migrated to the generic extension) — A61's FK + uniqueness are semantically bundled as "anchor-binding". A new `test_a61_still_uses_anchor_binding_rules_not_generic` pins this design choice so a future consistency sweep that migrates A61 surfaces as a deliberate change requiring paired handler + test updates.
+
+### Tests
+
+- `tests/test_schemas_uniqueness_rules.py` (+19 tests, now 39 total):
+  * Parameterized static pin over 9 schemas (`test_canonical_schema_declares_uniqueness_rule`) — each schema MUST declare the extension with the correct row-identifier column, `applies_to_all_rows: true`, and the `EXECUTABLE` marker in `_comment`. A future schema refactor that silently drops the extension or changes the column fails immediately.
+  * A61 separation pin (`test_a61_still_uses_anchor_binding_rules_not_generic`).
+  * Parameterized end-to-end via dispatcher (`test_opted_in_schema_uniqueness_rule_fires_via_dispatcher`) — for each opted-in schema, a CSV with a duplicate row-identifier flows through `validate_canonical_write` and the duplicate surfaces as a violation attributed to `x-bsa-uniqueness-rules`. Uses placeholder values in the other columns — the uniqueness path is isolated from per-row schema rules by filtering for the `x-bsa-uniqueness-rules` signature.
+
+### Operator workflow
+
+Behavioral change at the F5 hook: 9 new failure modes, one per canonical CSV. Each fires when the hook sees a duplicate row-identifier in a write:
+
+```
+line N <Column>='<Value>': duplicate value (first seen on line M) — x-bsa-uniqueness-rules → unique_columns
+```
+
+Where `<Column>` ∈ {SourceID / A51Ref / ExcerptID / ClaimID / NegEvID / NFRID / StoryID / ScenarioID / TraceID}. Existing fixtures + pilot workspaces that had clean row-identifiers pass unchanged (pre-release fixture scan confirmed zero duplicates across all 53 canonical-layer fixture CSVs).
+
+When the operator hits one of these violations, the fix is to pick a unique identifier for one of the rows — never to "suppress" the extension (the whole point is that downstream cross-references (A60.RelatedClaimID, A61.SourceClaimID, A62.SourceClaimIDs, A70.SourceClaimIDs, A71.SourceStoryID, A72.{StoryID,ClaimID,SourceID}) silently break when a duplicate lands).
+
+### Codex review trail
+
+- **Round 1**: APPROVE — no critical issues. 1 recommendation applied inline:
+  * **Rec #1 (explicit dispatcher rejection pin)**: `test_opted_in_schema_uniqueness_rule_fires_via_dispatcher` filtered for the uniqueness-rule signature in the returned messages but didn't explicitly assert `ok is False`. A future regression that keeps the info message but flips `ok=True` would slip through. **Applied**: added `assert ok is False` at the top of the check chain so the dispatcher-rejection contract is pinned independently of the message-filter check.
+  * Codex spot-checks verified: 10 canonical CSV schemas present (A50/A51/A58/A59/A60/A61/A62/A70/A71/A72); A61 intentionally excluded; row-ID picks match each schema's stable identifier (including A51=`A51Ref` + A72=`TraceID` as confirmed non-composite); handler contract + violation-message shape match the declarations; dispatcher-path end-to-end exercised via `validate_canonical_write`; zero duplicate row-identifiers across all 53 canonical-layer fixture CSVs.
+  * Codex CLI model note: v1.2.12 review ran on `gpt-5.2` after `gpt-5.4` (prior workaround) and `gpt-5.5` (user's config default) both returned HTTP 400 "model requires a newer version of Codex" — the CLI on disk was out of sync with the upstream model set. Documented here as a release-infra observation for future sessions.
+
+### Result
+
+- 1930 → 1949 tests passing (+19 new in `test_schemas_uniqueness_rules.py`).
+- Cross-row uniqueness is now mechanical at hook time for the full canonical surface. The v1.2.10 generic extension is now "opted-in" broadly — its original prerequisite-for-v1.2.12 framing is fulfilled.
+- Canon hash unchanged (`6d91f10e`). Manifest stays at 1.2.11.
+
 ## [v1.2.11] — 2026-04-25
 
 **Third BSA sidecar: `dbml-from-context` (relational-schema text).** v1.1.12 (Section I) codified the two-sidecar inventory (`c4-plantuml-from-context` + `camunda-bpmn-from-context`) and logged an open follow-up for DBML / sequence-diagram sidecars. v1.2.11 ships the DBML half — the third BSA sidecar — at status `experimental`. The sequence-diagram half remains deferred (the `C4_Dynamic` view in the c4 sidecar already covers runtime-scenario diagrams, so a dedicated sequence-diagram sidecar is lower priority than DBML).

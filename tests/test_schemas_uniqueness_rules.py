@@ -496,3 +496,153 @@ def test_uniqueness_handler_delegates_to_check_unique_columns(monkeypatch) -> No
     write_validator._apply_uniqueness_rules(rows, schema, "fake.csv", None)
     assert len(calls) == 1
     assert calls[0][2] == "x-bsa-uniqueness-rules"
+
+
+# ---- v1.2.12: opted-in canonical schemas ---------------------------
+#
+# v1.2.12 backfills the generic `x-bsa-uniqueness-rules` extension onto
+# every A50/A51/A58/A59/A60/A62/A70/A71/A72 schema — each pins
+# row-identifier uniqueness. A61 stays on its A61-specific
+# `x-bsa-anchor-binding-rules` (since the FK + uniqueness are bundled
+# semantically there).
+#
+# The tests below:
+#   1. Static pin: each opted-in schema DECLARES the extension with
+#      the expected row-identifier column.
+#   2. End-to-end regression via the dispatcher path: a duplicate
+#      row-identifier in a well-formed CSV for one of these schemas
+#      surfaces as a `line N ... duplicate value` violation at the
+#      F5 hook layer.
+
+_OPTED_IN_SCHEMAS = {
+    "a50": "SourceID",
+    "a51": "A51Ref",
+    "a58": "ExcerptID",
+    "a59": "ClaimID",
+    "a60": "NegEvID",
+    "a62": "NFRID",
+    "a70": "StoryID",
+    "a71": "ScenarioID",
+    "a72": "TraceID",
+}
+
+
+@pytest.mark.parametrize("schema_name, expected_col", list(_OPTED_IN_SCHEMAS.items()))
+def test_canonical_schema_declares_uniqueness_rule(
+    schema_name: str, expected_col: str,
+) -> None:
+    """v1.2.12 backfill: each opted-in schema declares the generic
+    `x-bsa-uniqueness-rules` extension with the correct identifier
+    column. A static pin — catches a future schema refactor that
+    accidentally drops the extension or changes the identifier
+    column silently."""
+    from governance.schemas.loader import load_schema
+    schema = load_schema(schema_name)
+    ext = schema.get("x-bsa-uniqueness-rules")
+    assert isinstance(ext, dict), (
+        f"{schema_name}.schema.json is missing x-bsa-uniqueness-rules"
+    )
+    assert ext.get("applies_to_all_rows") is True, (
+        f"{schema_name}.schema.json has the extension but applies_to_all_rows "
+        f"is missing or false — handler would no-op"
+    )
+    cols = ext.get("unique_columns")
+    assert cols == [expected_col], (
+        f"{schema_name}.schema.json unique_columns {cols!r} != expected "
+        f"[{expected_col!r}]. Row-identifier drift."
+    )
+    comment = ext.get("_comment", "").upper()
+    assert "EXECUTABLE" in comment, (
+        f"{schema_name}.schema.json x-bsa-uniqueness-rules _comment "
+        f"missing EXECUTABLE marker"
+    )
+
+
+def test_a61_still_uses_anchor_binding_rules_not_generic() -> None:
+    """Deliberate design choice: A61's uniqueness stays bundled in
+    x-bsa-anchor-binding-rules (together with the FK to A59) rather
+    than migrating to x-bsa-uniqueness-rules. A61's extension is
+    semantically coupled (anchor-binding = FK + uniqueness together),
+    whereas the generic extension is for schemas that only need
+    uniqueness. This test pins the separation so a future "consistency
+    sweep" that migrates A61 to the generic extension surfaces as a
+    deliberate design change + requires paired updates to the A61
+    executable handler + tests."""
+    from governance.schemas.loader import load_schema
+    a61 = load_schema("a61")
+    assert "x-bsa-anchor-binding-rules" in a61, (
+        "A61 lost its anchor-binding extension — should be preserved"
+    )
+    # A61 MAY also have x-bsa-uniqueness-rules (no harm), but it's
+    # NOT the source of truth; the anchor-binding extension is.
+    # Today it doesn't (as of v1.2.12). Pin that status quo.
+    assert "x-bsa-uniqueness-rules" not in a61, (
+        "A61 has BOTH anchor-binding AND generic uniqueness extensions "
+        "— would emit duplicate violations for the same AnchorID "
+        "duplicate (one from each handler). Pick one."
+    )
+
+
+@pytest.mark.parametrize("schema_name, expected_col", list(_OPTED_IN_SCHEMAS.items()))
+def test_opted_in_schema_uniqueness_rule_fires_via_dispatcher(
+    schema_name: str, expected_col: str, tmp_path: Path,
+) -> None:
+    """End-to-end: for each opted-in schema, write a synthetic CSV
+    with a duplicate row-identifier through the canonical-write path
+    + assert the duplicate surfaces as a violation attributed to
+    x-bsa-uniqueness-rules. The schema's full row shape isn't
+    satisfied here (we're testing the uniqueness path specifically —
+    other per-row errors will also fire, and we filter for the
+    uniqueness-rule violation)."""
+    from governance.schemas.write_validator import validate_canonical_write
+    from governance.schemas.loader import load_schema
+
+    schema = load_schema(schema_name)
+    cols = schema["x-bsa-csv-columns-order"]["order"]
+    # Build a minimum CSV with duplicated row-id; the other columns
+    # are filled with placeholder data that may NOT satisfy all
+    # per-row rules (that's OK — we filter for the uniqueness-rule
+    # violation only).
+    header = ",".join(cols)
+    row_id_idx = cols.index(expected_col)
+    row_vals = ["x"] * len(cols)
+    row_vals[row_id_idx] = "DUP-1"
+    row1 = ",".join(row_vals)
+    row_vals[row_id_idx] = "DUP-1"  # same id again
+    row2 = ",".join(row_vals)
+    csv_content = f"{header}\n{row1}\n{row2}\n"
+    # Map schema name → canonical path (assumes A<NN>_something.csv).
+    canonical_filename_map = {
+        "a50": "A50_source_register.csv",
+        "a51": "A51_issue_route_register.csv",
+        "a58": "A58_evidence_excerpts.csv",
+        "a59": "A59_claim_register.csv",
+        "a60": "A60_negative_evidence_register.csv",
+        "a62": "A62_nfr_register.csv",
+        "a70": "A70_story_register.csv",
+        "a71": "A71_test_scenario_register.csv",
+        "a72": "A72_traceability_matrix.csv",
+    }
+    canonical_filename = canonical_filename_map[schema_name]
+    path = f"analysis/canonical/core_controls/{canonical_filename}"
+    ok, msgs = validate_canonical_write(path, csv_content)
+    # v1.2.12 round-1 Codex recommendation: pin ok=False explicitly
+    # so the dispatcher-rejection contract is enforced independently
+    # of the message-filter check below. A future regression that
+    # drops `ok` to True but keeps the info-only message would be
+    # caught here.
+    assert ok is False, (
+        f"{schema_name}: duplicate {expected_col} should fail the "
+        f"canonical write (ok=False); got ok={ok}, msgs={msgs}"
+    )
+    # Duplicate will always surface regardless of other per-row errors.
+    uniqueness_msgs = [m for m in msgs if "x-bsa-uniqueness-rules" in m]
+    assert uniqueness_msgs, (
+        f"{schema_name}: duplicate {expected_col} did NOT surface via "
+        f"x-bsa-uniqueness-rules. Handler wire-up gap? Got: {msgs}"
+    )
+    # The violation should name the duplicate value.
+    assert any("DUP-1" in m for m in uniqueness_msgs), (
+        f"{schema_name}: uniqueness violation missed DUP-1: "
+        f"{uniqueness_msgs}"
+    )
