@@ -86,15 +86,16 @@ here on the next pytest run.
   This fixture's A61 register validates against the v1.2.7 schema —
   see `test_fixture_a61_validates_against_a61_schema` in
   `tests/test_sidecar_e2e_fixture.py`.
-- **Relationship coverage** for C4 (`Rel`, `BiRel`, `RelIndex`).
-  These macros ARE listed as anchorable per the integration contract
-  + the manifest schema's `view_element_kind` enum, but C4-PlantUML
-  relationships have no explicit ID and the contract does not yet
-  document a `view_element_id` convention for them. The fixture
-  therefore ships a Container view with NO `Rel(...)` calls; when
-  the relationship-ID convention lands in
-  `skills/c4-plantuml-from-context/references/integration-contract.md`,
-  extend `_load_c4_view_elements()` + the fixture together. (Codex
-  v1.2.6 round-1 critical that drove the scope-down.)
+- ~~**Relationship coverage** for C4 (`Rel`, `BiRel`, `RelIndex`).~~
+  — **CLOSED in v1.2.9.** The relationship `view_element_id` convention
+  is now documented in
+  `skills/c4-plantuml-from-context/references/integration-contract.md`
+  §"Relationship view_element_id convention" — derived deterministically
+  as `rel_<from>_<connector>_<to>` with `__N` suffix for multi-
+  occurrence same-pair cases. The fixture's `.puml` now ships two
+  `Rel(...)` calls, both mapped to A61 (ANC-REL-001 + ANC-REL-002)
+  and pinned by the manifest's `anchor_map`. The e2e test's
+  `_load_c4_view_elements` extractor now uses `_derive_c4_relationship_ids`
+  to apply the v1.2.9 convention.
 - DBML / sequence-diagram sidecars (the third / fourth sidecars
   remain on the post-v1.1.x roadmap).

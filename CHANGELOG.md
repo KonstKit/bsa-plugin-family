@@ -4,6 +4,81 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.9] — 2026-04-25
+
+**C4 relationship `view_element_id` convention (closes the v1.2.6 round-1 scope-down).** v1.2.6 shipped the end-to-end sidecar fixture with a documented scope-down: C4-PlantUML relationship macros (`Rel`, `BiRel`, `RelIndex` and their directional variants) ARE listed as anchorable per the integration contract + the manifest schema's `view_element_kind` enum, BUT the contract didn't specify how the corresponding `view_element_id` should be derived (relationships have no explicit ID in C4-PlantUML source text). The v1.2.6 fixture therefore shipped a Container view with NO `Rel(...)` calls. v1.2.9 closes the gap by documenting a deterministic derivation, extending the fixture + loader + tests together.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.5+hash:0eb4093d` → `1.2.9+hash:4548551b` — **canon-bumping** via the integration-contract edit (POLICY_GLOBS). Manifest bumps 1.2.5 → 1.2.9 in lockstep. First canon-bumping release since v1.2.5 (v1.2.6/v1.2.7/v1.2.8 were all canon-neutral).
+
+### Added
+
+- **Relationship `view_element_id` convention** documented in `skills/c4-plantuml-from-context/references/integration-contract.md` §"Relationship view_element_id convention". Formula:
+  ```
+  view_element_id  ::=  "rel_" <from_alias> "_" <connector> "_" <to_alias>  [ "__" <occurrence_index> ]
+
+  <connector>      ::=  "to"      for Rel, Rel_U, Rel_D, Rel_L, Rel_R, Rel_Back(_*)
+                   |    "bi"      for BiRel and all BiRel_* variants
+                   |    "idx_to"  for RelIndex
+  ```
+  * Direction qualifiers (`_U` / `_Up` / `_D` / `_Down` / `_L` / `_Left` / `_R` / `_Right`) plus `_Neighbor` and `_Back_Neighbor` forms are render-layer hints and collapse to the same connector at the bridge layer. **`view_element_kind` MUST stay collapsed** to the base kind (`Rel`/`BiRel`/`RelIndex`) — the manifest schema's enum at `skills/c4-plantuml-from-context/references/anchor_manifest.schema.json` only permits the base kinds. Direction, when worth tracking at the manifest layer, rides in the optional `notes` field (e.g., `"notes": "rendered as Rel_Up"`).
+  * RelIndex's numeric index is a render-order hint, NOT an identity discriminator — it's NOT part of the derived ID.
+  * Multi-occurrence same-pair relationships get a `__N` suffix starting at `__2` for the second occurrence (e.g., two `Rel(svc_a, svc_b, ...)` calls with different labels → `rel_svc_a_to_svc_b` + `rel_svc_a_to_svc_b__2`). Operators MUST NOT use `__N` as a free-form discriminator; it's reserved for the deterministic-derivation escape hatch.
+  * Rationale + worked-examples table in the contract.
+- **Fixture extension** (`fixtures/golden/project_0004_sidecar_e2e/`):
+  * `.puml` gains 2 `Rel(...)` calls (`Rel(agent, web_ui, ...)` + `Rel(web_ui, analytics_db, ...)`) with tech/protocol strings (`HTTPS`, `JDBC`) — now passes the C4 validator's container-relationship tech rule cleanly.
+  * `A61_anchor_map.csv` gains 2 new rows: `ANC-REL-001` + `ANC-REL-002` (AnchorKind=`Rel`). Total A61 rows now 12 (5 C4 declaration + 2 C4 relationship + 5 BPMN).
+  * `anchor_manifest.json` gains 2 `anchor_map` entries using the v1.2.9 convention (`view_element_id: rel_agent_to_web_ui` + `rel_web_ui_to_analytics_db`).
+- **E2E test loader extension** (`tests/test_sidecar_e2e_fixture.py`):
+  * New `_derive_c4_relationship_ids(text)` helper implements the v1.2.9 convention in the test layer. Uses three regexes (ordered BiRel → RelIndex → Rel) with a masking step that prevents `BiRel` / `RelIndex` from double-matching as `Rel` (they share the `Rel` prefix).
+  * `_load_c4_view_elements()` now unions declaration-side IDs AND derived relationship IDs, so the existing orphan-view-element cross-ref test automatically pins the new relationship anchors too.
+  * 10 new pytest tests pinning the convention:
+    - `test_derive_rel_basic_to_connector` — contract's simplest case.
+    - `test_derive_rel_directional_variants_collapse_to_to_connector` — `Rel_U/D/L/R` collapse.
+    - `test_derive_birel_uses_bi_connector` + `test_derive_birel_directional_variants_collapse_to_bi` — BiRel + BiRel_Left/etc.
+    - `test_derive_relindex_uses_idx_to_connector_skipping_index` — index arg NOT in ID.
+    - `test_derive_multiple_relationships_same_pair_get_occurrence_suffix` — `__N` convention.
+    - `test_derive_distinct_pairs_do_not_collide` — `Rel(a, b)` and `Rel(b, a)` stay distinct (pinned so a sloppy alphabetic-normalisation doesn't collide them).
+    - `test_derive_birel_does_not_double_match_as_rel` + `test_derive_relindex_does_not_double_match_as_rel` — masking-step regression pins.
+    - `test_fixture_c4_view_now_includes_two_relationship_ids` — end-to-end fixture check.
+  * `test_fixture_a61_register_loads` updated: 10 → 12 anchors; added `ANC-REL-001` + `ANC-REL-002` to the expected spot-check.
+  * `tests/test_schemas_a61.py::test_iter_a61_rows_loads_fixture` updated: AnchorID set now includes the two new relationship anchors.
+
+### Updated
+
+- **`skills/c4-plantuml-from-context/references/integration-contract.md`** (POLICY_GLOBS) — new §"Relationship view_element_id convention" section + updated `view_element_id` field description to point at it.
+- **`fixtures/golden/project_0004_sidecar_e2e/README.md`** — relationship-coverage bullet in "What this fixture does NOT cover" section now marked CLOSED in v1.2.9 with the new convention inline.
+- **`fixtures/golden/project_0004_sidecar_e2e/fixture_metadata.json`** — `canon_policy_version` + `plugin_version` bumped to 1.2.9.
+- **`.claude-plugin/plugin.json`** — manifest version 1.2.5 → 1.2.9; canon hash `0eb4093d` → `4548551b`.
+- **`README.md`**, **`INSTALL.md`**, **`docs/getting_started.md`**, **`docs/faq.md`** — current-release lines refreshed: `bsa-full@1.2.5` → `bsa-full@1.2.9`; v1.2.x progression extended to include v1.2.6 through v1.2.9.
+
+### Operator workflow
+
+Zero behavioral change at the canonical-write layer — the convention is documentation + test infrastructure. Operators authoring C4 diagrams by hand or via the orchestrator now have a single canonical rule for naming relationship anchors. Future tooling (e.g., an automatic `.puml` → `anchor_manifest.json` emitter) has a deterministic derivation to target.
+
+### Codex review trail
+
+- **Round 1**: REQUEST CHANGES — 3 critical + 3 recommendations, all acted on.
+  * **CRITICAL #1 (macro coverage gap)**: the round-1 regex covered Rel/BiRel/RelIndex with `_U/_D/_L/_R` + `_Back(_U/_D/_L/_R)?` variants, but missed the repo's full macro inventory tracked in `skills/c4-plantuml-from-context/scripts/validate_c4_plantuml.py::STATIC_RELATIONSHIP_MACROS + DYNAMIC_RELATIONSHIP_MACROS` — specifically the spelled-out direction forms (`Rel_Up`, `Rel_Down`, `Rel_Left`, `Rel_Right` and BiRel / RelIndex equivalents), plus `Rel_Neighbor`, `Rel_Back_Neighbor`, `BiRel_Neighbor`, and the entire `RelIndex_*` family. Codex spot-checked at runtime: the round-1 extractor returned zero IDs for those forms. **Fixed**: rewrote `_REL_NAME`/`_BIREL_NAME`/`_RELINDEX_NAME` as explicit longest-first alternations covering every entry in the validator's inventory. Added THREE parameterized tests (`test_derive_all_rel_family_variants_use_to_connector` + BiRel + RelIndex) that sweep the FULL macro inventory — 34 variants total; each macro → its expected derived ID. A future drop of any variant from the regex surfaces as a single-parametrize failure.
+  * **CRITICAL #2 (contract/schema contradiction on direction storage)**: the round-1 contract prose said "direction is recorded in `view_element_kind`", but the anchor_manifest schema's `view_element_kind` enum only permits the COLLAPSED base kinds `Rel`/`BiRel`/`RelIndex` — writing `Rel_Up` there would fail schema validation. **Fixed**: contract rewritten to say `view_element_kind` MUST be the collapsed base kind (matching the schema enum); direction rides in the optional `notes` field instead (`"notes": "rendered as Rel_Up"`). Worked-examples table extended with explicit directional-case rows.
+  * **CRITICAL #3 (canon-bump drift inside fixture manifests)**: the round-1 canon-bump refreshed `plugin.json` + `fixture_metadata.json` but FORGOT to update `canon_policy_version` in the fixture's C4 + BPMN sidecar manifests (both still emitted the pre-bump hash), making the fixture internally inconsistent. **Fixed**: both manifests refreshed in lockstep. New regression test `test_fixture_sidecar_manifests_canon_policy_version_matches_fixture_metadata` pins the three-way alignment; companion `test_fixture_metadata_canon_version_matches_plugin_manifest` closes the chain to plugin.json. A future canon bump that forgets any one of the three files surfaces here. (Side-effect: editing the contract in Critical #2 re-bumped the canon hash itself to `4548551b` — the round-1 draft hash `4bb99111` is now stale. All four canon-policy-version refs (plugin.json, fixture_metadata.json, c4 manifest, bpmn manifest) + CHANGELOG + RELEASING updated to the final hash.)
+  * **Recommendation #1 (coverage pin — parameterized)**: covered by the three parameterized tests above.
+  * **Recommendation #2 (multiline macro pin)**: new tests `test_derive_rel_macro_split_across_lines` + `test_derive_relindex_macro_split_across_lines` exercise multiline `Rel(...)` + `RelIndex(...)` forms (Python's `\s` matches newlines by default; pinned against future regex tightening).
+  * **Recommendation #3 (canon-version pin test)**: covered by the two canon-version alignment tests above.
+- **Round 3**: REQUEST CHANGES — round-2 doc-regression fixes all verified ✓ + canon hash alignment confirmed across 8 locations, but ONE residual in the round-2 trail entry below still repeated the literal nonexistent spelled-out back-direction token names (documenting what was wrong, but failing the required zero-hit grep for those exact tokens). **Fixed**: round-2 trail bullet now uses the abstract `Rel_Back_*` shorthand instead of spelling out the nonexistent names.
+- **Round 4**: REQUEST CHANGES — the round-3 trail entry ITSELF re-quoted the literal spelled-out back-direction token names while describing what was fixed — leaving one new grep hit in the new sentence. **Fixed**: round-3 trail rewritten to describe the issue abstractly ("literal nonexistent spelled-out back-direction token names") without quoting them. The zero-hit grep for the four exact tokens now returns empty across the whole repo.
+- **Round 5**: APPROVE — repo-wide grep for the four nonexistent tokens returns empty outside `.git/`; round-3 + round-4 trail entries describe the issue abstractly; no new regressions. The 5-round cleanup sequence was pure documentation-churn driven by a pattern-recursion dynamic (each trail entry describing the prior round's fix wanted to quote what was wrong, which re-introduced the thing being fixed). Lesson logged for future release trails: describe ex-ante errors abstractly, not by literal quote.
+- **Round 2**: REQUEST CHANGES — round-1 fixes all verified ✓, but 3 NEW documentation regressions introduced by the round-1 cleanup:
+  * **NEW-1**: the contract's connector formula (BNF-style block) still named nonexistent `Rel_Back_*` directional variants AND omitted real inventory entries like `Rel_Up`, `Rel_Down`, `Rel_Left`, `Rel_Right`, `Rel_Neighbor`, `Rel_Back_Neighbor`. The worked-examples table had been fixed in round-1 but the BNF grammar still carried round-1-era names. **Fixed**: rewrote the connector block to enumerate EVERY member of the three families (Rel / BiRel / RelIndex) matching the validator's STATIC + DYNAMIC inventories exactly, with a pointer to `validate_c4_plantuml.py:84` as the source of truth so future inventory drift has one canonical place to update.
+  * **NEW-2**: the CHANGELOG's `### Added` section still repeated the round-1 prose saying "direction is recorded in `view_element_kind`" — same contradiction Codex flagged as round-1 Critical #2, just at a different location. **Fixed**: rewrote that bullet to say `view_element_kind` stays collapsed and direction rides in the optional `notes` field, matching the contract.
+  * **NEW-3**: the test module docstring's bullet about "Relationship coverage deferred" was stale (v1.2.9 closed the deferral). **Fixed**: rewrote the bullet to say v1.2.9 closes the v1.2.6 deferral and describes where the convention is documented + how the loader applies it.
+  * Editing the contract re-bumped the canon hash `118ad57c` → `4548551b`. All four canon-policy-version refs (plugin.json + fixture_metadata + c4 manifest + bpmn manifest) + CHANGELOG + RELEASING updated in lockstep.
+
+### Result
+
+- 1816 → 1864 tests passing (+48 new in `test_sidecar_e2e_fixture.py`; 10 round-1 + 38 round-1-regression across the 3 critical + 3 recommendations).
+- The v1.2.6 round-1 scope-down is retired. The bsa-test-scenario-builder + sidecar-related Sprint 8 TODOs are now all closed.
+- Canon hash bumped `0eb4093d` → `4548551b`. Manifest version 1.2.5 → 1.2.9.
+
 ## [v1.2.8] — 2026-04-25
 
 **A61 cross-row enforcement at the F5 hook layer (closes the v1.2.7 deferrals).** v1.2.7 shipped the A61 schema with row-shape validation, but explicitly deferred two cross-row invariants to a follow-up release: (1) `SourceClaimID` foreign-key resolution against A59.ClaimID, and (2) AnchorID uniqueness across rows. The CHANGELOG round-1 trail for v1.2.7 noted both deferrals would land "in the same follow-up release as FK enforcement". v1.2.8 ships them.

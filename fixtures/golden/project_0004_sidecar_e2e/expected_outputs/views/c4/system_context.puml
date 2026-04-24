@@ -13,4 +13,7 @@ System_Boundary(corporate_intranet, "Corporate Intranet") {
 
 Person(agent, "Agent", "Triages incoming tickets")
 
+Rel(agent, web_ui, "Triages tickets via", "HTTPS")
+Rel(web_ui, analytics_db, "Queries / writes for reporting", "JDBC")
+
 @enduml

@@ -15,7 +15,7 @@ Quickstart for installing `bsa-full` into Claude Code and running the evidence-f
 ```
 /plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
 /plugin install bsa-full@bsa-marketplace
-/plugin list      # expect bsa-full@1.2.5 (current v1.2.x manifest)
+/plugin list      # expect bsa-full@1.2.9 (current v1.2.x manifest)
 ```
 
 Full install + uninstall + upgrade notes (including the session-only `claude --plugin-dir` path for quick smoke-tests): [../INSTALL.md](../INSTALL.md).

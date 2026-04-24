@@ -3,7 +3,7 @@
   "generated_at": "2026-04-25T00:00:00Z",
   "sidecar": "c4-plantuml-from-context",
   "sidecar_version": "1.0.0",
-  "canon_policy_version": "1.2.5+hash:0eb4093d",
+  "canon_policy_version": "1.2.9+hash:4548551b",
   "view_files": [
     {
       "path": "analysis/views/c4/system_context.puml",
@@ -38,6 +38,18 @@
           "view_element_kind": "Container",
           "a61_anchor_id": "ANC-CONTAINER-002",
           "notes": "Analytics / reporting database"
+        },
+        {
+          "view_element_id": "rel_agent_to_web_ui",
+          "view_element_kind": "Rel",
+          "a61_anchor_id": "ANC-REL-001",
+          "notes": "v1.2.9 Rel anchor (rel_<from>_to_<to> convention; tech: HTTPS)"
+        },
+        {
+          "view_element_id": "rel_web_ui_to_analytics_db",
+          "view_element_kind": "Rel",
+          "a61_anchor_id": "ANC-REL-002",
+          "notes": "v1.2.9 Rel anchor (rel_<from>_to_<to> convention; tech: JDBC)"
         }
       ]
     }

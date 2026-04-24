@@ -101,10 +101,16 @@ def test_iter_a61_rows_loads_fixture() -> None:
         / "A61_anchor_map.csv"
     )
     rows = list(iter_a61_rows(fixture))
-    assert len(rows) == 10  # 5 C4 + 5 BPMN per the v1.2.6 fixture design
+    # v1.2.6 baseline = 10 anchors (5 C4 decl + 5 BPMN).
+    # v1.2.9 added 2 C4 relationship anchors → now 12 total.
+    assert len(rows) == 12
     assert {r["AnchorID"] for r in rows} == {
+        # v1.2.6 C4 declaration anchors
         "ANC-SYS-001", "ANC-ACTOR-001", "ANC-BOUNDARY-001",
         "ANC-CONTAINER-001", "ANC-CONTAINER-002",
+        # v1.2.9 C4 relationship anchors (rel_<from>_to_<to> convention)
+        "ANC-REL-001", "ANC-REL-002",
+        # v1.2.6 BPMN anchors
         "ANC-EVT-001", "ANC-TASK-001", "ANC-FLOW-001",
         "ANC-FLOW-002", "ANC-EVT-002",
     }
