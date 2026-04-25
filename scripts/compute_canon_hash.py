@@ -106,6 +106,7 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/d0-hypothesis-prioritizer/SKILL.md",
     "skills/d0-problem-framer/SKILL.md",
     "skills/d0-synthesis-gatekeeper/SKILL.md",
+    "skills/asyncapi-from-context/SKILL.md",
     "skills/inot-prompt-builder/SKILL.md",
     "skills/openapi-from-context/SKILL.md",
     # Orchestrator references — the policy heart of the system.
@@ -147,6 +148,8 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/c4-plantuml-from-context/references/anchor_manifest.schema.json",
     "skills/camunda-bpmn-from-context/references/integration-contract.md",
     "skills/camunda-bpmn-from-context/references/anchor_manifest.schema.json",
+    "skills/asyncapi-from-context/references/integration-contract.md",
+    "skills/asyncapi-from-context/references/anchor_manifest.schema.json",
     "skills/dbml-from-context/references/integration-contract.md",
     "skills/dbml-from-context/references/anchor_manifest.schema.json",
     "skills/openapi-from-context/references/integration-contract.md",
