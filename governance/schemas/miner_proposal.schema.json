@@ -111,8 +111,8 @@
       "properties": {
         "proposal_id": {
           "type": "string",
-          "pattern": "^P7-[A-Z0-9]{4,12}-[0-9]{4}$",
-          "description": "Stable identifier `P7-<short-context>-NNNN` (e.g., `P7-KPI001-0001`). Lets L2 dedupe proposals across miner runs."
+          "pattern": "^P7-[A-Z0-9]{1,12}-[0-9]{4}$",
+          "description": "Stable identifier `P7-<short-context>-NNNN` (e.g., `P7-KPI001-0001`). Lets L2 dedupe proposals across miner runs. Context segment is uppercase ASCII letters + digits only — the character class deliberately excludes `/`, `.`, `\\`, and other path-component characters so the patcher can use the id as a filename without path-traversal risk."
         },
         "tunable_id": {
           "type": "string",

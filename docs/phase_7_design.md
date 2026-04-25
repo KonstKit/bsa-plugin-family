@@ -17,7 +17,7 @@ Phase 7 has three layers:
 | **L0 (foundation)** | Formal tunable inventory + IMMUTABLE_CONFLICT lint + safety contract doc | **v1.1.14** |
 | **L1a (telemetry collector)** | Per-run KPI snapshot + storage shape | **v1.2.4** (P1+P2: schema + collector skeleton; KPI-001 + KPI-006 covered) |
 | **L1b (miner skeleton)** | Aggregate snapshots across N runs + detect tunable-knob drift + propose tuning patches | **v1.2.18 — skeleton shipped (stub algorithm)**; real pattern detection deferred until enough pilot telemetry exists. |
-| **L2 (auto-patcher)** | Auto-emit proposals (PRs) for tunables that need analyst sign-off (always reviewed before merge — no auto-merge in L2; the "auto" is the proposal generation, not the apply) | v1.3+ |
+| **L2 (auto-patcher)** | Auto-emit per-proposal patch files for tunables that need analyst sign-off (always reviewed before merge — no auto-merge in L2; the "auto" is the proposal-to-patch materialization, not the apply) | **v1.2.19 — patcher shipped (consumes L1b miner bundle).** |
 
 Shipping L0 first lets the tunable inventory get pinned (so future drift is caught) without committing to a full collector backend before there's real pilot telemetry to learn from.
 
@@ -105,6 +105,33 @@ The skeleton's value is three-fold:
 - Telemetry-run shape check is lightweight (required-fields + string types only) — full schema validation is L1b's caller's responsibility (operators may choose to run `jsonschema` themselves before invoking the miner).
 
 NOT canonical state. NOT F5-validated. NOT in POLICY_GLOBS. The miner's input + output both live under `analysis/telemetry/` (operator-side observation surface, deletable + regenerable without policy implications).
+
+## L2 status (v1.2.19)
+
+**Auto-patcher shipped.** `scripts/phase_7_patcher.py` reads the miner's `analysis/telemetry/miner_proposals.json` bundle, validates each proposal through a 7-gate pipeline, and emits per-proposal unified-diff patches + human-readable summaries to `analysis/telemetry/proposals/<proposal_id>.{patch,summary.md}` plus a bundle-level `_index.json`. Operator workflow lives in `docs/phase_7_runbook.md`.
+
+**The patcher NEVER:**
+- runs `git apply`, `git commit`, `git push`, or any git-mutating command (pinned by `test_patcher_does_not_invoke_git`);
+- modifies canonical state or POLICY_GLOBS files directly;
+- edits source files referenced by tunables — it only writes patch files describing what an analyst could choose to apply;
+- writes outside its `output_dir` (pinned by `test_patcher_writes_only_inside_output_dir`). The default `output_dir` is `analysis/telemetry/proposals/`, but `--output-dir` may relocate it (including outside the workspace). Either way, the patcher writes only inside the dir it was told to use.
+
+The "auto" in L2 is **proposal-to-patch materialization**, NOT auto-apply. The operator runs `git apply <proposal>.patch` manually after the runbook review pass.
+
+**Validation gates** (each proposal walks all gates; failure at any gate → `rejected` with a structured reason, no patch written):
+1. **immutable_conflict** — runtime mirror of phase_7_lint C5. Unconditional.
+2. **change_class** — only `L2_proposal_only` materialized; `L1_auto_tunable` skipped (separate operator-tooling path); unknown values rejected.
+3. **tunable_id resolution** against live `config/tunables.yaml`.
+4. **current_value drift** — proposal's snapshot must equal live value (else stale, re-run miner).
+5. **range** — `proposed_value` must parse as numeric AND fall within `allowed_range` (inclusive bounds).
+6. **POLICY_GLOBS safety** — defensive runtime mirror of C6 (defense-in-depth for future change_class additions).
+7. **no-op** — `proposed_value == current_value` skipped.
+
+**Reach equality with phase_7_lint** is pinned by `test_reach_equality_with_phase_7_lint_*`: the patcher's `_load_policy_globs` / `_matches_any_glob` / `_parse_numeric` MUST return the same results as `phase_7_lint`'s equivalents. Standalone helpers (no cross-script importlib coupling at runtime) keep the patcher independently auditable; the test catches drift if either script's helper diverges.
+
+**v1.2.19 boundary**: numeric tunables only. Enum tunables (e.g., the Triangulation `severity_threshold` / `priority_threshold` CLI defaults from v1.2.17) are out of scope until phase_7_lint extends to non-numeric ranges.
+
+NOT canonical state. NOT F5-validated. NOT in POLICY_GLOBS. Manifest stays at the prior canon-bumping release (1.2.17 at v1.2.19 ship time).
 
 ## Open questions for v1.2.x design
 
