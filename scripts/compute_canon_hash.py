@@ -107,6 +107,7 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/d0-problem-framer/SKILL.md",
     "skills/d0-synthesis-gatekeeper/SKILL.md",
     "skills/inot-prompt-builder/SKILL.md",
+    "skills/openapi-from-context/SKILL.md",
     # Orchestrator references — the policy heart of the system.
     "skills/bsa-orchestrator/references/agent-write-scope.md",
     "skills/bsa-orchestrator/references/canonical-artifact-map.md",
@@ -148,6 +149,8 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/camunda-bpmn-from-context/references/anchor_manifest.schema.json",
     "skills/dbml-from-context/references/integration-contract.md",
     "skills/dbml-from-context/references/anchor_manifest.schema.json",
+    "skills/openapi-from-context/references/integration-contract.md",
+    "skills/openapi-from-context/references/anchor_manifest.schema.json",
     # Repo-level policy docs.
     "docs/sem_audit_rename.md",
 )
