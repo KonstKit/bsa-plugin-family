@@ -130,14 +130,13 @@
         "column": "RelatedNFRID",
         "table": "A62_nfr_register.csv",
         "target_column": "NFRID",
-        "optional_when_blank": true,
         "rationale": "Optional NFR link; when non-blank MUST resolve in A62. The NFR-coverage rule fires separately via _apply_nfr_coverage_rules when RelatedNFRID is set."
       },
       {
         "column": "A51Ref",
         "table": "A51_issue_route_register.csv",
         "target_column": "A51Ref",
-        "optional_when_blank": true,
+        "multi": true,
         "rationale": "When AutomationStatus=deferred (x-bsa-deferral-rules), A51Ref must be set + resolve."
       }
     ]

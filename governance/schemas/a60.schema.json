@@ -77,19 +77,21 @@
         "column": "SourceID",
         "table": "A50_source_register.csv",
         "target_column": "SourceID",
+        "multi": true,
         "rationale": "Every negative-evidence finding must trace to a registered source."
       },
       {
         "column": "RelatedClaimID",
         "table": "A59_claim_register.csv",
         "target_column": "ClaimID",
+        "multi": true,
         "rationale": "Every negative-evidence row annotates a specific A59 claim; the ClaimID MUST resolve."
       },
       {
         "column": "A51Ref",
         "table": "A51_issue_route_register.csv",
         "target_column": "A51Ref",
-        "optional_when_blank": true,
+        "multi": true,
         "rationale": "When the negative-evidence row is A51-routed (e.g., contradiction flagged for follow-up), A51Ref must resolve."
       }
     ]

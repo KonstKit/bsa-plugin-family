@@ -4,6 +4,51 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.14] — 2026-04-25
+
+**Hotfix for v1.2.13 FK backfill regression.** v1.2.13's retroactive Codex review (run after a CLI-infra workaround was found — see Codex review trail below) caught a real **regression**: the v1.2.13 backfill set `multi: false` on 9 FK references whose underlying schema row patterns actually allow `;`-/`/`-joined IDs. Rows like `SourceID="S-001;S-002"` (valid per A59 schema) were false-positive-rejected as orphan FKs. v1.2.14 hotfixes the misclassification + cleans up a documentary-only `optional_when_blank` flag the handler never read.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.11+hash:6d91f10e` — **unchanged**. Schema edits + handler simplification + new tests all live OUTSIDE POLICY_GLOBS; manifest stays at 1.2.11.
+
+### Fixed
+
+- **`multi: true`** restored on 9 FK references whose row-shape patterns allow `;` / `/` joined IDs (audit confirmed by `re.match(pattern, "X-001;X-002")` on each opted-in column):
+  * **a59**: `SourceID`, `ExcerptID`, `A51Ref` (false-positive on multi-source claims).
+  * **a60**: `SourceID`, `RelatedClaimID`, `A51Ref`.
+  * **a62**: `A51Ref`.
+  * **a70**: `A51Ref`.
+  * **a71**: `A51Ref`.
+  * Pre-v1.2.14 these emitted false-positive `does not resolve in <sibling>` violations on multi-value rows; post-v1.2.14 the handler splits on `[;/\s]+` and resolves each token independently.
+- **`optional_when_blank` field removed** from the contract on all 6 opted-in schemas. The handler always skipped blank cells regardless of this flag — it was documentary-only (Codex Rec #2). The handler comments now document the actual runtime behavior: blank cells are always skipped; the schema-level required-field check fires separately for required cells, and optional cells naturally pass with a blank value.
+
+### Tests
+
+- **5 new regression tests** in `tests/test_schemas_foreign_key_refs.py`:
+  * `test_e2e_a59_multi_valued_source_id_resolves` — pins the v1.2.13 critical: A59 row with `SourceID="S-001;S-002"` and `ExcerptID="E-001;E-002"` (all tokens present in A50/A58) MUST pass with no FK violation.
+  * `test_e2e_a59_multi_valued_source_id_partial_orphan_rejected` — negative half: orphan token in a multi-value list surfaces; the GOOD token does NOT (no false positive).
+  * `test_e2e_a60_orphan_related_claim_id_rejected` — Codex Rec #1: a60 was missing dispatcher-path coverage in v1.2.13.
+  * `test_e2e_a70_orphan_source_claim_ids_token_rejected` — same gap for a70.
+  * `test_extension_no_longer_carries_optional_when_blank` — pins the contract cleanup; a future re-introduction of the documentary flag fails immediately.
+- **`_EXPECTED_FKS` table updated**: tuple shape `(column, table, target_column, multi, optional_when_blank)` → `(column, table, target_column, multi)`. The 9 mismatch entries now declare `multi=True`.
+
+### Operator workflow
+
+Behavioral change: pre-v1.2.14 a workspace whose A59 had multi-source claims (`SourceID="S-001;S-002"`) hit a false-positive orphan FK violation at the F5 hook layer. v1.2.14 fixes this — multi-value rows now resolve correctly. Operators who hit the regression in v1.2.13 should retry their write after upgrading.
+
+### Codex review trail
+
+- **v1.2.13 retroactive review** (was initially skipped because CLI 0.125 hung on multi-file prompts; an infra investigation found CLI 0.105 + gpt-5.4 + `--skip-git-repo-check` + COMPACT prompt as the working combination). Round-1 verdict: REQUEST CHANGES.
+  * **CRITICAL**: 9 FKs misclassified as `multi: false` despite row patterns allowing `;`/`/`-joined IDs. Codex reproduced the false positive against real a59/a71 schemas. **Fixed in v1.2.14**.
+  * **REC #1**: a60 + a70 missing from dispatcher-path e2e coverage. **Fixed in v1.2.14** (2 new tests).
+  * **REC #2**: `optional_when_blank` flag declared in the contract but ignored by the handler. **Fixed in v1.2.14** by removing the field (cleaner contract); handler comments now describe actual behavior.
+- **v1.2.14 round-2 review**: APPROVE (no findings). Codex confirmed (a) all 9 `multi: true` flips match their underlying row patterns, (b) no other FK was missed (A58 SourceID, A71 SourceStoryID, A71 RelatedNFRID are correctly singular by pattern), (c) removing `optional_when_blank` does not break runtime behavior (handler never read it; existing test still proves backward-compatible blank-skip), (d) the 5 new regression tests are sufficient to lock in the fix.
+
+### Result
+
+- 1972 → 1977 tests passing (+5 regression pins).
+- v1.2.13 critical regression closed; pre-existing multi-source workspaces work again.
+- Canon hash unchanged (`6d91f10e`). Manifest stays at 1.2.11.
+
 ## [v1.2.13] — 2026-04-25
 
 **FK cross-artifact backfill across 6 canonical schemas.** v1.2.12 shipped the uniqueness half of canonical-schema cross-row enforcement. v1.2.13 ships the FK half: a new generic `x-bsa-foreign-key-refs` extension parallel to A72's A72-specific `x-bsa-foreign-key-rules`, opted in on A58/A59/A60/A62/A70/A71 with 15 total FK references. Pre-v1.2.13 the existing per-row extensions (`_apply_claim_type_rules`, `_apply_provenance_rules`, etc.) checked that these columns were non-blank when required; post-v1.2.13 they ALSO resolve to the sibling artifact at hook time. Any canonical CSV write with an orphan FK value fails at the F5 hook with a line-numbered message.

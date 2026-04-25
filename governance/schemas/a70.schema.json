@@ -134,7 +134,6 @@
         "table": "A59_claim_register.csv",
         "target_column": "ClaimID",
         "multi": true,
-        "optional_when_blank": true,
         "rationale": "Multi-valued FK: stories derive from one or more claims. INV-08 requires SourceClaimIDs non-empty OR A51Ref set; when non-empty each token MUST resolve in A59."
       },
       {
@@ -142,14 +141,13 @@
         "table": "A62_nfr_register.csv",
         "target_column": "NFRID",
         "multi": true,
-        "optional_when_blank": true,
         "rationale": "Multi-valued FK: stories may link to zero or more NFRs. When non-empty each token MUST resolve in A62."
       },
       {
         "column": "A51Ref",
         "table": "A51_issue_route_register.csv",
         "target_column": "A51Ref",
-        "optional_when_blank": true,
+        "multi": true,
         "rationale": "When the story is deferred / a51-routed, A51Ref must resolve."
       }
     ]

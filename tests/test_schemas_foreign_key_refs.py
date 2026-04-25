@@ -211,34 +211,41 @@ def test_fk_spec_non_dict_fail_closed() -> None:
 
 # ---- Static per-schema pins --------------------------------------
 
-# Expected FK inventory per opted-in schema (v1.2.13 scope).
+# Expected FK inventory per opted-in schema.
+# Tuple shape: (column, table, target_column, multi).
+# v1.2.14 hotfix: corrected `multi` flag for FKs whose row patterns
+# allow `;` / `/` joined IDs (was incorrectly multi=False in v1.2.13,
+# causing false-positive orphan-FK rejection on multi-value rows).
+# Also: `optional_when_blank` field removed from the contract — the
+# handler always skips blank cells (the schema-level required check
+# fires separately for required cells; optional cells naturally pass).
 _EXPECTED_FKS = {
     "a58": [
-        ("SourceID", "A50_source_register.csv", "SourceID", False, False),
+        ("SourceID", "A50_source_register.csv", "SourceID", False),
     ],
     "a59": [
-        ("SourceID", "A50_source_register.csv", "SourceID", False, True),
-        ("ExcerptID", "A58_evidence_excerpts.csv", "ExcerptID", False, True),
-        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", False, True),
+        ("SourceID", "A50_source_register.csv", "SourceID", True),
+        ("ExcerptID", "A58_evidence_excerpts.csv", "ExcerptID", True),
+        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", True),
     ],
     "a60": [
-        ("SourceID", "A50_source_register.csv", "SourceID", False, False),
-        ("RelatedClaimID", "A59_claim_register.csv", "ClaimID", False, False),
-        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", False, True),
+        ("SourceID", "A50_source_register.csv", "SourceID", True),
+        ("RelatedClaimID", "A59_claim_register.csv", "ClaimID", True),
+        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", True),
     ],
     "a62": [
-        ("SourceClaimIDs", "A59_claim_register.csv", "ClaimID", True, True),
-        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", False, True),
+        ("SourceClaimIDs", "A59_claim_register.csv", "ClaimID", True),
+        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", True),
     ],
     "a70": [
-        ("SourceClaimIDs", "A59_claim_register.csv", "ClaimID", True, True),
-        ("RelatedNFRIDs", "A62_nfr_register.csv", "NFRID", True, True),
-        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", False, True),
+        ("SourceClaimIDs", "A59_claim_register.csv", "ClaimID", True),
+        ("RelatedNFRIDs", "A62_nfr_register.csv", "NFRID", True),
+        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", True),
     ],
     "a71": [
-        ("SourceStoryID", "A70_story_register.csv", "StoryID", False, False),
-        ("RelatedNFRID", "A62_nfr_register.csv", "NFRID", False, True),
-        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", False, True),
+        ("SourceStoryID", "A70_story_register.csv", "StoryID", False),
+        ("RelatedNFRID", "A62_nfr_register.csv", "NFRID", False),
+        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", True),
     ],
 }
 
@@ -259,10 +266,10 @@ def test_schema_declares_expected_fk_inventory(
         f"{schema_name}: expected {len(expected)} FKs; got {len(fks or [])}"
     )
     # Build comparable tuples from actual, preserving order.
+    # v1.2.14: optional_when_blank field removed; tuple shape is now 4-element.
     actual = [
         (fk["column"], fk["table"], fk["target_column"],
-         bool(fk.get("multi", False)),
-         bool(fk.get("optional_when_blank", False)))
+         bool(fk.get("multi", False)))
         for fk in fks
     ]
     assert actual == expected, (
@@ -472,3 +479,168 @@ def test_e2e_a59_non_blank_orphan_source_id_rejected(tmp_path: Path) -> None:
     assert ok is False, f"A59: orphan SourceID should fail; got ok={ok}"
     fk_msgs = [m for m in msgs if "x-bsa-foreign-key-refs" in m]
     assert any("S-999" in m for m in fk_msgs), f"FK msgs miss S-999: {msgs}"
+
+
+# ---- v1.2.14 hotfix regressions ---------------------------------
+#
+# v1.2.13 round-1 retroactive Codex review (CLI 0.105 + gpt-5.4) caught:
+#  * 9 FKs misclassified as multi=False, but their schema row patterns
+#    actually allow `;`-/`/`-joined IDs → false-positive orphan FKs
+#    on multi-value rows.
+#  * `optional_when_blank` flag was documentary only — handler ignored
+#    it, contract overstated capabilities.
+#  * a60 / a70 missing from dispatcher-path e2e coverage.
+# v1.2.14 fixes all three. The tests below pin the regressions.
+
+
+def test_e2e_a59_multi_valued_source_id_resolves(tmp_path: Path) -> None:
+    """v1.2.14 round-1 Codex critical regression: A59.SourceID
+    pattern allows `;`-joined IDs (`S-001;S-002`); pre-v1.2.14 the
+    FK handler treated it as single-valued + the WHOLE string was
+    looked up in A50.SourceID → false-positive orphan-FK
+    rejection. v1.2.14 fixes by setting multi=true.
+
+    This test pins the regression: a row with `SourceID="S-001;S-002"`
+    where BOTH S-001 + S-002 exist in A50 MUST pass (no FK
+    violation)."""
+    from governance.schemas.write_validator import validate_canonical_write
+    canon = _make_canon_workspace_with(tmp_path, {
+        "A50_source_register.csv": (
+            "SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,"
+            "Priority,Language,DateOrVersion,Notes\n"
+            "S-001,document,Foo,origin,readable,T2,high,en,2026-01-01,\n"
+            "S-002,document,Bar,origin,readable,T2,high,en,2026-01-01,\n"
+        ),
+        "A58_evidence_excerpts.csv": (
+            "ExcerptID,SourceID,Locator,ExcerptText,Notes\n"
+            "E-001,S-001,loc,text,\n"
+            "E-002,S-002,loc,text,\n"
+        ),
+    })
+    # SourceID and ExcerptID both multi-valued — both should resolve.
+    multi = (
+        "ClaimID,SourceID,ExcerptID,ClaimType,Statement,"
+        "JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes\n"
+        "C-001,S-001;S-002,E-001;E-002,direct,stmt,,,0.85,level-2,\n"
+    )
+    path = str(canon / "A59_claim_register.csv")
+    ok, msgs = validate_canonical_write(path, multi)
+    fk_msgs = [m for m in msgs if "x-bsa-foreign-key-refs" in m]
+    assert not fk_msgs, (
+        f"v1.2.14 hotfix regressed: multi-value A59.SourceID/ExcerptID "
+        f"with all tokens resolving in A50/A58 should NOT trigger FK "
+        f"orphan violations. Got: {fk_msgs}"
+    )
+
+
+def test_e2e_a59_multi_valued_source_id_partial_orphan_rejected(
+    tmp_path: Path,
+) -> None:
+    """Negative half: when one token in a multi-value SourceID is
+    orphan, the orphan token (and only that token) MUST surface as
+    a violation."""
+    from governance.schemas.write_validator import validate_canonical_write
+    canon = _make_canon_workspace_with(tmp_path, {
+        "A50_source_register.csv": (
+            "SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,"
+            "Priority,Language,DateOrVersion,Notes\n"
+            "S-001,document,Foo,origin,readable,T2,high,en,2026-01-01,\n"
+        ),
+        "A58_evidence_excerpts.csv": (
+            "ExcerptID,SourceID,Locator,ExcerptText,Notes\n"
+            "E-001,S-001,loc,text,\n"
+        ),
+    })
+    bad = (
+        "ClaimID,SourceID,ExcerptID,ClaimType,Statement,"
+        "JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes\n"
+        "C-001,S-001;S-999,E-001,direct,stmt,,,0.85,level-2,\n"
+    )
+    ok, msgs = validate_canonical_write(
+        str(canon / "A59_claim_register.csv"), bad,
+    )
+    assert ok is False
+    fk_msgs = [m for m in msgs if "x-bsa-foreign-key-refs" in m]
+    assert any("S-999" in m for m in fk_msgs)
+    # AND no false positive on the GOOD token S-001:
+    assert not any("S-001" in m for m in fk_msgs), (
+        f"S-001 (which DOES resolve) shouldn't appear in FK violations: "
+        f"{fk_msgs}"
+    )
+
+
+def test_e2e_a60_orphan_related_claim_id_rejected(tmp_path: Path) -> None:
+    """v1.2.14 Codex Rec #1: a60 was missing from dispatcher-path e2e
+    coverage in v1.2.13. This test exercises the new generic FK
+    handler against A60 end-to-end."""
+    from governance.schemas.write_validator import validate_canonical_write
+    canon = _make_canon_workspace_with(tmp_path, {
+        "A59_claim_register.csv": (
+            "ClaimID,SourceID,ExcerptID,ClaimType,Statement,"
+            "JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes\n"
+            "C-001,S-001,E-001,direct,stmt,,,0.85,level-2,\n"
+        ),
+        "A50_source_register.csv": (
+            "SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,"
+            "Priority,Language,DateOrVersion,Notes\n"
+            "S-001,document,Foo,origin,readable,T2,high,en,2026-01-01,\n"
+        ),
+    })
+    bad = (
+        "NegEvID,SourceID,ExcerptRef,RelatedClaimID,NegativeFinding,"
+        "A51Ref,Notes\n"
+        "N-001,S-001,E-001:1,C-999,finding,,\n"  # C-999 orphan
+    )
+    ok, msgs = validate_canonical_write(
+        str(canon / "A60_negative_evidence_register.csv"), bad,
+    )
+    assert ok is False
+    fk_msgs = [m for m in msgs if "x-bsa-foreign-key-refs" in m]
+    assert any("C-999" in m for m in fk_msgs), f"missed C-999: {msgs}"
+
+
+def test_e2e_a70_orphan_source_claim_ids_token_rejected(tmp_path: Path) -> None:
+    """v1.2.14 Codex Rec #1: a70 was missing from dispatcher-path e2e
+    coverage in v1.2.13. Multi-valued SourceClaimIDs with one orphan
+    token MUST surface."""
+    from governance.schemas.write_validator import validate_canonical_write
+    canon = _make_canon_workspace_with(tmp_path, {
+        "A59_claim_register.csv": (
+            "ClaimID,SourceID,ExcerptID,ClaimType,Statement,"
+            "JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes\n"
+            "C-001,S-001,E-001,direct,stmt,,,0.85,level-2,\n"
+            "C-002,S-001,E-001,direct,stmt,,,0.85,level-2,\n"
+        ),
+    })
+    bad = (
+        "StoryID,Title,Persona,StoryText,AcceptanceCriteria,"
+        "SourceClaimIDs,RelatedNFRIDs,Priority,EstimationHint,"
+        "INVESTStatus,A51Ref,Notes\n"
+        # C-001 + C-002 OK; C-999 orphan
+        "STORY-001,Foo,P,stxt,ac,C-001;C-002;C-999,,high,M,pass,,\n"
+    )
+    ok, msgs = validate_canonical_write(
+        str(canon / "A70_story_register.csv"), bad,
+    )
+    assert ok is False
+    fk_msgs = [m for m in msgs if "x-bsa-foreign-key-refs" in m]
+    assert any("C-999" in m for m in fk_msgs)
+
+
+def test_extension_no_longer_carries_optional_when_blank() -> None:
+    """v1.2.14 Codex Rec #2: the documentary-only `optional_when_blank`
+    flag was removed from the contract. Pin that no opted-in schema
+    declares it any more (else the contract overstates capabilities
+    again)."""
+    from governance.schemas.loader import load_schema
+    for name in _EXPECTED_FKS:
+        schema = load_schema(name)
+        ext = schema["x-bsa-foreign-key-refs"]
+        for fk in ext["foreign_keys"]:
+            assert "optional_when_blank" not in fk, (
+                f"{name}.x-bsa-foreign-key-refs.{fk.get('column')}: "
+                f"optional_when_blank flag re-introduced. v1.2.14 hotfix "
+                f"removed it because the handler ignored it (documentary "
+                f"only). Either implement runtime semantics or keep the "
+                f"contract clean."
+            )

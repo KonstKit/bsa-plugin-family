@@ -106,21 +106,21 @@
         "column": "SourceID",
         "table": "A50_source_register.csv",
         "target_column": "SourceID",
-        "optional_when_blank": true,
+        "multi": true,
         "rationale": "Claims of type direct/inference MUST have a non-blank SourceID that resolves in A50. analyst_judgment claims have blank SourceID (enforced separately by _apply_claim_type_rules); when blank, this FK check is skipped."
       },
       {
         "column": "ExcerptID",
         "table": "A58_evidence_excerpts.csv",
         "target_column": "ExcerptID",
-        "optional_when_blank": true,
+        "multi": true,
         "rationale": "Same conditional shape as SourceID: required-non-blank for direct/inference, blank-allowed for analyst_judgment. When non-blank MUST resolve in A58."
       },
       {
         "column": "A51Ref",
         "table": "A51_issue_route_register.csv",
         "target_column": "A51Ref",
-        "optional_when_blank": true,
+        "multi": true,
         "rationale": "When a claim is A51-routed, A51Ref MUST resolve in A51. Blank A51Ref means the claim is not routed; the blank case is allowed."
       }
     ]

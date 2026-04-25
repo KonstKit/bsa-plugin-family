@@ -989,7 +989,6 @@ def _apply_foreign_key_refs(
               "table": "A50_source_register.csv",
               "target_column": "SourceID",
               "multi": false,
-              "optional_when_blank": false,
               "rationale": "Every excerpt must trace to a registered source."
             },
             {
@@ -997,7 +996,6 @@ def _apply_foreign_key_refs(
               "table": "A59_claim_register.csv",
               "target_column": "ClaimID",
               "multi": true,
-              "optional_when_blank": true,
               "rationale": "Stories trace to direct claims via SourceClaimIDs OR route through A51Ref."
             }
           ]
@@ -1015,12 +1013,18 @@ def _apply_foreign_key_refs(
       column value is split on ``[;/\\s]+`` into multiple tokens +
       each token is resolved independently. Matches the convention
       used by the existing A72 FK handler + A70.SourceClaimIDs /
-      A62.SourceClaimIDs / A70.RelatedNFRIDs.
-    * ``optional_when_blank`` (optional, default ``false``) — when
-      ``true``, a blank cell skips the FK check for that row (the
-      schema's required-field check still applies separately). Used
-      for fields like A59.SourceID that are non-blank only when
-      ``ClaimType in {direct, inference}``.
+      A62.SourceClaimIDs / A70.RelatedNFRIDs. v1.2.14 hotfix audit:
+      every FK whose row-shape pattern allows ``;`` / ``/`` joined
+      IDs MUST set ``multi: true`` — otherwise multi-value rows are
+      false-positive-rejected as orphan FKs (regression v1.2.13
+      shipped + Codex retroactive review caught).
+    * **v1.2.14**: the prior ``optional_when_blank`` field was
+      removed from the contract. The handler ALWAYS skips blank
+      cells regardless of any flag — the schema-level required-
+      field check fires separately for required cells, and optional
+      cells naturally pass with a blank value. The flag was
+      documentary-only (handler never read it); v1.2.14 cleans up
+      the contract to describe only the actual runtime behavior.
 
     Same fail-CLOSED partial-config behavior as the v1.2.8 A61
     anchor-binding handler: a FK entry missing ``column``,
@@ -1070,7 +1074,9 @@ def _apply_foreign_key_refs(
             )
             continue
         multi = bool(fk.get("multi", False))
-        optional = bool(fk.get("optional_when_blank", False))
+        # NOTE (v1.2.14): the prior `optional_when_blank` flag is
+        # gone. Handler always skips blank cells; the schema-level
+        # required-field check fires separately for required cells.
 
         if sibling_cache is None:
             # Path doesn't fit the canonical layout (test fixture
@@ -1097,12 +1103,11 @@ def _apply_foreign_key_refs(
         for row_idx, row in enumerate(rows, start=2):
             raw = (row.get(column) or "").strip()
             if not raw:
-                # Blank cell — skip regardless of optional_when_blank.
-                # The optional flag gates what the handler does when
-                # the cell IS blank; here we simply note that a blank
-                # FK can't resolve, and the schema's required-field
-                # check (or the per-row rules like _apply_claim_type_
-                # rules) handles the "must be non-blank" case.
+                # Blank cell — skip. The schema-level required check
+                # fires separately for required cells (and per-row
+                # rules like _apply_claim_type_rules cover the
+                # "must be non-blank for direct/inference" cases on
+                # A59). Optional-blank cells naturally pass.
                 continue
             # Multi-valued: split on the documented delimiters
             # (matches the A72 handler's convention). Single-valued:

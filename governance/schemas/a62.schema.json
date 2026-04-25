@@ -123,14 +123,13 @@
         "table": "A59_claim_register.csv",
         "target_column": "ClaimID",
         "multi": true,
-        "optional_when_blank": true,
         "rationale": "Multi-valued FK: NFR rows derive from one or more A59 claims. Delimiters per convention: ; / whitespace. Optional-when-blank because an NFR row may be A51-routed via A51Ref with no direct claim backing."
       },
       {
         "column": "A51Ref",
         "table": "A51_issue_route_register.csv",
         "target_column": "A51Ref",
-        "optional_when_blank": true,
+        "multi": true,
         "rationale": "When the NFR is deferred / uncertain, A51Ref must resolve."
       }
     ]
