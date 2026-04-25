@@ -4,6 +4,54 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.18] — 2026-04-25
+
+**Phase 7 L1b miner skeleton — opt-in operator scaffolding.** Third Phase 7 layer (after L0 tunable inventory in v1.1.14 and L1a telemetry collector in v1.2.4). Reads `analysis/telemetry/run_*.json` snapshots, filters them to a rolling window, and emits a proposal bundle to `analysis/telemetry/miner_proposals.json` conforming to the new `governance/schemas/miner_proposal.schema.json`. **The mining algorithm itself is a stub** — `_mine_proposals` always returns `[]`; real pattern detection / statistical-significance gating is deferred until enough pilot telemetry exists. The skeleton's value is establishing the bundle shape + window/validity logic so v1.2.19 (L2 auto-patcher) can develop against an empty-bundle baseline today.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.17+hash:ea69b86e` — **unchanged**. New schema + script + tests + design-doc edits all live OUTSIDE POLICY_GLOBS; manifest stays at 1.2.17. Canon-neutral release in the v1.2.4 / v1.2.6 / v1.2.7 / v1.2.8 / v1.2.10 / v1.2.12 / v1.2.13 / v1.2.14 family.
+
+### Added
+
+- **`governance/schemas/miner_proposal.schema.json`** — Draft 2020-12 schema for the miner-proposal bundle. Top-level: `schema_version` / `generated_at` / `window` (window_days + today_utc) / `summary` / `proposals[]`. Per-proposal `$defs/proposal`: `proposal_id` (`P7-<context>-NNNN` pattern) + `tunable_id` (must match a `config/tunables.yaml` id) + `current_value` / `proposed_value` (string-encoded for both numeric + future enum tunables) + `confidence` (0..1) + `evidence_run_ids[]` (telemetry run_ids that motivated the proposal) + `linked_invariants[]` (mirrors tunable's invariant links) + `change_class` (L1_auto_tunable / L2_proposal_only) + `immutable_conflict` (defensive flag — true iff L1+linked) + `rationale` (analyst-readable). Summary count conservation invariant: `runs_total == runs_in_window + runs_excluded_outside_window + runs_excluded_malformed`. NOT in POLICY_GLOBS, NOT F5-validated.
+- **`scripts/phase_7_miner.py`** — stdlib-only operator runner mirroring the v1.2.4 telemetry-collector + v1.2.16 freshness-audit pattern: defensive JSON reads, lightweight shape check (`_validate_telemetry_shape` — required fields + string types only, full jsonschema validation is caller's responsibility), strict ISO-8601-Z `_parse_captured_at` (no offset, no missing-Z, no Unicode digits — mirrors v1.2.16 R4/R5 reach-equality lesson), rolling-window filter with `(today_utc - window_days, today_utc]` semantics (lower bound OPEN — exact-day-boundary excluded), atomic JSON write via tempfile + os.replace. CLI flags: `--workspace` / `--telemetry-dir` (override for fixture-based runs, no analysis/ dir required) / `--window-days` / `--today` (test-only) / `--output-path` / `--print-only` / `--quiet`. Stub `_mine_proposals` is the integration point for the future real algorithm — the function signature is stable. Exit codes: 0 on completion, 2 on invocation error.
+- **`tests/fixtures/telemetry/`** — 5 synthetic snapshots: 3 recent (`run_001`/`002`/`003`, captured 2026-04-{20,15,10}), 1 old outside window (`run_004`, 2026-01-05), 1 malformed (`run_005_malformed_missing_fields.json`, missing required fields). Lets `test_build_bundle_against_committed_fixtures` pin end-to-end behavior with deterministic input.
+- **39 new tests** in `tests/test_phase_7_miner.py`:
+  * Schema shape pins (top-level required + `$defs/proposal` required + `summary` required). 3 tests.
+  * Pure-unit `_parse_captured_at`: ISO-Z accepted / no-Z rejected / `+02:00` offset rejected / short string rejected / non-string rejected / invalid calendar date rejected. 6 tests.
+  * Pure-unit `_validate_telemetry_shape`: minimal valid / missing fields / non-dict / captured_at must be string. 4 tests.
+  * `_load_telemetry_runs`: empty dir / missing dir / skips non-`run_*.json` (including its own `miner_proposals.json` output) / counts malformed separately / deterministic sorted-filename order. 5 tests.
+  * `_filter_by_window`: in-window / outside-window-old / lower-bound OPEN (exactly-N-days-ago excluded) / one-day-inside-boundary / future-dated excluded / unparseable captured_at excluded. 6 tests.
+  * `_mine_proposals` stub returns `[]` regardless of input (3 cases parameterized). 1 test.
+  * `build_bundle`: empty workspace / validates against schema (jsonschema) / summary counts add up (conservation invariant) / committed-fixtures end-to-end. 4 tests.
+  * CLI: `--print-only` doesn't write / writes bundle / `--telemetry-dir` override (no workspace needed) / `--window-days` override pulls older runs in / uninit workspace exit 2 / invalid `--window-days` (0 + negative) / invalid `--today` / short-year `--today` rejected. 9 tests.
+  * Atomic write hygiene: no `.tmp` leftovers. 1 test.
+
+### Updated
+
+- **`docs/phase_7_design.md`** — L1b row in the layer table marked "skeleton shipped (stub algorithm)"; new "L1b status (v1.2.18)" section documents bundle shape, defensive guarantees (count conservation + immutable_conflict flag), and what's deferred to a future release.
+
+### Result
+
+- `2108 → 2152` tests passing (+39 first-run + 5 R1-fix regressions in `tests/test_phase_7_miner.py`; all pass on first run after self-review checklist applied per v1.2.16/v1.2.17 retro).
+- Canon hash `ea69b86e` — **unchanged** (canon-neutral release; manifest stays at 1.2.17).
+- Privacy scan: 0 blockers.
+- `phase_7_lint.py`: PASS (no tunable inventory changes).
+- Fixture runner: 9 PASS, 0 findings.
+- `phase_7_miner.py` is **opt-in** in v1.2.18: NOT wired into CI or any mandatory marker family. Operators invoke it manually. Algorithm is a stub — the test `test_mine_proposals_stub_returns_empty` will FAIL when a real algorithm lands, which is the explicit signal to update the test as part of the algorithm PR.
+
+### Self-review applied
+
+Following the v1.2.17 retro, applied the structured pre-Codex self-review: (1) impact analysis via `grep miner/L1b` (existing references in `docs/faq.md` + `docs/phase_7_design.md` + `governance/schemas/telemetry_run.schema.json` — purely informational, no code consumers); (2) cross-schema reads of `telemetry_run.schema.json` to align bundle's `evidence_run_ids` pattern with `run_id` pattern; (3) edge-case enumeration (empty dir / missing dir / non-`run_*.json` filter / malformed JSON / shape-failed JSON / unparseable captured_at / future-dated / window-boundary inclusivity / lower-bound openness); (4) layer-overlap check (no existing miner / no clash with telemetry collector or freshness/triangulation audits); (5) reach equality between `_parse_captured_at` and the schema's `captured_at` pattern (handler is STRICTER than schema — accepts only `Z`-suffixed UTC, while schema also allows `±HH:MM` — this is intentional defensive narrowing for window arithmetic, pinned by `test_parse_captured_at_rejects_offset`). First-run pytest: **39/39 passed**.
+
+### Codex review
+
+- **Round 1: REQUEST CHANGES.** Two findings:
+  * **MEDIUM (phase_7_miner.py:379)** — explicit `--telemetry-dir` typo previously slipped through as exit 0 + empty bundle (because `_load_telemetry_runs` treats missing dir as empty). Fail-open masked operator typos as "zero telemetry", risky for the empty-bundle L2 baseline. **Fixed**: `main()` now validates `args.telemetry_dir.is_dir()` and rejects with exit 2 + clear error. The IMPLICIT (workspace-derived) path remains permissive — an `analysis/telemetry/` that doesn't exist yet is a legitimate "no runs captured" state. New regression tests `test_cli_explicit_telemetry_dir_missing_returns_2`, `test_cli_explicit_telemetry_dir_pointing_to_file_returns_2`, `test_cli_implicit_missing_telemetry_dir_is_permissive`.
+  * **LOW (schema description + script docstrings)** — schema text said runs "validate against telemetry_run.schema.json" but implementation does only a lightweight top-level shape check; non-parseable `captured_at` (e.g., `+02:00` offset) was lumped into `runs_excluded_outside_window`, misleading operators debugging rejected timestamps. **Fixed**: (a) split `_filter_by_window` return into 3-tuple `(in_window, outside, parse_failed)`; (b) `build_bundle` folds `parse_failed` into `runs_excluded_malformed` (semantically correct — broken input, not "out of range"); (c) schema description rewritten to clarify that the miner does lightweight check, where parse-failed timestamps land, and that full validation is caller's choice; (d) script docstring on `_validate_telemetry_shape` aligned with actual contract. New regression tests `test_filter_unparseable_captured_at_counted_as_parse_failed`, `test_filter_offset_timestamp_counted_as_parse_failed`, `test_build_bundle_parse_failed_captured_at_folded_into_malformed`.
+- **Round 2: APPROVE — no findings.** Codex confirmed R1-FIX-1 cleanly separates implicit workspace-derived telemetry (permissive first-run state) from explicit `--telemetry-dir` override (fail-fast on typo) — operator with intent for empty override can still point at existing empty directory. R1-FIX-2 partitioning + folding preserves the conservation invariant by construction; schema/docstrings no longer overclaim full validation; all R1 branches pinned by regression tests. **2 rounds total** (vs 6 for v1.2.15+v1.2.16, 4 for v1.2.17) — self-review checklist + post-refactor `grep` lessons applied effectively this release.
+
+- `2108 → 2152` tests passing (+39 initial + 5 R1-fix regressions in `tests/test_phase_7_miner.py`).
+
 ## [v1.2.17] — 2026-04-25
 
 **Reality-probe Triangulation — opt-in operator audit over A59 SourceType independence.** Second Reality-probe in the v1.2.16+ wave (closes the pair started by Freshness in v1.2.16). For "important" claims — defined as a three-branch OR over `Criticality=level-1` ∨ `A51.Severity ∈ {high, critical}` (joined via `RelatedClaimID`) ∨ `A50.Priority=high` (joined via `SourceID`) — verifies that the bound A50 sources span at least N distinct `SourceType` values (default 2). Independence is structural (SourceType, not SourceID) — three documents corroborate authorship, not the underlying claim. `analyst_judgment` claims are always skipped (no source binding by design per INV-07). Audit is **non-blocking by default** (verdicts: `pass` / `warn` / `n/a`, never `fail`).

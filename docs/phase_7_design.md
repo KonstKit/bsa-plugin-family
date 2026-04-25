@@ -16,7 +16,7 @@ Phase 7 has three layers:
 |---|---|---|
 | **L0 (foundation)** | Formal tunable inventory + IMMUTABLE_CONFLICT lint + safety contract doc | **v1.1.14** |
 | **L1a (telemetry collector)** | Per-run KPI snapshot + storage shape | **v1.2.4** (P1+P2: schema + collector skeleton; KPI-001 + KPI-006 covered) |
-| **L1b (miner)** | Aggregate snapshots across N runs + detect tunable-knob drift + propose tuning patches | v1.2.5+ candidate (deferred — needs real pilot data to calibrate) |
+| **L1b (miner skeleton)** | Aggregate snapshots across N runs + detect tunable-knob drift + propose tuning patches | **v1.2.18 — skeleton shipped (stub algorithm)**; real pattern detection deferred until enough pilot telemetry exists. |
 | **L2 (auto-patcher)** | Auto-emit proposals (PRs) for tunables that need analyst sign-off (always reviewed before merge — no auto-merge in L2; the "auto" is the proposal generation, not the apply) | v1.3+ |
 
 Shipping L0 first lets the tunable inventory get pinned (so future drift is caught) without committing to a full collector backend before there's real pilot telemetry to learn from.
@@ -87,6 +87,24 @@ These are L1/L2 concerns — v1.2.x candidates pending real pilot data.
 **Telemetry collector (P2)** — `scripts/phase_7_telemetry_collector.py`. Stdlib-only. v1.2.4 captures KPI-001 weighted (per `reliability_tier_spec.md` line 142) + KPI-006 story coverage (per `bsa-traceability-matrix/SKILL.md` line 71). Both compute null + `status=n/a` when their upstream artifacts (A59 / A70 / A72) are absent. Optional `validator_observations` + `threshold_trigger_counts` are schema fields but unpopulated in v1.2.4 — operator-side L1b miner work will populate them once a structured marker-emission convention exists.
 
 **v1.2.4 boundary**: ships data capture only. No miner; no patch proposer; no aggregation across runs. Operators may capture snapshots today + retain them for the L1b miner without backend dependencies. The intent is to start collecting real-pilot data NOW so L1b lands with an actual training set instead of synthetic baselines.
+
+## L1b status (v1.2.18)
+
+**Miner skeleton shipped.** `scripts/phase_7_miner.py` reads telemetry snapshots from `analysis/telemetry/run_*.json`, filters them to a rolling window (default 30 days, CLI-overridable via `--window-days`), and emits a proposal bundle to `analysis/telemetry/miner_proposals.json` conforming to `governance/schemas/miner_proposal.schema.json`.
+
+**v1.2.18 boundary**: skeleton + schema + writer + window-filter + telemetry-validity logic. The mining algorithm itself is a **stub** — `_mine_proposals` always returns `[]`. Real pattern detection / statistical-significance gating is deferred until enough pilot telemetry exists; the function signature is the integration point.
+
+The skeleton's value is three-fold:
+1. **Bundle shape pinned**: schema + writer + atomic-IO contract are stable now, so v1.2.19 (L2 auto-patcher) consumes a known shape.
+2. **Operational plumbing established**: window math, malformed-file handling, future-dated-run exclusion, deterministic ordering — all production-correctness concerns settled before the algorithmic work starts.
+3. **L2 unblocked**: v1.2.19 can develop against an empty-bundle baseline today, ahead of the real algorithm landing.
+
+**Defensive guarantees** carried into the schema:
+- `summary` count conservation: `runs_total == runs_in_window + runs_excluded_outside_window + runs_excluded_malformed`.
+- Each proposal carries `immutable_conflict: bool` set defensively when `change_class=L1_auto_tunable AND linked_invariants != []`. The L2 patcher MUST refuse to emit a patch for any flagged proposal regardless of analyst sign-off — this is the runtime mirror of `phase_7_lint.py` C5 (IMMUTABLE_CONFLICT static check).
+- Telemetry-run shape check is lightweight (required-fields + string types only) — full schema validation is L1b's caller's responsibility (operators may choose to run `jsonschema` themselves before invoking the miner).
+
+NOT canonical state. NOT F5-validated. NOT in POLICY_GLOBS. The miner's input + output both live under `analysis/telemetry/` (operator-side observation surface, deletable + regenerable without policy implications).
 
 ## Open questions for v1.2.x design
 

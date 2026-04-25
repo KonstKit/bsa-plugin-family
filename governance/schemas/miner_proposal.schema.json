@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/miner_proposal.schema.json",
+  "title": "Phase 7 L1b miner proposal bundle",
+  "description": "Schema for analysis/telemetry/miner_proposals.json produced by scripts/phase_7_miner.py (v1.2.18, L1b skeleton). One file per miner run; aggregates telemetry snapshots over a window and emits zero or more tuning proposals against config/tunables.yaml entries. v1.2.18 SHIPS THE SKELETON ONLY — the mining algorithm itself is a stub that always returns empty `proposals` (real pattern-detection / statistical-significance gates land in a future release once enough pilot telemetry exists). NOT canonical state. NOT F5-validated. NOT in POLICY_GLOBS. Strictly read-only with respect to canonical state — proposals are advisory, never auto-applied (L2 / v1.2.19 ships the patcher that turns proposals into PR-ready patches; analyst sign-off is still required to merge). See docs/phase_7_design.md for the full L0 → L1a → L1b → L2 architecture.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "window",
+    "summary",
+    "proposals"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?$",
+      "description": "Miner-proposal-bundle shape version. v1.2.18 ships 1.0; bumped on breaking shape changes (additive optional fields keep 1.0)."
+    },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$",
+      "description": "ISO-8601 UTC timestamp when the miner produced this bundle. Same shape as telemetry_run.captured_at (without ±HH:MM offset — UTC-only)."
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window_days", "today_utc"],
+      "properties": {
+        "window_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Rolling window length in days. Telemetry runs whose `captured_at` is older than (today_utc - window_days) are excluded from analysis. v1.2.18 default 30; CLI override via --window-days."
+        },
+        "today_utc": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "UTC reference date for the window calculation. Production runs use today's UTC date; tests inject a fixed value via --today."
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runs_total",
+        "runs_in_window",
+        "runs_excluded_outside_window",
+        "runs_excluded_malformed",
+        "proposals_count",
+        "proposals_immutable_conflict_count"
+      ],
+      "properties": {
+        "runs_total": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "All `run_*.json` files discovered in the telemetry directory, regardless of window or validity."
+        },
+        "runs_in_window": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Runs whose `captured_at` falls within (today_utc - window_days, today_utc] AND pass the lightweight top-level shape check (required fields present + correct types — full jsonschema validation against telemetry_run.schema.json is the caller's responsibility, kept out of the stdlib-only miner)."
+        },
+        "runs_excluded_outside_window": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Runs that passed the shape check AND parsed `captured_at` as a strict YYYY-MM-DDTHH:MM:SSZ timestamp BUT fell outside the window — either older than `today_utc - window_days` or future-dated relative to `today_utc`. Note: a `captured_at` that doesn't parse as the strict Z-suffixed UTC form is classified as **malformed**, not outside-window (it's broken input, not a valid out-of-range value)."
+        },
+        "runs_excluded_malformed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Files counted as broken input. Includes: (a) JSON-parse failures; (b) files whose top-level shape doesn't include the telemetry-run required fields (`schema_version` / `captured_at` / `run_id` / `plugin_version` / `canon_policy_version` / `kpi_observations` / `summary`); (c) files whose `captured_at` field is a string but doesn't parse as `YYYY-MM-DDTHH:MM:SSZ` (e.g., `+02:00` offsets, fractional seconds, missing-Z forms — the miner narrows captured_at parsing for window-arithmetic safety, see scripts/phase_7_miner.py docstring). Operator-readable signal: 'X telemetry files are corrupt or non-UTC'."
+        },
+        "proposals_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total proposals in the `proposals` array. v1.2.18 stub algorithm always returns 0 — real algorithm in a future release."
+        },
+        "proposals_immutable_conflict_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Subset of proposals where `immutable_conflict=true`. The L2 patcher (v1.2.19) MUST refuse to emit a patch for these, regardless of analyst sign-off — they would violate INV-XX. Always 0 in v1.2.18 stub but pinned in the schema so L2 can rely on the field."
+        }
+      }
+    },
+    "proposals": {
+      "type": "array",
+      "description": "Zero or more tuning proposals against config/tunables.yaml entries. v1.2.18 stub algorithm returns []. Each proposal is advisory until L2 (v1.2.19) materializes it as a patch + analyst sign-off + manual PR.",
+      "items": {
+        "$ref": "#/$defs/proposal"
+      }
+    }
+  },
+  "$defs": {
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proposal_id",
+        "tunable_id",
+        "current_value",
+        "proposed_value",
+        "confidence",
+        "evidence_run_ids",
+        "linked_invariants",
+        "change_class",
+        "immutable_conflict",
+        "rationale"
+      ],
+      "properties": {
+        "proposal_id": {
+          "type": "string",
+          "pattern": "^P7-[A-Z0-9]{4,12}-[0-9]{4}$",
+          "description": "Stable identifier `P7-<short-context>-NNNN` (e.g., `P7-KPI001-0001`). Lets L2 dedupe proposals across miner runs."
+        },
+        "tunable_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Must match an `id` from `config/tunables.yaml`. The L2 patcher resolves this to (source_file, source_line, allowed_range)."
+        },
+        "current_value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Verbatim copy of `tunables.yaml[tunable_id].current_value` at miner run time. Lets L2 detect drift between miner observation and present state."
+        },
+        "proposed_value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Suggested replacement value. Must be parseable as the same type as `current_value` (numeric tunables only in v1.2.18; enum tunables out of scope until phase_7_lint extends to non-numeric ranges). MUST fall within `tunables.yaml[tunable_id].allowed_range` — the L2 patcher rejects out-of-range proposals."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Mining confidence in [0, 1]. Reserved for future statistical significance gating; v1.2.18 stub never emits proposals so the field is shape-only here."
+        },
+        "evidence_run_ids": {
+          "type": "array",
+          "minItems": 0,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_\\-]{8,64}$"
+          },
+          "description": "Telemetry `run_id` values that produced the signal motivating this proposal. Provenance per Safety Contract item 3 (every L1 patch carries the telemetry rows it observed)."
+        },
+        "linked_invariants": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^INV-[0-9]{2}$"
+          },
+          "description": "Mirror of `tunables.yaml[tunable_id].linked_invariants`. Empty list when the tunable touches no invariant."
+        },
+        "change_class": {
+          "type": "string",
+          "enum": ["L1_auto_tunable", "L2_proposal_only"],
+          "description": "Mirror of `tunables.yaml[tunable_id].change_class`. Lets L2 dispatch differently — L1_auto_tunable proposals can become PR-ready patches automatically; L2_proposal_only proposals require analyst sign-off before any patch is generated."
+        },
+        "immutable_conflict": {
+          "type": "boolean",
+          "description": "True iff `change_class == L1_auto_tunable` AND `linked_invariants` is non-empty. The L2 patcher MUST refuse to emit a patch for any proposal with this flag set, regardless of analyst sign-off — applying it would violate the IMMUTABLE_CONFLICT lint rule (phase_7_lint.py C5). The miner sets this flag defensively so a misconfigured tunable can't slip through L2."
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable explanation: why this tunable, what telemetry pattern motivated the proposal, what risk the change addresses. Required so analysts have context during L2 sign-off."
+        }
+      }
+    }
+  }
+}

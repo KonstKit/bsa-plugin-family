@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "captured_at": "2026-04-20T10:00:00Z",
+  "run_id": "fixture-run-001",
+  "plugin_version": "1.2.17",
+  "canon_policy_version": "1.2.17+hash:ea69b86e",
+  "kpi_observations": {
+    "kpi_001_weighted_coverage": {
+      "value": 0.82,
+      "target": 0.75,
+      "comparison": ">=",
+      "status": "at_target",
+      "numerator": 8.2,
+      "denominator": 10
+    },
+    "kpi_006_story_coverage": {
+      "value": 0.95,
+      "target": 0.9,
+      "comparison": ">=",
+      "status": "at_target",
+      "numerator": 19,
+      "denominator": 20
+    }
+  },
+  "summary": {
+    "kpis_captured": 2,
+    "kpis_at_target": 2,
+    "kpis_below_target": 0
+  }
+}
