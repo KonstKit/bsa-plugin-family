@@ -371,6 +371,76 @@ def _parse_a48_string(text: str) -> dict[str, str]:
     return fields
 
 
+# R4 fix: ASCII-exact `[0-9]` instead of `\d`. Python's `\d` matches
+# every Unicode digit category (Arabic-Indic, fullwidth, etc.), but
+# the schema property pattern uses ASCII `[0-9]` — a Unicode-digit
+# input like `٢٠٢٥-٠٢-٣٠` would match `\d{4}-\d{2}-\d{2}` here, fail
+# strptime, and re-introduce the double-violation R3 was meant to
+# eliminate. ASCII-exact gate keeps the handler's reach equal to the
+# property's regex.
+_STRICT_DATE_SHAPE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+
+
+def _apply_strict_date_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
+    """Apply ``x-bsa-strict-date-rules`` extension (v1.2.16 R2) against a row.
+
+    For each column listed in ``columns``, if the cell is non-empty AND
+    not the literal string ``unknown`` AND matches the YYYY-MM-DD shape
+    regex, parse it strictly via ``datetime.strptime('%Y-%m-%d')``.
+    Emits a violation when the value matches the shape but is not a
+    real calendar date (e.g. ``2025-02-30``, ``2025-13-99``).
+
+    Skips:
+      * empty string / ``unknown`` — gradual-backfill / cannot-assess
+        sentinels (per the schema's property description; freshness
+        audit treats them as ``n/a``).
+      * shape-invalid values (e.g. ``not-a-date``, ``2025/08/10``) —
+        the property's own pattern regex catches these first; emitting
+        a second violation here would be redundant noise (R3 fix).
+
+    Generic over schemas: any future schema that adds a date-typed
+    column with the same gradual-backfill semantics can opt in by
+    declaring ``x-bsa-strict-date-rules.columns: [...]``.
+    """
+    rules = schema.get("x-bsa-strict-date-rules", {})
+    if not isinstance(rules, dict) or not rules:
+        return []
+    columns = rules.get("columns", [])
+    if not isinstance(columns, list):
+        return []
+    from datetime import datetime as _dt
+    violations: list[str] = []
+    for col in columns:
+        raw = row.get(col)
+        if raw is None:
+            continue
+        # R5 fix: do NOT strip whitespace before the shape check —
+        # strip would let `" 2025-02-30 "` (rejected by schema regex
+        # for whitespace) reach the handler and produce a redundant
+        # second violation. The schema's pattern is anchored ASCII
+        # exact; the handler must mirror that reach precisely. Empty
+        # / `unknown` skips below use the raw value too so semantics
+        # match the schema's literal alternatives.
+        val = raw
+        if not val or val == "unknown":
+            continue
+        if not _STRICT_DATE_SHAPE.match(val):
+            # Shape-invalid — leave it to the property's regex pattern
+            # to flag (avoid double violations on the same cell).
+            # Also covers whitespace-padded values, Unicode digits,
+            # and case variants of `unknown` — all of which the
+            # schema's pattern rejects on its own.
+            continue
+        try:
+            _dt.strptime(val, "%Y-%m-%d").date()
+        except ValueError:
+            violations.append(
+                f"line {row_idx} {col}: invalid calendar date "
+                f"{val!r} (regex shape passes but date does not exist)"
+            )
+    return violations
+
+
 def _apply_claim_type_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     """Apply A59-style ``x-bsa-claim-type-rules`` extension against a row.
 
@@ -1317,7 +1387,11 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
         import jsonschema  # lazy
 
         schema = _loader.load_schema(schema_name)
-        expected = schema["x-bsa-csv-columns-order"]["order"]
+        col_extension = schema["x-bsa-csv-columns-order"]
+        expected = col_extension["order"]
+        # v1.2.16: optional_order lists additive columns that MAY appear
+        # in the CSV without being required. Backward-compatible default.
+        optional = col_extension.get("optional_order", [])
         validator = jsonschema.Draft202012Validator(schema)
         # Build the sibling-artifact cache once per validation run.
         # ``None`` when the path is outside the canonical layout — the
@@ -1334,9 +1408,11 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
             reader = csv.DictReader(io.StringIO(content))
             actual = set(reader.fieldnames or [])
             expected_set = set(expected)
-            if actual != expected_set:
-                missing = sorted(expected_set - actual)
-                extra = sorted(actual - expected_set)
+            optional_set = set(optional)
+            allowed_set = expected_set | optional_set
+            missing = sorted(expected_set - actual)
+            extra = sorted(actual - allowed_set)
+            if missing or extra:
                 if missing:
                     violations.append(f"<columns>: missing required columns: {missing}")
                 if extra:
@@ -1369,6 +1445,11 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
                 violations.extend(_apply_provenance_rules(row, schema, row_idx))
                 violations.extend(_apply_invest_rules(row, schema, row_idx))
                 violations.extend(_apply_deferral_rules(row, schema, row_idx))
+                #   x-bsa-strict-date-rules (A50, v1.2.16 R2):
+                #     non-empty/non-'unknown' values in listed columns
+                #     must parse as real calendar dates (closes the
+                #     shape-vs-calendar gap on EffectiveDate).
+                violations.extend(_apply_strict_date_rules(row, schema, row_idx))
                 # Cross-artifact extension rules (v1.1.3, sibling reads).
                 # Same C2 pattern but with path + sibling_cache so the
                 # handler can resolve A50/A59/A62/A70 entries at hook time.

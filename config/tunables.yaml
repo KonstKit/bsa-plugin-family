@@ -166,6 +166,22 @@ tunables:
     change_class: L1_auto_tunable
     rationale: Movement budget for existing labels. Pure layout-quality tunable.
 
+  # ---- Freshness audit threshold (v1.2.16, opt-in operator runner).
+  # Drives scripts/freshness_audit.py: A50 sources whose EffectiveDate
+  # is older than this many days are reported as `stale`. The audit is
+  # non-blocking by default in v1.2.16; the threshold is the only knob
+  # that changes which sources cross the line.
+
+  - id: freshness_threshold_days
+    current_value: "180"
+    allowed_range: [30, 720]
+    owner_skill: governance
+    source_file: skills/bsa-orchestrator/references/freshness-audit-contract.md
+    source_line: 42
+    linked_invariants: [INV-01]
+    change_class: L2_proposal_only
+    rationale: Freshness threshold (in days) for A50 EffectiveDate. Influences which sources still count as authoritative evidence for INV-01 claim-binding — loosening would silently let stale evidence justify new claims, tightening would mass-flag historic sources. L2-proposal-only because the threshold lives in a POLICY_GLOBS file (freshness-audit-contract.md) and any change must come with analyst sign-off + manifest bump. Range [30, 720] bounds it to 1 month .. 2 years.
+
   # ---- Performance-bench regression threshold.
   # The 2x p95 threshold from v1.1.13 is itself a tunable — if pilots
   # show that p95 noise is larger than 2x naturally, the threshold

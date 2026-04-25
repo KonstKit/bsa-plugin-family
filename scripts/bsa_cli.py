@@ -1458,14 +1458,27 @@ def _next_unique_slug(base: str, reserved: set[str], stem: str) -> str:
     return final
 
 
-def _render_draft_manifest(plans: list[SourcePlan], src_dir_root: Path) -> str:
+def _render_draft_manifest(
+    plans: list[SourcePlan],
+    src_dir_root: Path,
+    *,
+    include_effective_date: bool = False,
+) -> str:
     """Render a draft source_manifest.csv. ReliabilityTier defaults to
     T5 (most cautious) — the user MUST re-tag during /bsa-stage 1
-    review. Notes column flags this clearly so the worker sees it."""
-    cols = [
+    review. Notes column flags this clearly so the worker sees it.
+
+    v1.2.16: when ``include_effective_date=True`` the rendered rows
+    carry an empty ``EffectiveDate`` cell (and the header includes the
+    column) so an append into an existing manifest that has already
+    been backfilled with the v1.2.16 optional column doesn't
+    misalign. The empty cell reads as 'n/a' in freshness_audit per
+    the optional_order extension contract."""
+    base = [
         "SourceID", "SourceType", "Title", "Origin", "AccessStatus",
-        "ReliabilityTier", "Priority", "Language", "DateOrVersion", "Notes",
+        "ReliabilityTier", "Priority", "Language", "DateOrVersion",
     ]
+    cols = base + (["EffectiveDate"] if include_effective_date else []) + ["Notes"]
     out = [",".join(cols)]
     today = _today_iso()
     for p in plans:
@@ -1492,10 +1505,14 @@ def _render_draft_manifest(plans: list[SourcePlan], src_dir_root: Path) -> str:
             "skills/bsa-evidence-intake/references/reliability_tier_spec.md "
             "before /bsa-promote"
         )
-        row = [
+        base_row = [
             p.source_id, stype, title, origin, "readable",
-            "T5", "medium", "en", today, _csv_escape(notes),
+            "T5", "medium", "en", today,
         ]
+        # v1.2.16: empty EffectiveDate cell when the existing manifest
+        # already carries the column. Operator backfills the value
+        # row-by-row at the same review pass that retags ReliabilityTier.
+        row = base_row + ([""] if include_effective_date else []) + [_csv_escape(notes)]
         out.append(",".join(row))
     return "\n".join(out) + "\n"
 
@@ -1670,10 +1687,11 @@ def cmd_materials(args: argparse.Namespace) -> int:
             return 2
         existing_lines = existing_text.splitlines()
         existing_header = existing_lines[0].strip() if existing_lines else ""
-        if existing_header != _A50_HEADER:
+        if existing_header not in (_A50_HEADER, _A50_HEADER_WITH_EFFECTIVE_DATE):
             sys.stderr.write(
                 f"[bsa materials] existing source_manifest.csv has a non-canonical header.\n"
                 f"  Expected: {_A50_HEADER}\n"
+                f"        OR: {_A50_HEADER_WITH_EFFECTIVE_DATE}\n"
                 f"  Found:    {existing_header or '(empty)'}\n"
                 f"Refuse to append — column misalignment would corrupt the register.\n"
                 f"Recovery options:\n"
@@ -1848,11 +1866,17 @@ def _count_kinds(plans: list[SourcePlan]) -> str:
 
 # Canonical A50 column order. MUST match _render_draft_manifest's row
 # emission AND governance/schemas/a50.schema.json
-# x-bsa-csv-columns-order. Header validation in _upsert_draft_manifest
-# uses this as the must-equal set for safe append.
+# x-bsa-csv-columns-order.order. Header validation in _upsert_draft_manifest
+# uses this as the must-equal set for safe append, OR the v1.2.16
+# extended variant with EffectiveDate inserted between DateOrVersion
+# and Notes (sourced from x-bsa-csv-columns-order.optional_order).
 _A50_HEADER = (
     "SourceID,SourceType,Title,Origin,AccessStatus,"
     "ReliabilityTier,Priority,Language,DateOrVersion,Notes"
+)
+_A50_HEADER_WITH_EFFECTIVE_DATE = (
+    "SourceID,SourceType,Title,Origin,AccessStatus,"
+    "ReliabilityTier,Priority,Language,DateOrVersion,EffectiveDate,Notes"
 )
 
 
@@ -1940,14 +1964,23 @@ def _upsert_draft_manifest(
     OSError leaves the original manifest untouched rather than
     truncated.
     """
-    new_rows = _render_draft_manifest(written, src_dir_root)
     if manifest_path.is_file():
         existing = manifest_path.read_text(encoding="utf-8")
+        existing_header = (existing.splitlines() or [""])[0].strip()
+        # v1.2.16: align new rows to the existing header's shape.
+        # Pre-flight already validated the header is one of the two
+        # accepted shapes (_A50_HEADER or _A50_HEADER_WITH_EFFECTIVE_DATE);
+        # we just need to mirror that shape so column counts match.
+        include_eff = existing_header == _A50_HEADER_WITH_EFFECTIVE_DATE
+        new_rows = _render_draft_manifest(
+            written, src_dir_root, include_effective_date=include_eff,
+        )
         # Drop the header from new_rows (line 0).
         new_body_lines = new_rows.splitlines()[1:]
         merged = existing.rstrip("\n") + "\n" + "\n".join(new_body_lines) + "\n"
         _atomic_write_text(manifest_path, merged)
         return f"appended {len(written)} draft row(s) to existing manifest"
+    new_rows = _render_draft_manifest(written, src_dir_root)
     _atomic_write_text(manifest_path, new_rows)
     return f"created with {len(written)} draft row(s)"
 

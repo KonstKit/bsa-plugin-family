@@ -112,6 +112,7 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/bsa-orchestrator/references/canonical-artifact-map.md",
     "skills/bsa-orchestrator/references/contract-versioning.md",
     "skills/bsa-orchestrator/references/discovery_to_main_merge.md",
+    "skills/bsa-orchestrator/references/freshness-audit-contract.md",
     "skills/bsa-orchestrator/references/kpi-definitions.md",
     "skills/bsa-orchestrator/references/merge-and-reentry-policy.md",
     "skills/bsa-orchestrator/references/merge_log.schema.json",

@@ -1675,22 +1675,81 @@ def test_materials_recursive_skips_symlinked_subdirs(tmp_path: Path) -> None:
 
 
 def test_materials_install_hint_no_canonical_header_safety(tmp_path: Path) -> None:
-    """Pin: the canonical header constant in bsa_cli matches the
+    """Pin: the canonical header constants in bsa_cli match the
     A50 schema's documented column order exactly. If a future schema
-    edit reorders A50 columns, _A50_HEADER must follow — otherwise
-    drift detection becomes a false-positive guillotine."""
+    edit reorders A50 columns, both _A50_HEADER and _A50_HEADER_WITH_
+    EFFECTIVE_DATE must follow — otherwise drift detection becomes a
+    false-positive guillotine."""
     sys.path.insert(0, str(REPO_ROOT))
     try:
-        from scripts.bsa_cli import _A50_HEADER
+        from scripts.bsa_cli import (
+            _A50_HEADER,
+            _A50_HEADER_WITH_EFFECTIVE_DATE,
+        )
     finally:
         sys.path.pop(0)
     schema_path = REPO_ROOT / "governance" / "schemas" / "a50.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    documented = ",".join(schema["x-bsa-csv-columns-order"]["order"])
+    cols = schema["x-bsa-csv-columns-order"]
+    documented = ",".join(cols["order"])
     assert _A50_HEADER == documented, (
         f"_A50_HEADER drifted from a50.schema.json. "
         f"_A50_HEADER={_A50_HEADER!r} vs documented={documented!r}. "
         f"Update _A50_HEADER in scripts/bsa_cli.py to match."
+    )
+    # v1.2.16 R1 fix: also pin the extended-shape variant. Inserts
+    # every optional_order column after DateOrVersion (before Notes)
+    # in the order they're listed in the schema.
+    optional = cols.get("optional_order", [])
+    base = list(cols["order"])
+    notes_idx = base.index("Notes")
+    extended_cols = base[:notes_idx] + optional + base[notes_idx:]
+    extended_documented = ",".join(extended_cols)
+    assert _A50_HEADER_WITH_EFFECTIVE_DATE == extended_documented, (
+        f"_A50_HEADER_WITH_EFFECTIVE_DATE drifted from a50.schema.json. "
+        f"_A50_HEADER_WITH_EFFECTIVE_DATE={_A50_HEADER_WITH_EFFECTIVE_DATE!r} "
+        f"vs expected={extended_documented!r}. Update bsa_cli.py to match."
+    )
+
+
+def test_materials_appends_to_existing_manifest_with_effective_date(
+    tmp_path: Path,
+) -> None:
+    """v1.2.16 R1 fix: an existing manifest whose header already
+    carries EffectiveDate (operator backfilled) must accept new
+    `bsa materials --commit` rows without false-rejecting on
+    'non-canonical header'. New rows are aligned to the extended
+    shape (empty EffectiveDate cell)."""
+    ws = _init_workspace(tmp_path)
+    stage1 = ws / "analysis" / "proposals" / "stage1"
+    stage1.mkdir(parents=True, exist_ok=True)
+    manifest = stage1 / "source_manifest.csv"
+    # Operator-backfilled manifest with EffectiveDate column populated.
+    manifest.write_text(
+        "SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,"
+        "Priority,Language,DateOrVersion,EffectiveDate,Notes\n"
+        "S-001,document,Existing,operator,readable,T2,medium,en,"
+        "2026-02-10,2026-02-10,backfilled\n",
+        encoding="utf-8",
+    )
+    # Stage some new inputs.
+    src = _make_src_dir(tmp_path, {"new_doc.md": "x"})
+    result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
+    assert result.returncode == 0, (
+        f"materials must accept extended-header manifest; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    body = manifest.read_text(encoding="utf-8").splitlines()
+    # Header preserved (extended shape, 11 columns).
+    assert body[0].endswith(",EffectiveDate,Notes")
+    assert body[0].count(",") == 10  # 11 columns → 10 commas
+    # Original row preserved.
+    assert "S-001," in body[1]
+    # New row appended with the SAME column count (i.e., aligned).
+    new_row = body[2]
+    assert new_row.count(",") == 10, (
+        f"appended row column count must match extended header (10 commas); "
+        f"row={new_row!r}"
     )
 
 

@@ -268,11 +268,21 @@ def parse_a48(path: Path) -> dict[str, str]:
 # ---- CSV row helpers --------------------------------------------------
 
 
-def iter_csv_rows(path: Path, expected_columns: list[str] | None = None) -> Iterator[dict[str, str]]:
+def iter_csv_rows(
+    path: Path,
+    expected_columns: list[str] | None = None,
+    optional_columns: list[str] | None = None,
+) -> Iterator[dict[str, str]]:
     """Yield each CSV row as a dict (column name → cell value).
 
-    If ``expected_columns`` is provided, raises ValueError when the
-    file's actual column set differs (set comparison, order-insensitive).
+    If ``expected_columns`` is provided, raises ValueError when any
+    column from the required set is missing OR when an unexpected
+    column appears that is not in ``expected_columns + optional_columns``.
+
+    ``optional_columns`` (v1.2.16) lists fields that MAY appear in the
+    CSV but are not required. This lets schemas evolve additively at
+    the CSV-shape layer without breaking pre-existing producers — see
+    a50.schema.json::EffectiveDate for the first use.
 
     Stdlib-only. Uses csv.DictReader which handles quoted commas,
     embedded newlines, and CRLF line endings correctly.
@@ -284,9 +294,11 @@ def iter_csv_rows(path: Path, expected_columns: list[str] | None = None) -> Iter
         if expected_columns is not None:
             actual = set(reader.fieldnames or [])
             expected_set = set(expected_columns)
-            if actual != expected_set:
-                missing = expected_set - actual
-                extra = actual - expected_set
+            optional_set = set(optional_columns or [])
+            allowed_set = expected_set | optional_set
+            missing = expected_set - actual
+            extra = actual - allowed_set
+            if missing or extra:
                 msg_parts = []
                 if missing:
                     msg_parts.append(f"missing columns: {sorted(missing)}")
@@ -389,12 +401,18 @@ def load_live_api_response(path: Path) -> dict[str, Any]:
 def _iter_canonical_csv(schema_name: str, path: Path) -> Iterator[dict[str, str]]:
     """Shared body for the iter_aNN_rows family.
 
-    Reads ``x-bsa-csv-columns-order.order`` from the named schema and
-    delegates to ``iter_csv_rows`` for the column-set assertion.
+    Reads ``x-bsa-csv-columns-order.order`` (required columns) and
+    optional ``x-bsa-csv-columns-order.optional_order`` (v1.2.16+,
+    additive optional columns) from the named schema, and delegates to
+    ``iter_csv_rows`` for the column-set assertion.
     """
     schema = load_schema(schema_name)
-    expected = schema["x-bsa-csv-columns-order"]["order"]
-    yield from iter_csv_rows(path, expected_columns=expected)
+    cols = schema["x-bsa-csv-columns-order"]
+    expected = cols["order"]
+    optional = cols.get("optional_order", [])
+    yield from iter_csv_rows(
+        path, expected_columns=expected, optional_columns=optional,
+    )
 
 
 def tier_to_claim_strength(tier: str) -> float:

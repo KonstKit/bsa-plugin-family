@@ -1,6 +1,6 @@
 {
   "name": "bsa-full",
-  "version": "1.2.15",
+  "version": "1.2.16",
   "description": "Business/Systems Analysis plugin family: 28 skills for evidence-bound claim-layer authoring, anti-hallucination audits, sidecar-assisted diagrams, H1-H4 handoff packaging, and Phase-3 dev-handoff (NFRs / stories / test scenarios / traceability matrix / backlog-bridge to Jira / Linear / generic / GitHub Projects v2 with optional live-API mode). Directly consumed by Claude Code.",
   "author": {
     "name": "Konstantin Kitanin"
@@ -32,11 +32,11 @@
     "github-projects-v2"
   ],
   "canonPolicyVersion": {
-    "semver": "1.2.15",
-    "hash_prefix": "22c3a206",
-    "hash_full": "22c3a206230d770fbf0342790c16fbdb2874383de148761ff96da4f1f1a76b6f",
+    "semver": "1.2.16",
+    "hash_prefix": "6abac482",
+    "hash_full": "6abac4820680457d2c39eb6ede9894f1e6e309a096f35e9f6eebad34a6fd6bd4",
     "computed_by": "scripts/compute_canon_hash.py",
-    "computed_at": "2026-04-25T03:00:00Z",
+    "computed_at": "2026-04-25T18:25:00Z",
     "_comment": "Custom field \u2014 Claude Code preserves unknown top-level fields. Recomputed manually via scripts/compute_canon_hash.py after any POLICY_GLOBS edit; tests/test_plugin_manifest.py::test_manifest_canon_hash_matches_current_script_output fails locally on any drift between this value and the live script output."
   }
 }

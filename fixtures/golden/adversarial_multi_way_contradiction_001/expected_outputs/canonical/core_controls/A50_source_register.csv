@@ -1,4 +1,4 @@
-SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,Priority,Language,DateOrVersion,Notes
-S-001,process_note,Ops Runbook — Incident Response,internal ops team lead,readable,T2,high,en,2026-Q1,Authored-primary current-state runbook (signed off quarterly)
-S-002,process_note,SRE On-Call Handbook — P0 Triage,SRE team lead,readable,T2,high,en,2026-04-01,Authored-primary internal handbook (monthly review cadence); same-tier as S-001 — same-tier multi-way contradiction does NOT auto-resolve via tier hierarchy.
-S-003,policy_document,Customer SLA Contract — Enterprise Tier,Sales Operations / Legal,readable,T2,high,en,2026-01-01,"Authored-primary customer-facing SLA contract; same-tier as S-001/S-002. Contract-binding nature drives Severity=critical on the resulting A51 (per v1.1.1 'critical' semantics: customer-facing / contractual / regulatory)."
+SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,Priority,Language,DateOrVersion,EffectiveDate,Notes
+S-001,process_note,Ops Runbook — Incident Response,internal ops team lead,readable,T2,high,en,2026-Q1,2026-02-15,Authored-primary current-state runbook (signed off quarterly)
+S-002,process_note,SRE On-Call Handbook — P0 Triage,SRE team lead,readable,T2,high,en,2026-04-01,2026-04-01,Authored-primary internal handbook (monthly review cadence); same-tier as S-001 — same-tier multi-way contradiction does NOT auto-resolve via tier hierarchy.
+S-003,policy_document,Customer SLA Contract — Enterprise Tier,Sales Operations / Legal,readable,T2,high,en,2026-01-01,2026-01-01,Authored-primary customer-facing SLA contract; same-tier as S-001/S-002. Contract-binding nature drives Severity=critical on the resulting A51 (per v1.1.1 'critical' semantics: customer-facing / contractual / regulatory).

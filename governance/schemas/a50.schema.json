@@ -76,6 +76,11 @@
       "type": "string",
       "description": "ISO date (YYYY-MM-DD), semver, commit hash, or 'unknown'. Free-form."
     },
+    "EffectiveDate": {
+      "type": "string",
+      "pattern": "^(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|unknown|)$",
+      "description": "Optional ISO-8601 calendar date (YYYY-MM-DD) on which the source content became authoritative — i.e. the publication / signing / commit date the operator considers definitive for freshness assessment. Distinct from DateOrVersion (which is free-form provenance — version tag, commit hash, etc.). Accepted values: a real date (`YYYY-MM-DD`), the literal string `unknown` (operator declares 'cannot assess'), OR the empty string (gradual row-by-row backfill — same semantics as the field being absent on a pre-v1.2.16 row). When present and parseable, freshness_audit.py compares (now - EffectiveDate) against the freshness_threshold_days tunable and routes stale sources via A51. Empty / `unknown` / absent → audit emits `n/a` for that row, never blocks."
+    },
     "Notes": {
       "type": "string",
       "description": "Free-form notes. Empty string allowed."
@@ -83,7 +88,7 @@
   },
   "additionalProperties": true,
   "x-bsa-csv-columns-order": {
-    "_comment": "Canonical column order for diff stability.",
+    "_comment": "Canonical column order for diff stability. `order` is the closed set of required CSV columns. `optional_order` lists columns that MAY appear (introduced v1.2.16 to keep new fields backward-compatible at the CSV-shape layer). When present, optional columns SHOULD appear in the listed order, between DateOrVersion and Notes, but consumers tolerate any ordering. The CSV column-set check accepts a row file whose actual column set is `order` (alone) OR `order + any subset of optional_order`. Pre-v1.2.16 A50 CSVs (no EffectiveDate) and post-v1.2.16 A50 CSVs (EffectiveDate present) are both valid.",
     "order": [
       "SourceID",
       "SourceType",
@@ -95,6 +100,9 @@
       "Language",
       "DateOrVersion",
       "Notes"
+    ],
+    "optional_order": [
+      "EffectiveDate"
     ]
   },
   "x-bsa-uniqueness-rules": {
@@ -104,6 +112,12 @@
       "SourceID"
     ],
     "rationale": "Without this rule, duplicate SourceID values could land at promote-gate + silently break every downstream cross-reference. SourceID is the row-identifier."
+  },
+  "x-bsa-strict-date-rules": {
+    "_comment": "v1.2.16 R2 fix: per-row check that any non-empty, non-'unknown' value in the listed columns is a REAL calendar date. The schema's `pattern` enforces shape (YYYY-MM-DD), but `2025-02-30` and `2025-13-99` pass the regex while not being valid dates — they would silently sail through F5 validation and then be reported as `n/a` by freshness_audit.py, hiding broken backfill from the operator. Handler `_apply_strict_date_rules` in `governance/schemas/write_validator.py` parses each listed cell via datetime.strptime('%Y-%m-%d') and emits a violation on ValueError. Empty string and 'unknown' are explicitly skipped (they are gradual-backfill / cannot-assess sentinels per a50.schema.json::EffectiveDate description).",
+    "columns": [
+      "EffectiveDate"
+    ]
   },
   "x-bsa-tier-claim-strength": {
     "_comment": "ReliabilityTier \u2192 ClaimStrength mapping per reliability_tier_spec.md. Used by A59 schema validation to verify upstream tier consistency.",
