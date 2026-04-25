@@ -4,6 +4,70 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.15] — 2026-04-25
+
+**DBML deep validator — type-catalog enforcement + FK target resolution.** v1.2.11 shipped the `dbml-from-context` sidecar with a minimal stdlib syntax validator (balanced braces, non-empty bodies, Ref shape). The `sidecar_inventory.md` open-follow-up explicitly documented two deferred classes: DBML type correctness + FK target resolution. v1.2.15 closes both.
+
+**Tag target**: this commit (the v1.2.15 DBML deep validator).
+**Canon policy version**: `1.2.15+hash:22c3a206` — **moved** from `1.2.11+hash:6d91f10e`. The `skills/dbml-from-context/references/integration-contract.md` edit (rewrote "What ships" + "Deferrals" to reflect v1.2.15 semantic checks) is in POLICY_GLOBS, so the canon hash bumps in lockstep with manifest. First canon-bumping release since v1.2.11.
+
+### Added
+
+- **Type-catalog enforcement** in `validate_dbml.py`. Recognised DBML/SQL types are catalogued in `_DBML_TYPE_CATALOG` (50+ entries: integer family, floating-point, boolean/bit, string/text, date/time, binary, JSON, UUID, network, XML). Each type carries a max-parameter arity (0 = bare only, 1 = `varchar(N)`, 2 = `decimal(N,M)`). Column types are classified via `_classify_type`:
+  * Bare type name in catalog → accepted.
+  * Parameterized form within declared arity → accepted (numeric parameters only).
+  * Type matches an Enum declared in the same file → accepted.
+  * Otherwise rejected (unless `--lenient-types` flag).
+- **FK target resolution** in `validate_dbml.py`. New `_parse_structure` walks the file once with brace-depth awareness, gathering `(table_name → list of columns)` + Enum names. New `_validate_fk_targets` resolves every `Ref:` (top-level and inline `[ref: ...]`) against the inventory. Both `from` and `to` sides must point at existing `<table>.<column>`. Dangling FKs are rejected unconditionally (no flag to disable — broken FKs are broken regardless of type strictness).
+- **`--lenient-types` CLI flag** preserves pre-v1.2.15 permissive type behavior for legacy `.dbml` using custom domain types (`frobnicator`, `my_custom_type`). FK resolution always runs.
+- **34 new tests** in `skills/dbml-from-context/scripts/test_validate_dbml.py` (17 → 51 total):
+  * Type positive: `test_known_base_types_pass`, `test_parameterized_types_pass`, `test_enum_typed_column_passes`.
+  * Type negative: `test_unknown_type_rejected`, `test_too_many_type_parameters_rejected`.
+  * Type lenient: `test_lenient_types_flag_allows_arbitrary_types`.
+  * FK negative: `test_fk_dangling_table_rejected`, `test_fk_dangling_column_rejected`, `test_fk_dangling_from_side_rejected`, `test_inline_ref_dangling_target_rejected`.
+  * Cross-flag: `test_fk_resolution_runs_even_with_lenient_types`.
+  * CLI: `test_main_lenient_types_flag_propagates`.
+  * Round-1 fixes (5 tests): `test_multi_word_postgres_types_pass`, `test_multi_word_type_fk_resolves`, `test_unknown_multi_word_type_rejected`, `test_triple_quoted_note_body_does_not_contaminate_columns`, `test_inline_ref_without_leading_column_rejected`.
+  * Round-2 fixes (6 tests): `test_postgres_parens_in_middle_of_multi_word_type_passes`, `test_ansi_long_form_types_pass`, `test_geometry_extension_types_pass`, `test_inline_ref_inside_triple_quoted_note_does_not_false_positive`, `test_inline_ref_inside_note_block_does_not_false_positive`, `test_top_level_ref_inside_note_block_does_not_false_positive`.
+  * Round-3 fixes (4 tests): `test_same_line_table_body_columns_resolved_for_fk`, `test_same_line_table_body_type_validation_runs`, `test_multiple_paren_groups_in_type_rejected`, `test_brace_inside_quoted_string_does_not_break_depth_tracker`.
+  * Round-4 fixes (4 tests): `test_same_line_table_body_with_parameterized_type_passes`, `test_same_line_table_body_with_settings_comma_passes`, `test_strip_quoted_strings_handles_escaped_quote`, `test_strip_quoted_strings_unit_escape_aware`.
+  * Round-5 fix (2 tests): `test_same_line_table_body_quoted_setting_with_bracket_passes`, `test_split_top_level_commas_unit_quote_aware`.
+  * Two pre-v1.2.15 non-goal tests (`test_validator_does_not_check_type_correctness`, `test_validator_does_not_check_fk_target_resolution`) **inverted** into the corresponding positive enforcement tests.
+
+### Updated
+
+- `docs/sidecar_inventory.md` — DBML validator description updated: removed "DOES NOT validate DBML type correctness or FK target resolution" disclaimer; documented v1.2.15 behavior + `--lenient-types` flag.
+- `skills/dbml-from-context/references/dbml-syntax.md` — Tooling section updated to describe v1.2.15 semantic checks.
+- `skills/dbml-from-context/references/integration-contract.md` — "What ships" section unified across v1.2.11 + v1.2.15; "Deferrals" rewritten to list only the genuinely deferred items (cross-file refs, enum-value-binding, indexes block resolution); the v1.2.11-era "richer validator passes" deferral entry removed (closed).
+- `validate_dbml.py` docstring — version bumped v1.2.11 → v1.2.15; deferred-checks list narrowed to the 4 still-deferred items.
+
+### Result
+
+- 1977 → 2008 tests passing (+31 net: 34 added, 2 inverted, 1 lenient-type cross-check).
+- Fixture `ticket_persistence.dbml` continues to pass cleanly (regression pin: uses `integer`, `varchar`, `timestamp`, `ticket_severity` enum + `Ref: tickets.assigned_agent_id > agents.id`).
+- Canon hash `6d91f10e` → `22c3a206`. Manifest 1.2.11 → 1.2.15 (lockstep with canon, per two-semver discipline; integration-contract.md is in POLICY_GLOBS).
+
+### Codex review (5 rounds)
+
+- **Round 1: REQUEST CHANGES.** Three real bugs:
+  * Catalog only knew single-token type names → Postgres-flavoured `double precision`, `character varying(N)`, `timestamp with time zone` etc. silently bypassed type validation AND broke FK resolution (multi-word-typed columns never landed in `table_cols`). Fixed: added `_DBML_MULTIWORD_TYPE_CATALOG`; tolerant `_COLUMN_LINE_RE` captures the type-part as `[^\[\]\{\}]+?`.
+  * Triple-quoted `Note: '''...'''` bodies leaked into column parsing. Fixed: added `in_triple_quoted_note` latch in `_parse_structure`.
+  * Inline `[ref:...]` on a line with NO leading column identifier silently passed. Fixed: emits violation in that case.
+- **Round 2: REQUEST CHANGES.** Three follow-on issues:
+  * `[ref:...]` literal inside Note bodies (triple-quoted OR `Note { ... }` block) caused false-positive FK violations because `_validate_fk_targets` re-scanned raw text. Fixed: refactored `_parse_structure` to also collect `top_level_refs` + `inline_refs` during its single pass; `_validate_fk_targets` consumes those parsed-refs lists.
+  * `timestamp(6) with time zone` rejected (parens in middle of multi-word). Fixed: `_extract_params_anywhere` strips parens from anywhere in token.
+  * Catalog thin (missing `national character`, `character large object`, `geometry`, `point`, `polygon`, etc.). Fixed: extended both catalogs.
+- **Round 3: REQUEST CHANGES.** Three regressions/edge cases:
+  * Same-line `Table users { id integer [pk] }` body lost (round-2 refactor regressed it) → cross-table Ref to `users.id` false-positive-failed. Fixed: added same-line body parsing branch in `_parse_structure`.
+  * `numeric(10)(2)` accepted (round-2 sum-all-groups). Fixed: `_extract_params_anywhere` rejects multiple paren groups.
+  * Brace counter quote-blind (`Note { description: 'has { brace }' }` desyncs depth). Fixed: added `_strip_quoted_strings` helper, used in both balanced-brace pass AND `_parse_structure`.
+- **Round 4: REQUEST CHANGES.** Two follow-ons:
+  * Same-line body `body.split(",")` broke `numeric(10,2)` and `[not null, ref: > users.id]`. Fixed: added `_split_top_level_commas` (depth-paren + depth-bracket aware).
+  * `_strip_quoted_strings` regex not escape-aware (`'O\'Brien'` mis-stripped). Fixed: rewrote as manual escape-aware char scanner; removed pre-round-4 regex helpers.
+- **Round 5: REQUEST CHANGES.** One follow-on:
+  * `_split_top_level_commas` quote-blind — `[note: 'hi ] world', not null]` desync'd bracket tracker because `]` inside quoted string decremented depth. Fixed: extended splitter to track quoted strings (escape-aware).
+- **Round 6: APPROVE — no findings.** v1.2.15 ready to ship after 5 review rounds. Codex confirmed all 5 rounds' findings resolved with regression pins; full suite 2008/2008 pass; canon hash unchanged at `22c3a206`.
+
 ## [v1.2.14] — 2026-04-25
 
 **Hotfix for v1.2.13 FK backfill regression.** v1.2.13's retroactive Codex review (run after a CLI-infra workaround was found — see Codex review trail below) caught a real **regression**: the v1.2.13 backfill set `multi: false` on 9 FK references whose underlying schema row patterns actually allow `;`-/`/`-joined IDs. Rows like `SourceID="S-001;S-002"` (valid per A59 schema) were false-positive-rejected as orphan FKs. v1.2.14 hotfixes the misclassification + cleans up a documentary-only `optional_when_blank` flag the handler never read.

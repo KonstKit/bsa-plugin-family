@@ -158,13 +158,15 @@ Typical claim shapes that feed DBML anchors:
 - Validation scenario: `ART-VAL-001` family in `skills/bsa-orchestrator/references/validation-scenario-manifest.csv`.
 - Base schema: `governance/schemas/sidecar_anchor_manifest.base.schema.json`.
 
-## What ships in v1.2.11
+## What ships in v1.2.11 / v1.2.15
 
-- **Minimal syntax validator** at `skills/dbml-from-context/scripts/validate_dbml.py` (stdlib-only). Checks: balanced braces, non-empty block bodies, top-level `Ref:` statement shape, inline `[ref: ...]` annotation shape. Richer validation — DBML type correctness, FK target resolution, enum-value-binding — is deferred to a follow-up release.
+- **Syntax validator** at `skills/dbml-from-context/scripts/validate_dbml.py` (stdlib-only). v1.2.11 covered: balanced braces, non-empty block bodies, top-level `Ref:` statement shape, inline `[ref: ...]` annotation shape. **v1.2.15 added**: type-catalog enforcement (DBML/SQL base types + parameterized forms; Enum-typed columns resolve against in-file Enum declarations) AND FK target resolution (every Ref must point at an existing `<table>.<column>` declared in this file). The `--lenient-types` CLI flag preserves pre-v1.2.15 permissive type behavior for legacy `.dbml` using custom domain types; FK resolution is unconditional.
 
 ## Deferrals
 
-- **Richer validator passes**: v1.2.11's validator is structure-only. DBML-level type correctness (whether `varchar`/`integer`/custom types are valid), FK target resolution (whether `Ref: orders.user_id > users.id`'s target exists), and enum-value-binding checks are deferred. A future release may add a `x-bsa-foreign-key-rules`-style cross-row extension for the DBML schema (parallel to A61's v1.2.8 anchor-binding rules).
+- **Cross-file references**: `[ref: > other_schema.users.id]` with a database-prefix is recognised by upstream DBML but the validator does not resolve targets across files. Single-file FK resolution covers the dominant case (one bounded context per `.dbml` per the BSA convention).
+- **Enum-value-binding** (whether an inserted row's column value belongs to the named enum): out of scope; DBML doesn't model row data.
+- **Index target resolution**: `indexes { (col1, col2) }` — column existence inside the indexes block is not yet verified by v1.2.15; future release may extend.
 - **Automatic manifest emission from `.dbml` source**: the operator or future tooling authors the manifest. A deterministic `.dbml` → manifest derivation is tractable (DBML syntax is simpler than C4-PlantUML) but out of scope for v1.2.11.
 - **Inline `[ref: ...]` view_element_id extraction**: v1.2.11's e2e test helper (`_load_dbml_view_elements`) extracts IDs for top-level `Ref:` statements only; inline column-level ref annotations don't currently surface a separate `view_element_id`. The integration-contract documents both forms as anchorable, but the v1.2.11 fixture uses only the top-level form to keep the extractor simple. A follow-up release can extend the helper + fixture together.
 - **`sidecar_version` pin**: v1.2.11 uses `1.0.0` (first release). The registry's `added_in: v1.2.11` field is the canonical provenance.

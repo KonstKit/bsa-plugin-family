@@ -66,7 +66,7 @@ Operator-facing summary of the diagram sidecars shipped with the BSA plugin fami
 - Refs: `ref_<from_table>_<from_col>_to_<to_table>_<to_col>` (`ref_orders_user_id_to_users_id`).
 - Enums + TableGroups: bare name.
 
-**Validator:** `skills/dbml-from-context/scripts/validate_dbml.py` — minimal v1.2.11 implementation. Checks balanced braces, non-empty block bodies, top-level Ref statement shape, inline `[ref: ...]` shape. Does NOT validate DBML type correctness or FK target resolution (both deferred to a future release).
+**Validator:** `skills/dbml-from-context/scripts/validate_dbml.py` — v1.2.15 deep implementation. Checks balanced braces, non-empty block bodies, top-level Ref statement shape, inline `[ref: ...]` shape, AND (v1.2.15) type-catalog enforcement (DBML/SQL base types + parameterized forms + Enum-typed columns) AND FK target resolution (every Ref must point at an existing `<table>.<column>`). The `--lenient-types` flag preserves pre-v1.2.15 permissive type behavior for legacy `.dbml` using custom domain types; FK resolution is unconditional.
 
 **Optional dependencies:** `@dbml/cli` for local rendering (`dbml2svg`). Graceful degradation when missing.
 

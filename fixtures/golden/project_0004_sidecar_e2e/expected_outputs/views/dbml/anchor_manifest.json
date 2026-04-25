@@ -3,7 +3,7 @@
   "generated_at": "2026-04-25T00:00:00Z",
   "sidecar": "dbml-from-context",
   "sidecar_version": "1.0.0",
-  "canon_policy_version": "1.2.11+hash:6d91f10e",
+  "canon_policy_version": "1.2.15+hash:22c3a206",
   "view_files": [
     {
       "path": "analysis/views/dbml/ticket_persistence.dbml",

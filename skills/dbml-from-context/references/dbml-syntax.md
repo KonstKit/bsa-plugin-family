@@ -34,7 +34,7 @@ When the source material contains these, open an A51 route (`IssueType=missing_s
 ## Tooling
 
 - **Rendering**: https://dbdiagram.io/ (online) or `@dbml/cli` (local, Node.js). The sidecar does NOT depend on either — `.dbml` is a text artifact consumed by operators + downstream tooling at their discretion.
-- **Parsing + validation**: `scripts/validate_dbml.py` ships a MINIMAL stdlib-only syntax check in v1.2.11 (balanced braces, non-empty block bodies, top-level Ref + inline `[ref: ...]` annotation shape). Richer validation (DBML type correctness, FK target resolution) is deferred.
+- **Parsing + validation**: `scripts/validate_dbml.py` ships a stdlib-only syntax + semantic check. v1.2.11 covered balanced braces, non-empty block bodies, top-level Ref + inline `[ref: ...]` annotation shape. v1.2.15 added type-catalog enforcement (DBML/SQL base types + parameterized forms; Enum-typed columns resolve against in-file Enum declarations) and FK target resolution (every Ref must point at an existing `<table>.<column>` declared in the same file). Pass `--lenient-types` to keep pre-v1.2.15 permissive type behavior for `.dbml` that uses custom domain types; FK resolution remains unconditional.
 
 ## Cross-references
 
