@@ -182,6 +182,23 @@ tunables:
     change_class: L2_proposal_only
     rationale: Freshness threshold (in days) for A50 EffectiveDate. Influences which sources still count as authoritative evidence for INV-01 claim-binding — loosening would silently let stale evidence justify new claims, tightening would mass-flag historic sources. L2-proposal-only because the threshold lives in a POLICY_GLOBS file (freshness-audit-contract.md) and any change must come with analyst sign-off + manifest bump. Range [30, 720] bounds it to 1 month .. 2 years.
 
+  # ---- Triangulation audit min distinct SourceTypes (v1.2.17, opt-in).
+  # Drives scripts/triangulation_audit.py: a "triggered" claim must
+  # bind sources spanning >= this many distinct SourceType values.
+  # Independence is measured by SourceType (not SourceID) — three
+  # documents corroborate authorship, not the underlying claim.
+  # The audit is non-blocking by default in v1.2.17.
+
+  - id: triangulation_min_distinct_sourcetypes
+    current_value: "2"
+    allowed_range: [2, 5]
+    owner_skill: governance
+    source_file: skills/bsa-orchestrator/references/triangulation-audit-contract.md
+    source_line: 50
+    linked_invariants: [INV-01]
+    change_class: L2_proposal_only
+    rationale: Minimum distinct SourceType count for a triggered claim. Loosening below 2 defeats the audit (single-source level-1 claims would silently pass); tightening to 3+ raises the corroboration bar at the cost of mass-flagging historic data. L2-proposal-only because the threshold lives in a POLICY_GLOBS file (triangulation-audit-contract.md) and any change must come with analyst sign-off + manifest bump. Range [2, 5] bounds it to the realistic band — 1 is degenerate, 6+ is unattainable in most workspaces.
+
   # ---- Performance-bench regression threshold.
   # The 2x p95 threshold from v1.1.13 is itself a tunable — if pilots
   # show that p95 noise is larger than 2x naturally, the threshold

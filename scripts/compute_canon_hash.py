@@ -122,6 +122,7 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/bsa-orchestrator/references/shared-control-surface-contracts.md",
     "skills/bsa-orchestrator/references/sidecar-integration.md",
     "skills/bsa-orchestrator/references/stage2-runtime-contract.md",
+    "skills/bsa-orchestrator/references/triangulation-audit-contract.md",
     "skills/bsa-orchestrator/references/validation-scenario-manifest.csv",
     "skills/bsa-orchestrator/references/workflow-contract.md",
     # Per-skill policy references with semantic invariants.

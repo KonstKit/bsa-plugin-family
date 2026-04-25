@@ -4,6 +4,67 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.17] — 2026-04-25
+
+**Reality-probe Triangulation — opt-in operator audit over A59 SourceType independence.** Second Reality-probe in the v1.2.16+ wave (closes the pair started by Freshness in v1.2.16). For "important" claims — defined as a three-branch OR over `Criticality=level-1` ∨ `A51.Severity ∈ {high, critical}` (joined via `RelatedClaimID`) ∨ `A50.Priority=high` (joined via `SourceID`) — verifies that the bound A50 sources span at least N distinct `SourceType` values (default 2). Independence is structural (SourceType, not SourceID) — three documents corroborate authorship, not the underlying claim. `analyst_judgment` claims are always skipped (no source binding by design per INV-07). Audit is **non-blocking by default** (verdicts: `pass` / `warn` / `n/a`, never `fail`).
+
+**Tag target**: this commit (the v1.2.17 triangulation audit). **Canon policy version**: `1.2.17+hash:ea69b86e` — **moved** from `1.2.16+hash:6abac482`. The new `skills/bsa-orchestrator/references/triangulation-audit-contract.md` is added to POLICY_GLOBS; canon hash + manifest bump in lockstep. Third canon-bumping release in a row.
+
+### Added
+
+- **`skills/bsa-orchestrator/references/triangulation-audit-contract.md`** — full audit specification: scope, three-branch trigger semantics, SourceType-based independence rule, tunable + CLI overrides, verdict policy, edge case handling (empty/dangling FK/multi-value), marker schema, CLI surface, relationship to other audits, explicit non-goals (cross-claim consistency / tier-weighting / source-content overlap deferred). Added to POLICY_GLOBS in `scripts/compute_canon_hash.py`.
+- **`scripts/triangulation_audit.py`** — stdlib-only operator runner mirroring the v1.2.16 `freshness_audit.py` pattern: defensive CSV reads, three index builders (A50 → SourceType+Priority, A51-Severity-by-claim, A59 rows), per-claim classifier returning the full finding dict (claim_id, claim_type, criticality, source_ids, distinct_sourcetypes, trigger_reasons, in_triangulation_set, skipped_reason), atomic JSON marker + Markdown report writes. CLI flags: `--workspace` / `--min-sourcetypes` / `--severity-threshold` (`high`/`critical`) / `--priority-threshold` (`medium`/`high`) / `--output-path` / `--report-path` / `--print-only` / `--quiet`. Outputs `analysis/canonical/stage7/triangulation_audit.{json,md}`. Exit codes: 0 on completion, 2 on invocation error.
+- **`config/tunables.yaml::triangulation_min_distinct_sourcetypes`** — `current_value: "2"`, `allowed_range: [2, 5]`, `change_class: L2_proposal_only`, `linked_invariants: [INV-01]`, `source_file: skills/bsa-orchestrator/references/triangulation-audit-contract.md` line 50. Severity / Priority branch thresholds remain CLI-only because `phase_7_lint.py` C8 requires numeric `allowed_range` and these are enums; documented as a future Phase 7 lint extension if persistent override is wanted.
+- **48 new tests** in `tests/test_triangulation_audit.py` (47 initial + 1 R0 self-review regression `test_a51_capitalized_severity_does_not_normalize` pinning handler-reach == schema-reach for A51 Severity case-sensitivity):
+  * Pure-unit `_split_fk_tokens`: semicolon / slash / mixed / whitespace-padded / empty / only-separators. 6 tests.
+  * Branch 1 (Criticality): level-1 triggers; level-2/3 do not. 3 tests.
+  * Branch 2 (A51 Severity): high triggers / critical triggers / medium does not / low does not / threshold-tightening to `critical` skips `high` / multi-value RelatedClaimID fans out / unknown enum value silently skipped. 7 tests.
+  * Branch 3 (A50 Priority): high triggers / medium does not (default) / threshold-loosening to `medium` includes medium / multi-source ANY-high triggers. 4 tests.
+  * Three-branch OR composition: all 3 reasons recorded simultaneously. 1 test.
+  * `analyst_judgment` skipped even with level-1 / even with high A51. 2 tests.
+  * Verdict policy: `n/a` (no A59 / no claims in set) / `pass` (passes) / `warn` (under) / `warn` (mixed pass + under). 5 tests.
+  * SourceType independence: same-type counted once / 3 distinct passes min-2 / 2 distinct fails min-3. 3 tests.
+  * Dangling FK + missing sources: dangling SourceID silently skipped / A50 absent → 0 SourceTypes warns / A51 absent → Severity branch inactive. 3 tests.
+  * Suggested A51 placeholder + required-fields shape check. 1 test.
+  * CLI: print-only doesn't write / writes marker+report / threshold overrides / workspace-not-init exit 2 / invalid `--min-sourcetypes` / invalid `--severity-threshold` / invalid `--priority-threshold`. 9 tests.
+  * Markdown rendering: under-triangulation table + placeholder block / "No under-triangulated claims." when clean. 2 tests.
+  * Atomic write hygiene: no `.tmp` files left after write. 1 test.
+
+### Updated
+
+- **`scripts/compute_canon_hash.py`** — `POLICY_GLOBS` extended with `skills/bsa-orchestrator/references/triangulation-audit-contract.md` (alphabetically slotted between `stage2-runtime-contract.md` and `validation-scenario-manifest.csv`).
+- **`fixtures/golden/project_0004_sidecar_e2e`** — 5 metadata files bumped from `1.2.16+hash:6abac482` to `1.2.17+hash:ea69b86e` (same lockstep pattern as v1.2.15 / v1.2.16).
+
+### Result
+
+- `2060 → 2108` tests passing (+48 in `tests/test_triangulation_audit.py`: 47 initial + 1 self-review regression; no existing tests modified).
+- Canon hash `6abac482` → `ea69b86e`. Manifest `1.2.16` → `1.2.17` (lockstep, per two-semver discipline).
+- Privacy scan: 0 blockers.
+- `phase_7_lint.py`: PASS (new tunable cleared all 8 C1-C8 checks).
+- Fixture runner: 9 PASS, 0 findings (no existing fixture data triggers triangulation since none has `Criticality=level-1` claims AND no high-Severity A51 routes AND no high-Priority sources combined with single SourceType).
+- `triangulation_audit.py` is **opt-in** in v1.2.17: NOT wired into `.github/workflows/ci.yml` or any mandatory marker family. Operators invoke it manually. Mandatory enforcement deferred — see contract's "Verdict policy" section.
+
+### Self-review applied (vs Codex cycle reduction)
+
+After the v1.2.16 6-round Codex cascade, this release applied the structured pre-Codex self-review: (1) impact analysis via `grep RelatedClaimID --include="*.py"` (11 consumers, multi-FK semantics confirmed); (2) cross-schema reads of A50/A51/A59; (3) edge-case enumeration for analyst_judgment skip + dangling FK + multi-value + missing A50/A51; (4) layer overlap check (citation/consistency/anchor/no-new-claims auditors don't overlap with triangulation); (5) reach equality between `_split_fk_tokens` and A59/A51 multi-value patterns. First-run pytest: **47/47 passed** (the +1 R0 regression for capitalized-Severity was added as the self-review's reach-equality check, before Codex). Codex review log below.
+
+### Codex review
+
+- **Round 1: REQUEST CHANGES.** Three findings — all **doc-vs-impl drift** (consequences of mid-implementation refactor that moved Severity/Priority thresholds out of `config/tunables.yaml` into CLI-only because phase_7_lint requires numeric ranges):
+  * **MEDIUM (contract:26-27)** — Triggering set described Severity/Priority branches as configurable via `triangulation_severity_threshold` / `triangulation_priority_threshold` *tunables*; those tunables don't exist. **Fixed**: rewrote both lines to point at `--severity-threshold` / `--priority-threshold` CLI flags + new "Branch threshold overrides (CLI-only)" section.
+  * **MEDIUM (triangulation_audit.py CLI help)** — `--severity-threshold` and `--priority-threshold` help strings claimed canonical values lived in `config/tunables.yaml`; they don't. **Fixed**: rewrote help to say "Built-in script default — NOT in config/tunables.yaml (Phase 7 lint requires numeric ranges; this is an enum). Persistent change requires a code edit + new release."
+  * **LOW (contract:76)** — Edge-case section promised the audit "emits a `warning` log line" on dangling SourceID; implementation silently skips. **Fixed**: removed the warning-log promise; rewrote to point at upstream auditors (citation/consistency) as the proper surface for surfacing FK violations.
+- **Round 2: REQUEST CHANGES.** Two LOW findings — both follow-on doc drift from the same refactor:
+  * **LOW (triangulation_audit.py:22 + :68 + test_triangulation_audit.py:9)** — module docstring + DEFAULT_* comment + test docstring still said "Tunables: config/tunables.yaml" / "keep in lockstep with config/tunables.yaml" / "Tunable thresholds (min sourcetypes / severity / priority)". **Fixed**: scoped "Tunable" wording to `triangulation_min_distinct_sourcetypes` only; described Severity/Priority as built-in CLI defaults; expanded the constant block's comment to explain why each default is in code vs in tunables.yaml.
+  * **LOW (contract:29)** — said `analyst_judgment` skip is "recorded in the per-claim finding" but the JSON/Markdown only surfaces `claims_skipped_analyst_judgment` (count) in summary. **Fixed**: softened contract to "reflected in the snapshot summary as `claims_skipped_analyst_judgment` (count only — individual skipped claims are NOT enumerated; surfacing them as actionable findings would be noise since they're correctly excluded by the contract)."
+- **Round 3: REQUEST CHANGES.** One LOW finding — release-note drift (third doc-vs-impl drift in this release):
+  * **LOW (CHANGELOG.md + docs/RELEASING.md)** — test count not bumped after the R0 self-review test was added: changelog said `47 new tests` / `2060 → 2107` / `47/47 passed`, RELEASING table said `47 new tests`. **Fixed**: bumped to `48 new tests` / `2060 → 2108` / `47/47 first-run + 1 self-review` everywhere. Codex confirmed no other stale tunable references and verified analyst_judgment skip wording matches `build_snapshot` output.
+- **Round 4: APPROVE — no findings.** Codex confirmed all R1+R2+R3 findings closed cleanly; no remaining stale `47` / `2107` references; the retained `47/47 passed` wording is now contextually accurate (framed as the first-run pre-R0 state, not the final release total). v1.2.17 ready to ship after 3 review rounds + 1 approve round (vs 6 rounds for v1.2.15 + v1.2.16). Self-review checklist applied pre-Codex prevented multi-round technical-correctness cascades; the 3 round-trips were all doc-vs-impl drift from the same mid-implementation refactor — different class than R3-R5 of v1.2.16 (which were code-correctness cascades).
+
+(Self-review lesson sharpened **again**: doc-vs-impl drift surfaced in 3 consecutive Codex rounds because each fix changed something the docs claimed. Adding "release-note + RELEASING table row sync" to the standing self-review checklist's after-refactor grep — release notes are stale-content magnets.)
+
+(Self-review lesson sharpened: after any refactor that moves a concept's home (e.g., tunable → CLI default), `grep -rn "<concept-name>"` across **all** files including module docstrings, constant comments, test docstrings, contract sections — not just the obvious entry points. This is a 30-second check that closes the entire class.)
+
 ## [v1.2.16] — 2026-04-25
 
 **Reality-probe Freshness — opt-in operator audit over A50 EffectiveDate.** First Reality-probe in the v1.2.16+ wave (Triangulation lands in v1.2.17). Adds an optional `EffectiveDate` field to A50 (backward-compatible) plus a new `scripts/freshness_audit.py` operator runner that flags sources older than a tunable threshold and surfaces dependent-claim impact via A59 join. Audit is **non-blocking by default** — verdicts are `pass` / `warn` / `n/a`, never `fail` — so existing operator workspaces with no `EffectiveDate` populated yet keep working unchanged.
