@@ -3,7 +3,7 @@
   "generated_at": "2026-04-25T00:00:00Z",
   "sidecar": "camunda-bpmn-from-context",
   "sidecar_version": "1.0.0",
-  "canon_policy_version": "1.3.1+hash:c7442dd1",
+  "canon_policy_version": "1.3.2+hash:a0cbc336",
   "view_files": [
     {
       "path": "analysis/views/bpmn/ticket_intake.bpmn",

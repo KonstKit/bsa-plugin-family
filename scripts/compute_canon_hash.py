@@ -109,6 +109,7 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/asyncapi-from-context/SKILL.md",
     "skills/inot-prompt-builder/SKILL.md",
     "skills/openapi-from-context/SKILL.md",
+    "skills/proto-from-context/SKILL.md",
     # Orchestrator references — the policy heart of the system.
     "skills/bsa-orchestrator/references/agent-write-scope.md",
     "skills/bsa-orchestrator/references/canonical-artifact-map.md",
@@ -154,6 +155,8 @@ POLICY_GLOBS: tuple[str, ...] = (
     "skills/dbml-from-context/references/anchor_manifest.schema.json",
     "skills/openapi-from-context/references/integration-contract.md",
     "skills/openapi-from-context/references/anchor_manifest.schema.json",
+    "skills/proto-from-context/references/integration-contract.md",
+    "skills/proto-from-context/references/anchor_manifest.schema.json",
     # Repo-level policy docs.
     "docs/sem_audit_rename.md",
 )
