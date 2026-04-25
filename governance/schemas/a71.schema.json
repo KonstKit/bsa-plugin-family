@@ -116,6 +116,32 @@
     ],
     "rationale": "Without this rule, duplicate ScenarioID values could land at promote-gate + silently break every downstream cross-reference. ScenarioID is the row-identifier."
   },
+  "x-bsa-foreign-key-refs": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.13 via governance/schemas/write_validator.py::_apply_foreign_key_refs. Schema-agnostic cross-artifact FK resolution. Pre-v1.2.13 the existing per-row extensions checked whether these columns were non-blank (INV-01 / INV-08 / INV-10 etc.) but did NOT check resolution against the sibling artifact at hook time; v1.2.13 closes the gap. Parallel to A72's A72-specific x-bsa-foreign-key-rules (which also includes claim_source_consistency).",
+    "applies_to_all_rows": true,
+    "foreign_keys": [
+      {
+        "column": "SourceStoryID",
+        "table": "A70_story_register.csv",
+        "target_column": "StoryID",
+        "rationale": "INV-10: every test scenario MUST have a non-blank SourceStoryID resolving in A70."
+      },
+      {
+        "column": "RelatedNFRID",
+        "table": "A62_nfr_register.csv",
+        "target_column": "NFRID",
+        "optional_when_blank": true,
+        "rationale": "Optional NFR link; when non-blank MUST resolve in A62. The NFR-coverage rule fires separately via _apply_nfr_coverage_rules when RelatedNFRID is set."
+      },
+      {
+        "column": "A51Ref",
+        "table": "A51_issue_route_register.csv",
+        "target_column": "A51Ref",
+        "optional_when_blank": true,
+        "rationale": "When AutomationStatus=deferred (x-bsa-deferral-rules), A51Ref must be set + resolve."
+      }
+    ]
+  },
   "x-bsa-nfr-coverage-rules": {
     "_comment": "EXECUTABLE at the F5 hook layer as of v1.1.3 (closes TODO-S8-01-X-ARTIFACT-NFR-COVERAGE). When RelatedNFRID is non-empty, the Then-clause MUST contain the literal Target string from A62 (whatever shape A62 chose for that row \u2014 `< 500`, `>= 99.9`, `500 ms`, etc.) AND reference the NFR's Metric \u2014 relaxed match: at least one significant word (length \u2265 3, not in stopword list) from Metric must appear in the Then-clause (paraphrase OK \u2014 humans don't write snake_case identifiers in Gherkin). The literal-Target requirement matters because the assertion is what becomes a runnable test threshold; the relaxed Metric check is anti-aspiration ('agent gets paged' instead of an actual measurement), not anti-paraphrase. Implementation: governance/schemas/write_validator.py::_apply_nfr_coverage_rules + _SiblingArtifactCache (per-validation-run memoized A62 reads from analysis/canonical/core_controls/A62_nfr_register.csv). Pre-v1.1.3 enforcement was bsa-test-scenario-builder self-validation only; v1.1.3 makes the rule mechanical at hook time so any writer is gated. Same shape as A72's x-bsa-foreign-key-rules.",
     "requires_then_embeds_metric_and_target_when_nfr_set": true,

@@ -965,6 +965,162 @@ def _check_unique_columns(
     return violations
 
 
+def _apply_foreign_key_refs(
+    rows: list[dict], schema: dict, path: str,
+    sibling_cache: _SiblingArtifactCache | None,
+) -> list[str]:
+    """Apply the generic ``x-bsa-foreign-key-refs`` extension (v1.2.13).
+
+    Schema-agnostic cross-artifact foreign-key resolution for any
+    canonical CSV schema. Parallel to the earlier, A72-specific
+    ``x-bsa-foreign-key-rules`` extension (which hard-codes
+    StoryID/ClaimID/SourceID field names + the ``claim_source_consistency``
+    rule) — the new extension handles the common FK-resolution case
+    that most schemas need.
+
+    Extension shape::
+
+        "x-bsa-foreign-key-refs": {
+          "_comment": "EXECUTABLE at F5 hook layer as of v1.2.13 ...",
+          "applies_to_all_rows": true,
+          "foreign_keys": [
+            {
+              "column": "SourceID",
+              "table": "A50_source_register.csv",
+              "target_column": "SourceID",
+              "multi": false,
+              "optional_when_blank": false,
+              "rationale": "Every excerpt must trace to a registered source."
+            },
+            {
+              "column": "SourceClaimIDs",
+              "table": "A59_claim_register.csv",
+              "target_column": "ClaimID",
+              "multi": true,
+              "optional_when_blank": true,
+              "rationale": "Stories trace to direct claims via SourceClaimIDs OR route through A51Ref."
+            }
+          ]
+        }
+
+    Per-FK fields:
+
+    * ``column`` — name of the column in THIS schema's row that holds
+      the FK value(s).
+    * ``table`` — filename of the sibling canonical CSV (e.g.,
+      ``A50_source_register.csv``).
+    * ``target_column`` — column in the sibling CSV that the FK
+      value must resolve to.
+    * ``multi`` (optional, default ``false``) — when ``true``, the
+      column value is split on ``[;/\\s]+`` into multiple tokens +
+      each token is resolved independently. Matches the convention
+      used by the existing A72 FK handler + A70.SourceClaimIDs /
+      A62.SourceClaimIDs / A70.RelatedNFRIDs.
+    * ``optional_when_blank`` (optional, default ``false``) — when
+      ``true``, a blank cell skips the FK check for that row (the
+      schema's required-field check still applies separately). Used
+      for fields like A59.SourceID that are non-blank only when
+      ``ClaimType in {direct, inference}``.
+
+    Same fail-CLOSED partial-config behavior as the v1.2.8 A61
+    anchor-binding handler: a FK entry missing ``column``,
+    ``table``, or ``target_column`` (or with wrong types) emits a
+    ``<schema config>`` violation rather than silently skipping.
+
+    Same fail-soft sibling-cache behavior as other cross-artifact
+    handlers: ``sibling_cache is None`` (outside canonical layout)
+    no-ops silently; sibling-missing emits a per-row
+    ``sibling-not-readable`` violation for every row with a
+    non-blank FK value.
+
+    Same ``applies_to_all_rows`` gate as the other extensions.
+    """
+    ext = schema.get("x-bsa-foreign-key-refs", {})
+    if not isinstance(ext, dict) or not ext.get("applies_to_all_rows"):
+        return []
+    fks = ext.get("foreign_keys")
+    if not isinstance(fks, list) or not fks:
+        return []
+
+    violations: list[str] = []
+    for fk_idx, fk in enumerate(fks):
+        if not isinstance(fk, dict):
+            violations.append(
+                f"<schema config>: x-bsa-foreign-key-refs.foreign_keys[{fk_idx}] "
+                f"must be an object — got {type(fk).__name__}"
+            )
+            continue
+        column = fk.get("column")
+        table = fk.get("table")
+        target_column = fk.get("target_column")
+        # Fail-CLOSED on partial config (v1.2.8 pattern).
+        missing = [
+            k for k, v in (
+                ("column", column), ("table", table),
+                ("target_column", target_column),
+            )
+            if not v or not isinstance(v, str)
+        ]
+        if missing:
+            violations.append(
+                f"<schema config>: x-bsa-foreign-key-refs.foreign_keys[{fk_idx}] "
+                f"missing or non-string key(s): {', '.join(missing)} — "
+                f"fail-CLOSED to surface schema misconfig rather than "
+                f"silently skipping FK resolution"
+            )
+            continue
+        multi = bool(fk.get("multi", False))
+        optional = bool(fk.get("optional_when_blank", False))
+
+        if sibling_cache is None:
+            # Path doesn't fit the canonical layout (test fixture
+            # outside analysis/canonical/core_controls/). Skip
+            # silently — same convention as A72's handler. Tests
+            # that exercise FK resolution use a real layout.
+            continue
+
+        sibling = sibling_cache.load(table, target_column)
+        if sibling is None:
+            # Sibling file missing / unreadable. One violation per
+            # row with a non-blank value (operator sees full scope).
+            for row_idx, row in enumerate(rows, start=2):  # +2 for header
+                raw = (row.get(column) or "").strip()
+                if not raw:
+                    continue  # nothing to resolve
+                violations.append(
+                    f"line {row_idx} {column}={raw!r}: sibling artifact "
+                    f"{table} is missing or unreadable — cannot verify "
+                    f"FK resolution (x-bsa-foreign-key-refs → {column})"
+                )
+            continue
+
+        for row_idx, row in enumerate(rows, start=2):
+            raw = (row.get(column) or "").strip()
+            if not raw:
+                # Blank cell — skip regardless of optional_when_blank.
+                # The optional flag gates what the handler does when
+                # the cell IS blank; here we simply note that a blank
+                # FK can't resolve, and the schema's required-field
+                # check (or the per-row rules like _apply_claim_type_
+                # rules) handles the "must be non-blank" case.
+                continue
+            # Multi-valued: split on the documented delimiters
+            # (matches the A72 handler's convention). Single-valued:
+            # treat the whole raw string as one token.
+            values = (
+                [v for v in re.split(r"[;/\s]+", raw) if v]
+                if multi else [raw]
+            )
+            for v in values:
+                if v not in sibling:
+                    violations.append(
+                        f"line {row_idx} {column}={v!r}: does not resolve "
+                        f"in {table}.{target_column} "
+                        f"(x-bsa-foreign-key-refs → {column})"
+                    )
+    return violations
+
+
 def _apply_uniqueness_rules(
     rows: list[dict], schema: dict, path: str,
     sibling_cache: _SiblingArtifactCache | None,
@@ -1236,6 +1392,13 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
                 all_rows, schema, path, sibling_cache,
             ))
             violations.extend(_apply_uniqueness_rules(
+                all_rows, schema, path, sibling_cache,
+            ))
+            #   * x-bsa-foreign-key-refs (v1.2.13 — generic):
+            #     schema-agnostic cross-artifact FK resolution.
+            #     Parallel to A72's a-specific x-bsa-foreign-key-rules;
+            #     most canonical schemas use the new generic one.
+            violations.extend(_apply_foreign_key_refs(
                 all_rows, schema, path, sibling_cache,
             ))
         except csv.Error as exc:

@@ -98,6 +98,33 @@
     ],
     "rationale": "Without this rule, duplicate ClaimID values could land at promote-gate + silently break every downstream cross-reference. ClaimID is the row-identifier."
   },
+  "x-bsa-foreign-key-refs": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.13 via governance/schemas/write_validator.py::_apply_foreign_key_refs. Schema-agnostic cross-artifact FK resolution. Pre-v1.2.13 the existing per-row extensions checked whether these columns were non-blank (INV-01 / INV-08 / INV-10 etc.) but did NOT check resolution against the sibling artifact at hook time; v1.2.13 closes the gap. Parallel to A72's A72-specific x-bsa-foreign-key-rules (which also includes claim_source_consistency).",
+    "applies_to_all_rows": true,
+    "foreign_keys": [
+      {
+        "column": "SourceID",
+        "table": "A50_source_register.csv",
+        "target_column": "SourceID",
+        "optional_when_blank": true,
+        "rationale": "Claims of type direct/inference MUST have a non-blank SourceID that resolves in A50. analyst_judgment claims have blank SourceID (enforced separately by _apply_claim_type_rules); when blank, this FK check is skipped."
+      },
+      {
+        "column": "ExcerptID",
+        "table": "A58_evidence_excerpts.csv",
+        "target_column": "ExcerptID",
+        "optional_when_blank": true,
+        "rationale": "Same conditional shape as SourceID: required-non-blank for direct/inference, blank-allowed for analyst_judgment. When non-blank MUST resolve in A58."
+      },
+      {
+        "column": "A51Ref",
+        "table": "A51_issue_route_register.csv",
+        "target_column": "A51Ref",
+        "optional_when_blank": true,
+        "rationale": "When a claim is A51-routed, A51Ref MUST resolve in A51. Blank A51Ref means the claim is not routed; the blank case is allowed."
+      }
+    ]
+  },
   "x-bsa-claim-type-rules": {
     "_comment": "Cross-field validation rules enforced by validators (not by jsonschema directly because the rules need access to upstream files for full enforcement). Validators: bsa-claim-binder, bsa-citation-auditor, F5 write-time hook.",
     "direct": {

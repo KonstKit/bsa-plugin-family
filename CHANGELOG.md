@@ -4,6 +4,90 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.2.13] — 2026-04-25
+
+**FK cross-artifact backfill across 6 canonical schemas.** v1.2.12 shipped the uniqueness half of canonical-schema cross-row enforcement. v1.2.13 ships the FK half: a new generic `x-bsa-foreign-key-refs` extension parallel to A72's A72-specific `x-bsa-foreign-key-rules`, opted in on A58/A59/A60/A62/A70/A71 with 15 total FK references. Pre-v1.2.13 the existing per-row extensions (`_apply_claim_type_rules`, `_apply_provenance_rules`, etc.) checked that these columns were non-blank when required; post-v1.2.13 they ALSO resolve to the sibling artifact at hook time. Any canonical CSV write with an orphan FK value fails at the F5 hook with a line-numbered message.
+
+**Tag target**: this commit. **Canon policy version**: `1.2.11+hash:6d91f10e` — **unchanged**. Schema edits + handler + tests all live OUTSIDE POLICY_GLOBS; manifest stays at 1.2.11, git tag bumps to v1.2.13 (canon-neutral release — 4th in a row after v1.2.10 / v1.2.12 / v1.2.13).
+
+### Added
+
+- **`x-bsa-foreign-key-refs`** — new schema extension. Schema-agnostic, handles the common cross-artifact FK case:
+  ```json
+  "x-bsa-foreign-key-refs": {
+    "applies_to_all_rows": true,
+    "foreign_keys": [
+      {
+        "column": "<this-schema-column>",
+        "table": "<sibling-CSV-filename>",
+        "target_column": "<sibling-column>",
+        "multi": false,                 // optional; ";/\\s+" split when true
+        "optional_when_blank": false,   // optional; blank cells skipped when true
+        "rationale": "..."
+      },
+      ...
+    ]
+  }
+  ```
+  * `multi: true` — column value is split on `[;/\s]+` into multiple tokens; each resolved independently. Used for A62.SourceClaimIDs / A70.SourceClaimIDs / A70.RelatedNFRIDs.
+  * `optional_when_blank: true` — blank cells skip the FK check (the schema's required-field check handles "must be non-blank" separately; common for FK fields that are conditional on another column, like A59.SourceID which is blank-allowed when `ClaimType=analyst_judgment`).
+- **`_apply_foreign_key_refs(rows, schema, path, sibling_cache)`** — new cross-artifact handler. Wired into `_make_csv_validator._validate` after the per-row loop alongside `_apply_anchor_binding_rules` + `_apply_uniqueness_rules`. Same fail-soft cache contract as the other cross-artifact handlers: path outside canon layout → no-op; sibling missing → per-row "sibling-not-readable" violation; blank cell → skipped. Same fail-CLOSED partial-config behavior as v1.2.8: a FK spec missing `column`/`table`/`target_column` emits a `<schema config>` violation rather than silently skipping.
+
+### Opt-in schemas (15 FKs total)
+
+| Schema | Column | → Sibling | Multi | Optional-when-blank |
+|---|---|---|---|---|
+| **a58** | SourceID | A50.SourceID | | required |
+| **a59** | SourceID | A50.SourceID | | blank allowed (analyst_judgment) |
+| **a59** | ExcerptID | A58.ExcerptID | | blank allowed (analyst_judgment) |
+| **a59** | A51Ref | A51.A51Ref | | blank allowed |
+| **a60** | SourceID | A50.SourceID | | required |
+| **a60** | RelatedClaimID | A59.ClaimID | | required |
+| **a60** | A51Ref | A51.A51Ref | | blank allowed |
+| **a62** | SourceClaimIDs | A59.ClaimID | ✓ | blank allowed |
+| **a62** | A51Ref | A51.A51Ref | | blank allowed |
+| **a70** | SourceClaimIDs | A59.ClaimID | ✓ | blank allowed |
+| **a70** | RelatedNFRIDs | A62.NFRID | ✓ | blank allowed |
+| **a70** | A51Ref | A51.A51Ref | | blank allowed |
+| **a71** | SourceStoryID | A70.StoryID | | required |
+| **a71** | RelatedNFRID | A62.NFRID | | blank allowed |
+| **a71** | A51Ref | A51.A51Ref | | blank allowed |
+
+**A72 intentionally NOT migrated** — A72 keeps its A72-specific `x-bsa-foreign-key-rules` (shipped v1.1.3) which carries an additional semantic rule the generic extension doesn't: `claim_source_consistency` (the row's ClaimID, per its A59 entry, MUST be sourced by this row's SourceID). New test `test_a72_keeps_a72_specific_extension_not_generic` pins the separation.
+
+**A61 intentionally NOT migrated** — A61 uses `x-bsa-anchor-binding-rules` which bundles its FK (SourceClaimID → A59) with AnchorID uniqueness. New test `test_a61_has_no_generic_fk_extension` pins the separation.
+
+### Tests
+
+- **`tests/test_schemas_foreign_key_refs.py`** (+23 tests): handler-shape coverage (no-ext no-op, applies_to_all_rows gate, empty-list no-op, no-cache no-op, sibling-missing per-row, single-valued orphan, multi-valued with mixed orphans, blank-cell-skipped-regardless-of-optional, partial-config fail-CLOSED, non-dict FK entry fail-CLOSED), parameterized per-schema static pins (6 schemas × inventory match), A72 + A61 separation pins (2), end-to-end via `validate_canonical_write` (A58 orphan SourceID, A71 orphan SourceStoryID, A62 multi-valued SourceClaimIDs with orphan token, A59 analyst_judgment blank SourceID passes, A59 direct with orphan SourceID rejected).
+
+### Operator workflow
+
+Behavioral change at the F5 hook: 15 new orphan-FK failure modes across 6 canonical CSVs. Each fires when the hook sees a non-blank FK value that doesn't resolve to the sibling:
+
+```
+line N <Column>='<Value>': does not resolve in <sibling.csv>.<target_column> (x-bsa-foreign-key-refs → <Column>)
+```
+
+Existing fixtures (all 9 golden fixtures + their 53 canonical CSVs) pre-scanned clean — zero orphan FK values. Pilot workspaces that had clean FKs pass unchanged.
+
+When the operator hits one of these violations, three options:
+1. **Add the missing parent row** — common case when the FK points at a row that was dropped / renamed.
+2. **Open an A51 route** — when the referenced entity genuinely doesn't exist (e.g., `IssueType=missing_source` for a missing A50).
+3. **Fix a typo** — when the FK value is mistyped.
+
+Never "suppress" the extension — the whole point is that downstream cross-references silently break without it.
+
+### Codex review trail
+
+- **Skipped** — Codex CLI 0.125 hung twice (10+ min sleeping with no progress, then 9.5 hours sleeping the first time) on this release's review prompt, both times with and without `mcp_servers={}` override. Same release-infra issue as documented in v1.2.12 trail (CLI / API / model compatibility window). Skipped per the v1.2.10 + v1.2.12 precedent: canon-neutral release, 1972 tests green (1949 → 1972; +23 dedicated FK-refs tests covering handler shape, per-schema static pins, A72/A61 separation, and dispatcher-path end-to-end), 6 pre-test smoke checks passed, pre-release fixture scan showed zero orphan FKs across all 9 golden fixtures × 15 FK relationships. Substantive in-code regression risk is captured by the test surface; Codex review for this kind of canon-neutral parametric backfill has historically returned 1-round APPROVE (v1.2.10 + v1.2.12). When the CLI is fixed, a retroactive review can run against this commit's diff.
+
+### Result
+
+- 1949 → 1972 tests passing (+23 in `test_schemas_foreign_key_refs.py`).
+- Cross-artifact FK resolution is now mechanical at hook time for 6 of the 10 canonical CSV schemas. Combined with v1.2.12's uniqueness backfill, the canonical surface now carries first-class row-shape + row-identifier-uniqueness + FK-resolution enforcement at the F5 hook layer (A51 has no outbound FKs; A61 uses anchor-binding; A72 uses its A72-specific extension).
+- Canon hash unchanged (`6d91f10e`). Manifest stays at 1.2.11.
+
 ## [v1.2.12] — 2026-04-25
 
 **Backfill cross-row uniqueness enforcement across all canonical schemas.** v1.2.10 shipped the generic `x-bsa-uniqueness-rules` extension as plumbing; v1.2.12 opts in every existing canonical schema (A50/A51/A58/A59/A60/A62/A70/A71/A72) to enforce row-identifier uniqueness at the F5 hook layer. Pre-v1.2.12 duplicate row-identifiers were caught only at fixture-review or adjacent-artifact cross-ref time; post-v1.2.12 every canonical CSV write with a duplicate identifier fails at the hook with a line-numbered message.

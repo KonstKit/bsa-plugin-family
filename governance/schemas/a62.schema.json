@@ -114,6 +114,27 @@
     ],
     "rationale": "Without this rule, duplicate NFRID values could land at promote-gate + silently break every downstream cross-reference. NFRID is the row-identifier."
   },
+  "x-bsa-foreign-key-refs": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.13 via governance/schemas/write_validator.py::_apply_foreign_key_refs. Schema-agnostic cross-artifact FK resolution. Pre-v1.2.13 the existing per-row extensions checked whether these columns were non-blank (INV-01 / INV-08 / INV-10 etc.) but did NOT check resolution against the sibling artifact at hook time; v1.2.13 closes the gap. Parallel to A72's A72-specific x-bsa-foreign-key-rules (which also includes claim_source_consistency).",
+    "applies_to_all_rows": true,
+    "foreign_keys": [
+      {
+        "column": "SourceClaimIDs",
+        "table": "A59_claim_register.csv",
+        "target_column": "ClaimID",
+        "multi": true,
+        "optional_when_blank": true,
+        "rationale": "Multi-valued FK: NFR rows derive from one or more A59 claims. Delimiters per convention: ; / whitespace. Optional-when-blank because an NFR row may be A51-routed via A51Ref with no direct claim backing."
+      },
+      {
+        "column": "A51Ref",
+        "table": "A51_issue_route_register.csv",
+        "target_column": "A51Ref",
+        "optional_when_blank": true,
+        "rationale": "When the NFR is deferred / uncertain, A51Ref must resolve."
+      }
+    ]
+  },
   "x-bsa-measurability-rules": {
     "_comment": "INV-09 cross-field rules enforced by bsa-nfr-collector's own validator (not by json-schema directly because the rule is category-conditional). F5 write-validator catches the per-row schema shape; bsa-nfr-collector catches the category-conditional semantics.",
     "quantitative_categories_requiring_metric_and_target": [

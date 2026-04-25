@@ -125,6 +125,35 @@
     ],
     "rationale": "Without this rule, duplicate StoryID values could land at promote-gate + silently break every downstream cross-reference. StoryID is the row-identifier."
   },
+  "x-bsa-foreign-key-refs": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.13 via governance/schemas/write_validator.py::_apply_foreign_key_refs. Schema-agnostic cross-artifact FK resolution. Pre-v1.2.13 the existing per-row extensions checked whether these columns were non-blank (INV-01 / INV-08 / INV-10 etc.) but did NOT check resolution against the sibling artifact at hook time; v1.2.13 closes the gap. Parallel to A72's A72-specific x-bsa-foreign-key-rules (which also includes claim_source_consistency).",
+    "applies_to_all_rows": true,
+    "foreign_keys": [
+      {
+        "column": "SourceClaimIDs",
+        "table": "A59_claim_register.csv",
+        "target_column": "ClaimID",
+        "multi": true,
+        "optional_when_blank": true,
+        "rationale": "Multi-valued FK: stories derive from one or more claims. INV-08 requires SourceClaimIDs non-empty OR A51Ref set; when non-empty each token MUST resolve in A59."
+      },
+      {
+        "column": "RelatedNFRIDs",
+        "table": "A62_nfr_register.csv",
+        "target_column": "NFRID",
+        "multi": true,
+        "optional_when_blank": true,
+        "rationale": "Multi-valued FK: stories may link to zero or more NFRs. When non-empty each token MUST resolve in A62."
+      },
+      {
+        "column": "A51Ref",
+        "table": "A51_issue_route_register.csv",
+        "target_column": "A51Ref",
+        "optional_when_blank": true,
+        "rationale": "When the story is deferred / a51-routed, A51Ref must resolve."
+      }
+    ]
+  },
   "x-bsa-provenance-rules": {
     "_comment": "INV-08 cross-field rules enforced by bsa-story-writer's own output validator. JSON Schema can't express 'at least one of [A,B] is non-empty' cleanly for CSV-string values that are 'empty' vs 'non-empty' rather than null vs set; the skill and F5 write-time path use this extension as a lookup table.",
     "at_least_one_of_non_empty": [

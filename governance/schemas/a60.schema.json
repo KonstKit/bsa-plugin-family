@@ -68,5 +68,30 @@
       "NegEvID"
     ],
     "rationale": "Without this rule, duplicate NegEvID values could land at promote-gate + silently break every downstream cross-reference. NegEvID is the row-identifier."
+  },
+  "x-bsa-foreign-key-refs": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.2.13 via governance/schemas/write_validator.py::_apply_foreign_key_refs. Schema-agnostic cross-artifact FK resolution. Pre-v1.2.13 the existing per-row extensions checked whether these columns were non-blank (INV-01 / INV-08 / INV-10 etc.) but did NOT check resolution against the sibling artifact at hook time; v1.2.13 closes the gap. Parallel to A72's A72-specific x-bsa-foreign-key-rules (which also includes claim_source_consistency).",
+    "applies_to_all_rows": true,
+    "foreign_keys": [
+      {
+        "column": "SourceID",
+        "table": "A50_source_register.csv",
+        "target_column": "SourceID",
+        "rationale": "Every negative-evidence finding must trace to a registered source."
+      },
+      {
+        "column": "RelatedClaimID",
+        "table": "A59_claim_register.csv",
+        "target_column": "ClaimID",
+        "rationale": "Every negative-evidence row annotates a specific A59 claim; the ClaimID MUST resolve."
+      },
+      {
+        "column": "A51Ref",
+        "table": "A51_issue_route_register.csv",
+        "target_column": "A51Ref",
+        "optional_when_blank": true,
+        "rationale": "When the negative-evidence row is A51-routed (e.g., contradiction flagged for follow-up), A51Ref must resolve."
+      }
+    ]
   }
 }
