@@ -152,7 +152,7 @@ If you didn't commit per-promotion, that's a process lesson for next time. The w
 ## Where do I file an issue?
 
 This is a solo-maintainer, local-only tool. There is no public issue tracker. For findings surfaced during the Phase 2.5 shakedown, log them under `docs/phase_2_5_shakedown.md` §Aggregated findings. For anything else, note them in your own project log and promote to a v1.0.x hotfix or Phase 3+ backlog item when scope is clearer. A useful issue note includes:
-- Plugin version (`/plugin list`).
+- Plugin version (`claude plugin list`).
 - Canon hash (from any recent `*.pass.json` marker).
 - Claude Code version.
 - The exact slash command you ran + its output.

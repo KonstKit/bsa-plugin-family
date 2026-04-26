@@ -229,19 +229,31 @@ def _classify_anchor(row: dict) -> tuple[str, str]:
 
 
 def _read_plugin_canon_version() -> str:
-    """Read the active canon_policy_version from .claude-plugin/plugin.json
-    so the manifest correlates exporter output to a specific policy
-    state. Returns "0.0.0" if the manifest is unreadable (defensive —
-    the manifest is required for normal runs but the exporter shouldn't
-    crash if invoked in a partially-set-up workspace)."""
+    """Read the active canon_policy_version from .claude-plugin/canon_policy.json
+    (extracted from plugin.json in v1.3.6 hotfix — Claude Code v2.1.19
+    plugin install schema rejects unknown top-level keys, so the canon
+    block lives in a sibling file now). Falls back to legacy
+    plugin.json::canonPolicyVersion if canon_policy.json is missing —
+    one-version backward compat for downstream tooling pinned to
+    pre-v1.3.6 manifests. Returns "0.0.0" if neither is readable
+    (defensive — the manifest is required for normal runs but the
+    exporter shouldn't crash if invoked in a partially-set-up workspace)."""
+    canon_path = REPO_ROOT / ".claude-plugin" / "canon_policy.json"
     plugin_path = REPO_ROOT / ".claude-plugin" / "plugin.json"
-    if not plugin_path.is_file():
-        return "0.0.0"
-    try:
-        doc = json.loads(plugin_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return "0.0.0"
-    canon = doc.get("canonPolicyVersion", {})
+    canon: dict = {}
+    if canon_path.is_file():
+        try:
+            canon = json.loads(canon_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            canon = {}
+    elif plugin_path.is_file():
+        try:
+            doc = json.loads(plugin_path.read_text(encoding="utf-8"))
+            legacy = doc.get("canonPolicyVersion", {})
+            if isinstance(legacy, dict):
+                canon = legacy
+        except (OSError, json.JSONDecodeError):
+            canon = {}
     if not isinstance(canon, dict):
         return "0.0.0"
     semver = str(canon.get("semver", "0.0.0"))

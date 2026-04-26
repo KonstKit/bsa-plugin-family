@@ -149,7 +149,7 @@ When you edit ANY file in `scripts/compute_canon_hash.py::POLICY_GLOBS`:
 
 1. **Make all edits first.** Don't recompute the hash mid-batch.
 2. **Run `python3 scripts/compute_canon_hash.py`.** Capture the new full hex digest.
-3. **Update `.claude-plugin/plugin.json`** — bump `version` AND `canonPolicyVersion.semver` AND `canonPolicyVersion.hash_prefix` (8-char) AND `canonPolicyVersion.hash_full` (full 64-char) AND `canonPolicyVersion.computed_at`.
+3. **Update `.claude-plugin/plugin.json` `version`** AND **`.claude-plugin/canon_policy.json`** (v1.3.6 split — bump `semver` AND `hash_prefix` (8-char) AND `hash_full` (full 64-char) AND `computed_at`). Both files MUST move in lockstep — `tests/test_plugin_manifest.py::test_manifest_version_and_canon_semver_agree` enforces it.
 4. **Update 5 `fixtures/golden/project_0004_sidecar_e2e/` metadata files** in lockstep:
    - `fixture_metadata.json` (`canon_policy_version` + `plugin_version`)
    - `expected_outputs/views/{bpmn,c4,dbml}/anchor_manifest.json` (`canon_policy_version`)
@@ -169,7 +169,9 @@ When you edit ANY file in `scripts/compute_canon_hash.py::POLICY_GLOBS`:
 ## File layout reference
 
 ```
-.claude-plugin/plugin.json           # Manifest + canonPolicyVersion (single source of truth)
+.claude-plugin/plugin.json           # Plugin manifest (Claude Code-schema-valid: name/version/description/license/...)
+.claude-plugin/canon_policy.json     # Canon policy version block (v1.3.6 split from plugin.json)
+.claude-plugin/marketplace.json      # Local-only marketplace registration
 governance/
 ├── immutable_invariants.md          # INV-01..INV-10 (POLICY_GLOBS)
 └── schemas/

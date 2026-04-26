@@ -5,9 +5,9 @@
 ## Install
 
 ```
-/plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
-/plugin install bsa-full@bsa-marketplace
-/plugin list       # expect bsa-full@1.2.11 (v1.2.x line; manifest may lag git tag during canon-neutral patch releases)
+claude plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
+claude plugin install bsa-full@bsa-marketplace
+claude plugin list       # expect bsa-full@1.2.11 (v1.2.x line; manifest may lag git tag during canon-neutral patch releases)
 ```
 
 Full install / uninstall / upgrade (including session-only `claude --plugin-dir` path): [INSTALL.md](INSTALL.md).
@@ -60,7 +60,7 @@ Governance invariants: evidence-binding, single-writer canonical, no-new-claims,
 ## Repository layout
 
 ```
-.claude-plugin/         Plugin manifest (plugin.json with canonPolicyVersion)
+.claude-plugin/         Plugin manifest (plugin.json) + canon-policy block (canon_policy.json, v1.3.6 split) + marketplace.json
 commands/               6 slash commands (/bsa-start, /bsa-status, /bsa-stage, /bsa-promote, /bsa-audit, /bsa-handoff)
                           + 1 Phase-3 composite (/bsa-dev-handoff)
 hooks/                  3 safety hooks (SessionStart, PreToolUse:Write, PreToolUse:Bash)

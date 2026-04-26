@@ -26,8 +26,8 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 - `python3 scripts/fixture_runner.py --all` — all 8 fixtures (3 happy-path: `project_0001`/`0002`/`0003` + 5 adversarial: `prompt_injection`, `nfr_claim_contradiction`, `multi_way_contradiction`, `tier_delta_auto_resolution`, `block_on_contradiction` — last one is `spec_only=true`) must validate.
 - `python3 scripts/privacy_scan.py` — 0 blockers.
 - `python3 scripts/security_audit.py` — 0 CRITICAL + 0 HIGH (drift detection for token leakage / insecure subprocess / dangerous builtins; v1.1.11).
-- `python3 scripts/compute_canon_hash.py` — output must match `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full` (the `test_manifest_canon_hash_matches_current_script_output` pytest case also enforces this).
-- Manifest test (`test_manifest_version_and_canon_semver_agree`) — `version` MUST equal `canonPolicyVersion.semver`.
+- `python3 scripts/compute_canon_hash.py` — output must match `.claude-plugin/canon_policy.json` `hash_full` (v1.3.6: extracted from `plugin.json` because Claude Code v2.1.19 install schema rejects unknown top-level keys; the `test_manifest_canon_hash_matches_current_script_output` pytest case also enforces this).
+- Manifest test (`test_manifest_version_and_canon_semver_agree`) — `plugin.json::version` MUST equal `canon_policy.json::semver`.
 - Every commit references the relevant US-ID from the sprint plan (or the section letter — `A2`, `B1`, `C`, etc. — for v1.1.x patch-line work).
 - If the commit touches any invariant in [governance/immutable_invariants.md](governance/immutable_invariants.md) — commit message MUST include explicit reference + justification + major CanonPolicyVersion bump.
 - CHANGELOG updated in the same commit (or the immediately adjacent chore commit).

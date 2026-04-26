@@ -1249,46 +1249,48 @@ def test_fixture_sidecar_manifests_canon_policy_version_matches_fixture_metadata
 def test_fixture_stage1_marker_canon_policy_matches_plugin() -> None:
     """v1.2.11 round-1 Codex Critical #4: the stage1 marker in the
     fixture's `expected_markers/` also carries a `canon_policy_version`
-    + `canon_policy_version_hash` pair. Pin them to match plugin.json
-    so a future canon bump that refreshes plugin.json + fixture
-    manifests but forgets the marker surfaces here."""
+    + `canon_policy_version_hash` pair. Pin them to match the canon
+    policy block so a future canon bump that refreshes the canon block
+    + fixture manifests but forgets the marker surfaces here. v1.3.6:
+    the canon block now lives in `.claude-plugin/canon_policy.json`
+    (extracted from plugin.json — Claude Code v2.1.19 install schema
+    rejects unknown top-level keys)."""
     marker_path = (
         FIXTURE_ROOT / "expected_markers" / "stage1.excerpts.merged.json"
     )
     marker = json.loads(marker_path.read_text(encoding="utf-8"))
-    plugin = json.loads(
-        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    canon = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "canon_policy.json").read_text(encoding="utf-8")
     )
-    canon = plugin["canonPolicyVersion"]
     assert marker["canon_policy_version"] == canon["semver"], (
         f"stage1 marker canon_policy_version {marker['canon_policy_version']!r} "
-        f"!= plugin.json semver {canon['semver']!r}."
+        f"!= canon_policy.json semver {canon['semver']!r}."
     )
     assert marker["canon_policy_version_hash"] == canon["hash_prefix"], (
         f"stage1 marker canon_policy_version_hash "
-        f"{marker['canon_policy_version_hash']!r} != plugin.json "
+        f"{marker['canon_policy_version_hash']!r} != canon_policy.json "
         f"hash_prefix {canon['hash_prefix']!r}."
     )
 
 
 def test_fixture_metadata_canon_version_matches_plugin_manifest() -> None:
     """Complete the alignment chain: fixture_metadata.canon_policy_version
-    MUST match the plugin manifest's canonPolicyVersion (both fields
-    are the same `<semver>+hash:<prefix>` shape). Pre-v1.2.9 these
-    could drift independently; the three-way pin
-    (plugin → fixture_metadata → sidecar manifests) now catches any
-    one-step drift."""
+    MUST match the canon policy block (both fields are the same
+    `<semver>+hash:<prefix>` shape). Pre-v1.2.9 these could drift
+    independently; the three-way pin (canon block → fixture_metadata →
+    sidecar manifests) now catches any one-step drift. v1.3.6: source
+    of truth moved from plugin.json::canonPolicyVersion to
+    .claude-plugin/canon_policy.json."""
     meta = json.loads(
         (FIXTURE_ROOT / "fixture_metadata.json").read_text(encoding="utf-8")
     )
-    plugin = json.loads(
-        (REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    canon = json.loads(
+        (REPO_ROOT / ".claude-plugin" / "canon_policy.json").read_text(encoding="utf-8")
     )
-    canon = plugin["canonPolicyVersion"]
     expected = f"{canon['semver']}+hash:{canon['hash_prefix']}"
     assert meta["canon_policy_version"] == expected, (
         f"fixture_metadata canon_policy_version {meta['canon_policy_version']!r} "
-        f"!= plugin.json-derived {expected!r}. Canon-bump drift — a "
-        f"canon-bumping release updated plugin.json but not the "
+        f"!= canon_policy.json-derived {expected!r}. Canon-bump drift — a "
+        f"canon-bumping release updated canon_policy.json but not the "
         f"fixture's metadata."
     )

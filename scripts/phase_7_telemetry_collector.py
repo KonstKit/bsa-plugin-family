@@ -218,8 +218,16 @@ def compute_kpi_006_story_coverage(workspace: Path) -> KPIObservation:
 
 
 def _read_plugin_version() -> tuple[str, str]:
-    """Returns (manifest_version, canon_policy_version_full)."""
+    """Returns (manifest_version, canon_policy_version_full).
+
+    v1.3.6 hotfix: canon block extracted from plugin.json into a
+    sibling .claude-plugin/canon_policy.json file (Claude Code v2.1.19
+    plugin install schema rejects unknown top-level keys). Reads the
+    new location first, falls back to legacy plugin.json::canonPolicyVersion
+    for one-version backward compat with pre-v1.3.6 manifests.
+    """
     manifest_path = REPO_ROOT / ".claude-plugin" / "plugin.json"
+    canon_path = REPO_ROOT / ".claude-plugin" / "canon_policy.json"
     if not manifest_path.is_file():
         return ("0.0.0", "0.0.0")
     try:
@@ -227,10 +235,19 @@ def _read_plugin_version() -> tuple[str, str]:
     except (OSError, json.JSONDecodeError):
         return ("0.0.0", "0.0.0")
     version = str(doc.get("version", "0.0.0"))
-    canon = doc.get("canonPolicyVersion", {})
+    canon: dict = {}
+    if canon_path.is_file():
+        try:
+            canon = json.loads(canon_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            canon = {}
+    if not isinstance(canon, dict) or not canon:
+        legacy = doc.get("canonPolicyVersion", {})
+        if isinstance(legacy, dict):
+            canon = legacy
     canon_full = (
         f"{canon.get('semver', '0.0.0')}+hash:{canon.get('hash_prefix', '00000000')}"
-        if isinstance(canon, dict) else "0.0.0"
+        if isinstance(canon, dict) and canon else "0.0.0"
     )
     return (version, canon_full)
 

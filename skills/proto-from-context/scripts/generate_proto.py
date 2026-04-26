@@ -378,15 +378,29 @@ def _synthesize_service_method(
 
 
 def _read_plugin_canon_version() -> str:
-    """Read active canon_policy_version from .claude-plugin/plugin.json."""
+    """Read active canon_policy_version from .claude-plugin/canon_policy.json
+    (extracted from plugin.json in v1.3.6 hotfix — Claude Code v2.1.19
+    plugin install schema rejects unknown top-level keys, so the canon
+    block lives in a sibling file now). Falls back to plugin.json's
+    legacy `canonPolicyVersion` block when canon_policy.json is missing
+    (one-version backward compat for downstream tooling that pinned
+    pre-v1.3.6 manifests)."""
+    canon_path = REPO_ROOT / ".claude-plugin" / "canon_policy.json"
     plugin_path = REPO_ROOT / ".claude-plugin" / "plugin.json"
-    if not plugin_path.is_file():
-        return "0.0.0"
-    try:
-        doc = json.loads(plugin_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return "0.0.0"
-    canon = doc.get("canonPolicyVersion", {})
+    canon: dict = {}
+    if canon_path.is_file():
+        try:
+            canon = json.loads(canon_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            canon = {}
+    elif plugin_path.is_file():
+        try:
+            doc = json.loads(plugin_path.read_text(encoding="utf-8"))
+            legacy = doc.get("canonPolicyVersion", {})
+            if isinstance(legacy, dict):
+                canon = legacy
+        except (OSError, json.JSONDecodeError):
+            canon = {}
     if not isinstance(canon, dict):
         return "0.0.0"
     semver = str(canon.get("semver", "0.0.0"))

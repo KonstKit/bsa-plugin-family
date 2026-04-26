@@ -1,14 +1,15 @@
 {
   "name": "bsa-marketplace",
+  "description": "Local-only marketplace for the BSA Plugin Family — evidence-first BA/SA pipeline + Stage 6 contract exporters + operator dashboard.",
   "owner": {
     "name": "Konstantin Kitanin"
   },
   "plugins": [
     {
       "name": "bsa-full",
-      "source": ".",
-      "description": "Business/Systems Analysis plugin family: 23 skills for evidence-bound claim-layer authoring, anti-hallucination audits, sidecar-assisted diagrams, and H1-H4 handoff packaging. Directly consumed by Claude Code.",
-      "version": "1.0.0",
+      "source": "./",
+      "description": "Business/Systems Analysis plugin family: 32 skills for evidence-bound claim-layer authoring, anti-hallucination audits, sidecar-assisted diagrams (C4 + BPMN + DBML), H1-H4 handoff packaging, Phase-3 dev-handoff (NFRs / stories / test scenarios / traceability matrix / backlog-bridge to Jira / Linear / generic / GitHub Projects v2 with optional live-API mode), Stage 6 contract exporters (OpenAPI 3.1 / AsyncAPI 3.0 / proto3 with anchor-traceability), plus an operator-side static-HTML dashboard. Directly consumed by Claude Code.",
+      "version": "1.3.5",
       "author": {
         "name": "Konstantin Kitanin"
       },

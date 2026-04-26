@@ -218,14 +218,33 @@ class WorkspaceState:
             from scripts.compute_canon_hash import compute_canon_hash  # type: ignore
             repo_hash = compute_canon_hash()
         except Exception:
-            # Lazy fallback: read cached value from plugin.json.
+            # Lazy fallback: read cached value. v1.3.6: canon block
+            # lives in .claude-plugin/canon_policy.json (extracted
+            # from plugin.json). Read the new location first, fall
+            # back to legacy plugin.json::canonPolicyVersion for one-
+            # version compat. Return UNKNOWN if neither file readable
+            # — pre-v1.3.6 the empty-string fallback would silently
+            # MATCH (workspace_hash.startswith("") is always True),
+            # masking real drift.
+            canon_json = _REPO_ROOT / ".claude-plugin" / "canon_policy.json"
             plugin_json = _REPO_ROOT / ".claude-plugin" / "plugin.json"
-            if not plugin_json.is_file():
-                return "UNKNOWN"
-            try:
-                cfg = json.loads(plugin_json.read_text(encoding="utf-8"))
-                repo_hash = cfg.get("canonPolicyVersion", {}).get("hash_full", "")
-            except (json.JSONDecodeError, UnicodeDecodeError):
+            repo_hash = ""
+            if canon_json.is_file():
+                try:
+                    cfg = json.loads(canon_json.read_text(encoding="utf-8"))
+                    repo_hash = cfg.get("hash_full", "") or ""
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    repo_hash = ""
+            if not repo_hash and plugin_json.is_file():
+                try:
+                    cfg = json.loads(plugin_json.read_text(encoding="utf-8"))
+                    repo_hash = (
+                        cfg.get("canonPolicyVersion", {}).get("hash_full", "")
+                        or ""
+                    )
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    repo_hash = ""
+            if not repo_hash:
                 return "UNKNOWN"
         return "MATCH" if workspace_hash.startswith(repo_hash[: len(workspace_hash)]) else "DRIFT"
 

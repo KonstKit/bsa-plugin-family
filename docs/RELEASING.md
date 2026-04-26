@@ -6,7 +6,7 @@ Operator-facing release procedure for the BSA plugin family. v1.1.10 (Section J)
 
 The repo uses two independent semver dimensions:
 
-- **`.claude-plugin/plugin.json` `version`** — the plugin manifest version. Bumps ONLY when the canon-policy state changes (i.e., a file in `scripts/compute_canon_hash.py::POLICY_GLOBS` was edited). Enforced by `tests/test_plugin_manifest.py::test_manifest_version_and_canon_semver_agree` (`version` MUST equal `canonPolicyVersion.semver`).
+- **`.claude-plugin/plugin.json` `version`** — the plugin manifest version. Bumps ONLY when the canon-policy state changes (i.e., a file in `scripts/compute_canon_hash.py::POLICY_GLOBS` was edited). Enforced by `tests/test_plugin_manifest.py::test_manifest_version_and_canon_semver_agree` (plugin.json `version` MUST equal `.claude-plugin/canon_policy.json` `semver` — v1.3.6: canon block extracted from plugin.json because Claude Code v2.1.19 install schema rejects unknown top-level keys).
 - **Git tag `vX.Y.Z`** — operator-facing release marker. May advance independently of the manifest when the patch is operator-tooling-only (new scripts, new tests, new docs, new fixtures, anonymization, CI/CD scaffolding, packaging polish).
 
 Examples from the v1.1.x line:
@@ -71,7 +71,7 @@ Run BEFORE creating the release commit:
    python3 scripts/privacy_scan.py
    python3 scripts/compute_canon_hash.py
    ```
-   The first three must exit 0; the fourth must match `.claude-plugin/plugin.json` `canonPolicyVersion.hash_full`.
+   The first three must exit 0; the fourth must match `.claude-plugin/canon_policy.json` `hash_full` (v1.3.6: extracted from plugin.json).
 
 2. **Decide the tag-vs-manifest pattern**. Use the table above as reference:
    - **Manifest moves** when ANY POLICY_GLOBS file changed (run `python3 scripts/compute_canon_hash.py --diff-against <prior_hash>` to confirm).
@@ -176,7 +176,7 @@ If a release ships with a defect found post-tag:
 
 ## Marketplace publication (future / Phase 8 candidate)
 
-The plugin currently installs from a local checkout (`/plugin marketplace add /path/to/repo`). Marketplace publication (Anthropic's plugin marketplace, when public) is a Phase 8 deliverable per `docs/phase_3_plan.md`. Until then:
+The plugin currently installs from a local checkout (`claude plugin marketplace add /path/to/repo`). Marketplace publication (Anthropic's plugin marketplace, when public) is a Phase 8 deliverable per `docs/phase_3_plan.md`. Until then:
 
 - Operators install from a local clone of the public GitHub repo (when the repo lands on GitHub).
 - Tarball artifacts from `.github/workflows/release.yml` runs are downloadable from the GitHub Releases page (operator extracts then `claude --plugin-dir <extracted-path>`).

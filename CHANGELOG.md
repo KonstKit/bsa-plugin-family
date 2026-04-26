@@ -4,6 +4,58 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.3.6] — 2026-04-26
+
+**Hotfix: plugin install schema cleanup — unblocks Claude Code v2.1.19 marketplace install.** Pre-v1.3.6 `claude plugin install bsa-full@bsa-marketplace` failed with three schema rejections (`Invalid input` on `repository: {type, url}` object form, `Unrecognized key: bugs`, `Unrecognized key: canonPolicyVersion`). The plugin had been installable via session-only `claude --plugin-dir <path>` but never via the marketplace install path that the documented operator workflow expects. Pure infrastructure fix; manifest version stays at 1.3.2 (canon hash unchanged at `a0cbc336`).
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.3.2+hash:a0cbc336`.
+
+### Added
+
+- **`.claude-plugin/canon_policy.json`** — extracted canon-policy block from `plugin.json` into a sibling file. Contains the same 5 fields (`semver`, `hash_prefix`, `hash_full`, `computed_by`, `computed_at`) plus a `_comment` documenting the v1.3.6 split rationale.
+- **`.claude-plugin/marketplace.json`** updates: `source` field changed from `"."` (rejected by current schema) to `"./"` (trailing-slash form accepted); version bumped from `1.0.0` to `1.3.5` (was 3+ years stale); description added at the marketplace level.
+- **3 new regression tests** in `tests/test_plugin_manifest.py` to lock the install-schema invariants:
+  * `test_canon_policy_file_present` — `canon_policy.json` MUST exist (the v1.3.6 split contract).
+  * `test_canon_policy_version_shape` — replaced `test_manifest_canon_policy_version_shape` (reads from canon_policy.json instead of plugin.json::canonPolicyVersion).
+  * `test_plugin_json_no_legacy_canonPolicyVersion` — plugin.json must NOT re-introduce the rejected key.
+  * `test_plugin_json_no_legacy_bugs_key` — plugin.json must NOT re-introduce the rejected key.
+  * `test_plugin_json_repository_is_string` — plugin.json `repository` must be a string URL, not the legacy `{type, url}` object.
+
+### Updated
+
+- **`.claude-plugin/plugin.json`** — three Claude-Code-schema-blocking edits:
+  * `canonPolicyVersion: {...}` block REMOVED (moved to canon_policy.json).
+  * `bugs: {url: "..."}` block REMOVED (Claude Code v2.1.19 install schema rejects the key; operators link to issues via the homepage URL instead).
+  * `repository: {type: "git", url: "..."}` object form CONVERTED to `repository: "..."` string form.
+- **`tests/test_plugin_manifest.py`** — `_load_canon_policy()` helper added; `test_manifest_canon_hash_matches_current_script_output` + `test_manifest_version_and_canon_semver_agree` now read declared hash + semver from canon_policy.json (was plugin.json::canonPolicyVersion); `test_manifest_distribution_metadata_present` updated for string-form repository + dropped `bugs` requirement.
+- **3 contract exporters** (`skills/openapi-from-context/scripts/generate_openapi.py`, `skills/asyncapi-from-context/scripts/generate_asyncapi.py`, `skills/proto-from-context/scripts/generate_proto.py`) — `_read_plugin_canon_version()` now reads `canon_policy.json` first, falls back to legacy `plugin.json::canonPolicyVersion` if the new file is missing (one-version backward compat for downstream tooling pinned to pre-v1.3.6 manifests).
+- **Docs (10 files)** — `INSTALL.md`, `README.md`, `CONTRIBUTING.md`, `docs/CONTRIBUTING.md`, `docs/RELEASING.md`, `docs/getting_started.md`, `docs/troubleshooting.md`, `docs/faq.md`, `docs/phase_2_5_shakedown.md`, `docs/plugin_api_spike.md` — references to `plugin.json::canonPolicyVersion.{hash_full,semver}` updated to `canon_policy.json::{hash_full,semver}` with v1.3.6-rationale notes inline (5 of 10 files). Slash-command references (`/plugin marketplace ...`) corrected to `claude plugin marketplace ...` (CLI subcommand form per Claude Code v2.x; the `/plugin` slash-command syntax was removed in some recent version) — all 10 files swept. R1 covered the first 5; R2 caught remaining 5.
+
+### Result
+
+- Tests: 2515 passed (no test count change — 5 manifest tests replaced/added, all pass).
+- Canon hash unchanged at `a0cbc336`. Manifest stays at 1.3.2.
+- **`claude plugin install bsa-full@bsa-marketplace` now succeeds** (verified end-to-end: marketplace add → install → list shows `bsa-full@bsa-marketplace · Version: 1.3.2 · Status: ✔ enabled`).
+- Privacy scan: 0 blockers.
+- `phase_7_lint.py`: PASS.
+- Fixture runner: 9 PASS, 0 findings.
+
+### Why this wasn't caught earlier
+
+`tests/test_plugin_manifest.py` validates the manifest's *internal shape* (canonPolicyVersion present, hash matches, etc.) but does NOT validate against Claude Code's own plugin install schema. The plugin install path was never exercised in any pytest because pytest doesn't have access to the `claude` CLI. The session-only `claude --plugin-dir` path that I likely tested during early development is more permissive than the marketplace install path. **Lesson #18 NEW** (added to `feedback_self_review_before_codex.md`): for any plugin packaging, run `claude plugin install <name>@<marketplace>` end-to-end as part of release validation — not just `pytest`. The two enforce different schemas.
+
+### Codex review
+
+- **Round 1: REQUEST CHANGES.** One MAJOR + 3 MINOR; all real:
+  * **MAJOR (openapi exporter not migrated)** — pre-R1 fix attempt didn't apply (Edit silently no-op'd because of docstring drift between files); openapi `_read_plugin_canon_version()` still read `plugin.json::canonPolicyVersion` only and returned `0.0.0` on the v1.3.6 manifest, breaking OpenAPI anchor manifest stamping. **Fixed**: re-applied the migration with proper Read-then-Edit; openapi now mirrors AsyncAPI/proto exactly (canon_policy.json first, legacy plugin.json fallback).
+  * **MINOR (phase_7_telemetry_collector::_read_plugin_version)** — missed downstream consumer; pre-R1 stamped `0.0.0+hash:00000000` on v1.3.6 telemetry runs (silent metadata corruption). **Fixed**: added canon_policy.json-first read with same legacy fallback pattern.
+  * **MINOR (bsa_cli.py canon_hash_match fallback)** — pre-R1 fallback branch read `canonPolicyVersion.hash_full` from plugin.json with empty-string fallback that masked drift via `startswith("")` always-True (false MATCH masking real drift). **Fixed**: read canon_policy.json first, fall back to legacy plugin.json::canonPolicyVersion, return UNKNOWN when no hash available — no more silent MATCH.
+  * **MINOR (deprecated /plugin slash-command syntax in 5 docs)** — README.md / INSTALL.md / docs/RELEASING.md still showed `/plugin marketplace add ...` etc. Claude Code v2.x removed the slash-command form. **Fixed**: sed-replaced 5 patterns across 3 files (R1) + 5 more files (R2 caught — see below).
+- **Round 2: REQUEST CHANGES.** R1 fix #4 was incomplete:
+  * **MINOR (5 more docs with /plugin syntax)** — `docs/getting_started.md`, `docs/troubleshooting.md`, `docs/faq.md`, `docs/phase_2_5_shakedown.md`, `docs/plugin_api_spike.md` also had deprecated `/plugin ...` references. R1 sed only ran on 3 files. **Fixed**: re-ran sed across all 5 missed files. Total docs swept: 10 (5 R1 + 5 R2).
+
+(Self-review lesson sharpening — lesson #18 NEW: for any plugin packaging release, run `claude plugin install <name>@<marketplace>` end-to-end as part of release validation — pytest doesn't exercise the Claude Code CLI install schema, which is STRICTER than `claude plugin validate`. The session-only `claude --plugin-dir <path>` path is more permissive than the marketplace install path. Without an end-to-end install test, schema drift between Claude Code releases (like the v2.1.19 schema tightening that broke pre-v1.3.6 plugin.json) is invisible to pytest. Add to canon-bumping discipline: `claude plugin install ...` smoke test after every plugin.json or marketplace.json edit. Also: when sed-replacing across docs, glob ALL doc directories — not just the obvious 3-5; the BSA repo has 20+ doc files and partial sweeps drift over time.)
+
 ## [v1.3.5] — 2026-04-26
 
 **Dashboard polish — Mermaid traceability graph + bpmn-js inline viewer + full-text search + Chart.js KPI trends + keyboard shortcuts.** Builds on v1.3.3 dashboard baseline. Pure operator-tooling enhancements (canon-neutral; no POLICY_GLOBS edits, no script-public-API changes; manifest stays at 1.3.2+hash:a0cbc336).

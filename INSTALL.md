@@ -17,13 +17,13 @@ This is a **local-only, solo-maintainer tool**. The repo is not pushed to a publ
 The repo ships a `.claude-plugin/marketplace.json` catalog that Claude Code picks up when the local path is added as a marketplace source:
 
 ```
-/plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
-/plugin install bsa-full@bsa-marketplace
+claude plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
+claude plugin install bsa-full@bsa-marketplace
 ```
 
-`/plugin marketplace add <absolute-path>` treats the path as a marketplace root (requires `.claude-plugin/marketplace.json`, which is committed at the repo root). Relative paths also work (e.g., `./bsa-plugin-family` if you are in a sibling directory). `file://` URLs are NOT supported — use bare paths.
+`claude plugin marketplace add <absolute-path>` treats the path as a marketplace root (requires `.claude-plugin/marketplace.json`, which is committed at the repo root). Relative paths also work (e.g., `./bsa-plugin-family` if you are in a sibling directory). `file://` URLs are NOT supported — use bare paths.
 
-After changing `marketplace.json` or `plugin.json`, run `/plugin marketplace update bsa-marketplace` to refresh Claude Code's catalog.
+After changing `marketplace.json` or `plugin.json`, run `claude plugin marketplace update bsa-marketplace` to refresh Claude Code's catalog.
 
 ### Session-only (quick smoke test)
 
@@ -45,7 +45,7 @@ Useful for verifying the plugin loads end-to-end without committing to the full 
 Verify the install:
 
 ```
-/plugin list
+claude plugin list
 ```
 
 Expected output includes `bsa-full@1.2.11` (the manifest version of the current v1.2.x line; tag may be ahead during canon-neutral patch releases — the same two-semver discipline that kept manifest at 1.1.6 across v1.1.7..v1.1.19, at 1.2.3 across v1.2.4, at 1.2.5 across v1.2.6-v1.2.8, and at 1.2.9 across v1.2.10).
@@ -64,7 +64,7 @@ If you are working in a directory that already has a prior BSA workspace, the **
 ## Uninstall
 
 ```
-/plugin uninstall bsa-full
+claude plugin uninstall bsa-full
 ```
 
 What this does:
@@ -79,11 +79,11 @@ To reinstall later, re-run the install commands. Your workspace picks up where i
 After pulling new commits into the local checkout (or checking out a different tag):
 
 ```
-/plugin marketplace update bsa-marketplace   # re-reads local marketplace.json + plugin.json
-/plugin install bsa-full@bsa-marketplace
+claude plugin marketplace update bsa-marketplace   # re-reads local marketplace.json + plugin.json
+claude plugin install bsa-full@bsa-marketplace
 ```
 
-To pin to an earlier tag, `git checkout <tag>` in the local repo before running `/plugin marketplace update`. The plugin's `canonPolicyVersion.hash_full` in `.claude-plugin/plugin.json` marks what canon policy state the installed copy corresponds to.
+To pin to an earlier tag, `git checkout <tag>` in the local repo before running `claude plugin marketplace update`. The plugin's `hash_full` in `.claude-plugin/canon_policy.json` (extracted from `plugin.json` in v1.3.6 — Claude Code v2.1.19 plugin install schema rejects unknown top-level keys, so the canon block lives in a sibling file now) marks what canon policy state the installed copy corresponds to.
 
 After an upgrade, check the `/bsa-status` output for a `policy_version_drift_warning`: the plugin's `CanonPolicyVersion` may have moved between your last workspace run and the new plugin version. This is advisory in Sprint 3/4 (bumps are expected); Phase 3+ may elevate it to blocking for production runs.
 
@@ -92,7 +92,7 @@ After an upgrade, check the `/bsa-status` output for a `policy_version_drift_war
 ### "Plugin installed but `/bsa-*` commands don't appear"
 
 - Restart Claude Code.
-- Run `/plugin list` — if `bsa-full` is not listed, the install didn't take. Re-run `/plugin install bsa-full@bsa-marketplace`.
+- Run `claude plugin list` — if `bsa-full` is not listed, the install didn't take. Re-run `claude plugin install bsa-full@bsa-marketplace`.
 - Check for a conflicting plugin with the same name in your installed set.
 
 ### "`/bsa-promote` fails with 'missing required marker: ...' even though I ran the audit"
@@ -151,7 +151,7 @@ Git preserves file modes, so a fresh `git clone` of this repo should not need th
 If you want to remove the plugin but keep all your workspace state:
 
 ```
-/plugin uninstall bsa-full
+claude plugin uninstall bsa-full
 # your analysis/ directory stays intact
 ```
 

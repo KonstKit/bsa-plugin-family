@@ -2,14 +2,14 @@
 
 Common failure modes and fixes. Ordered by what most first-time users hit.
 
-## 1. `/plugin install bsa-full` errors out on manifest parse
+## 1. `claude plugin install bsa-full` errors out on manifest parse
 
 **Symptom:** Claude Code prints a manifest-parse error referencing `.claude-plugin/plugin.json`.
 
 **Cause:** either the repo wasn't fully cloned (partial fetch) or an out-of-date Claude Code is rejecting a field it doesn't recognize.
 
 **Fix:**
-1. Refresh the marketplace catalog: `/plugin marketplace update bsa-marketplace`. If it was never added on this machine, re-add it: `/plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family`.
+1. Refresh the marketplace catalog: `claude plugin marketplace update bsa-marketplace`. If it was never added on this machine, re-add it: `claude plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family`.
 2. Upgrade Claude Code to a version that supports the plugin system.
 3. If still failing, check [plugin_api_spike.md](plugin_api_spike.md) for the expected field set; custom fields (`canonPolicyVersion`) are preserved but not required by core plugin discovery.
 

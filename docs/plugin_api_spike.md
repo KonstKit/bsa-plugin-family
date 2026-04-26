@@ -113,7 +113,7 @@ All three hook scripts stay stdlib-only Python (invoked via `python3` shebang) s
 
 ### 6. Install flow
 
-Claude Code auto-discovers plugins by looking for `.claude-plugin/plugin.json` at the repo root of anything added via `/plugin marketplace add <url>`.
+Claude Code auto-discovers plugins by looking for `.claude-plugin/plugin.json` at the repo root of anything added via `claude plugin marketplace add <url>`.
 
 Required at repo root:
 1. `.claude-plugin/plugin.json` (the manifest).
@@ -122,8 +122,8 @@ Required at repo root:
 
 No special GitHub release-asset requirements. Users run:
 ```
-/plugin marketplace add https://github.com/<user>/bsa-plugin-family
-/plugin install bsa-full
+claude plugin marketplace add https://github.com/<user>/bsa-plugin-family
+claude plugin install bsa-full
 ```
 
 ### 7. Reference open-source plugins
