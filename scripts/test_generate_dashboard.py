@@ -638,6 +638,199 @@ def test_no_tmp_files_left_after_render(tmp_path):
     assert leftovers == [], f"tempfile leftovers: {leftovers}"
 
 
+# ---- v1.3.3 R1 fix regressions -------------------------------------
+
+
+def test_proposal_id_unsafe_traversal_skipped(renderers, tmp_path):
+    """v1.3.3 R1 fix #1: proposal_id with `../` or path separators
+    must be skipped before any path join. Pre-R1 the dashboard would
+    read outside proposals_root and write outside output_dir/phase7/."""
+    proposals_root = tmp_path
+    # Plant a "../escape" file outside proposals_root that the
+    # malicious _index.json would point at if validation didn't run.
+    (tmp_path.parent / "escape.summary.md").write_text(
+        "should not be read", encoding="utf-8",
+    )
+    bad_meta = {"proposal_id": "../escape"}
+    ctx = renderers.build_proposal_context(bad_meta, proposals_root)
+    assert ctx is None
+
+
+def test_proposal_id_with_separators_skipped(renderers, tmp_path):
+    bad_meta = {"proposal_id": "a/b/c"}
+    assert renderers.build_proposal_context(bad_meta, tmp_path) is None
+
+
+def test_proposal_id_empty_skipped(renderers, tmp_path):
+    assert renderers.build_proposal_context({"proposal_id": ""}, tmp_path) is None
+    assert renderers.build_proposal_context({}, tmp_path) is None
+
+
+def test_proposal_id_safe_passes(renderers, tmp_path):
+    (tmp_path / "p-001.summary.md").write_text("# ok", encoding="utf-8")
+    ctx = renderers.build_proposal_context(
+        {"proposal_id": "p-001"}, tmp_path,
+    )
+    assert ctx is not None
+    assert ctx["proposal_id"] == "p-001"
+
+
+def test_proposal_meta_non_dict_skipped(renderers, tmp_path):
+    """Defensive: list / string / None / int should all skip."""
+    for bad in [None, [], "string", 42, True]:
+        assert renderers.build_proposal_context(bad, tmp_path) is None
+
+
+def test_proposal_id_pattern_constants(renderers):
+    """Pin the safe-ID regex so future edits notice."""
+    assert renderers.is_safe_proposal_id("foo")
+    assert renderers.is_safe_proposal_id("p-001")
+    assert renderers.is_safe_proposal_id("ABC_123")
+    assert not renderers.is_safe_proposal_id("../escape")
+    assert not renderers.is_safe_proposal_id("a/b")
+    assert not renderers.is_safe_proposal_id("a.b")
+    assert not renderers.is_safe_proposal_id("a b")
+    assert not renderers.is_safe_proposal_id("")
+
+
+def test_print_only_writes_no_files(tmp_path):
+    """v1.3.3 R1 fix #2: --print-only must not touch the filesystem."""
+    ws = _make_p0003_workspace(tmp_path)
+    out_dir = ws / "analysis" / "handoff" / "dashboard"
+    assert not out_dir.exists()
+    result = _run_cli("--workspace", str(ws), "--print-only")
+    assert result.returncode == 0
+    assert not out_dir.exists(), (
+        "--print-only created the dashboard output dir; expected dry-run"
+    )
+
+
+def test_print_only_stdout_pure_json(tmp_path):
+    """v1.3.3 R1 fix #2: stdout must be valid JSON (no human summary
+    line mixed in). Pre-R1 the summary printed before the JSON
+    manifest unless --quiet was also set."""
+    ws = _make_p0003_workspace(tmp_path)
+    result = _run_cli("--workspace", str(ws), "--print-only")
+    assert result.returncode == 0
+    # Should parse cleanly without splitting.
+    manifest = json.loads(result.stdout)
+    assert manifest["manifest_version"] == "1.0"
+
+
+def test_filter_hides_nav_links_for_unrendered_sections(tmp_path):
+    """v1.3.3 R1 fix #3: --filter audits must produce an index.html
+    where the nav contains the audits link but NOT the artifacts /
+    handoff / contracts / sidecars / phase7 links (they would 404).
+    Pre-R1 nav links pointed to ungenerated pages."""
+    ws = _make_p0003_workspace(tmp_path)
+    result = _run_cli("--workspace", str(ws), "--filter", "audits", "--quiet")
+    assert result.returncode == 0
+    index_html = (ws / "analysis" / "handoff" / "dashboard" / "index.html").read_text(
+        encoding="utf-8",
+    )
+    # Audits link present.
+    assert 'href="audits/index.html"' in index_html
+    # Other sections absent (would be 404s).
+    assert 'href="artifacts/index.html"' not in index_html
+    assert 'href="handoff/index.html"' not in index_html
+
+
+def test_filter_index_only_shows_only_overview_link(tmp_path):
+    """--filter index alone (always-included) renders no other nav
+    links because no section was requested."""
+    ws = _make_p0003_workspace(tmp_path)
+    result = _run_cli("--workspace", str(ws), "--filter", "index", "--quiet")
+    assert result.returncode == 0
+    index_html = (ws / "analysis" / "handoff" / "dashboard" / "index.html").read_text(
+        encoding="utf-8",
+    )
+    # Only Overview nav link visible.
+    nav_links = [
+        line for line in index_html.splitlines()
+        if 'class="site-nav"' in line or 'href=' in line
+    ]
+    # Look for the nav block specifically.
+    assert 'href="audits/index.html"' not in index_html
+    assert 'href="artifacts/index.html"' not in index_html
+
+
+def test_watch_snapshot_excludes_custom_output_dir(main_module, tmp_path):
+    """v1.3.3 R1 fix #4: watch-mode snapshot must exclude files under
+    the actual --output-dir (not a hardcoded `dashboard` segment).
+    Pre-R1 a custom output dir inside analysis/ would feed back into
+    its own snapshot and re-render forever."""
+    ws = tmp_path / "ws"
+    (ws / "analysis").mkdir(parents=True)
+    (ws / "analysis" / "canonical").mkdir()
+    (ws / "analysis" / "canonical" / "test.csv").write_text("a\n1\n", encoding="utf-8")
+    # Custom output dir inside analysis/, NOT named "dashboard".
+    custom_out = ws / "analysis" / "custom_dashboard_output"
+    custom_out.mkdir()
+    (custom_out / "fake.html").write_text("<p>generated</p>", encoding="utf-8")
+
+    snapshot = main_module._snapshot_mtimes(ws, custom_out)
+    # Generated file inside custom_out must NOT appear in the
+    # snapshot (would cause feedback loop).
+    assert all("custom_dashboard_output" not in p for p in snapshot.keys())
+    # The canonical CSV does appear.
+    assert any("test.csv" in p for p in snapshot.keys())
+
+
+def test_phase7_index_filters_unsafe_proposals(tmp_path):
+    """v1.3.3 R2 fix (Codex R2 MINOR): phase7/index.html must NOT
+    render dead links to proposal_<id>.html pages that the detail-
+    page loop will skip due to unsafe IDs. Pre-R2 the index template
+    received the raw _index.json proposals list; R2 filters upstream."""
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "telemetry" / "proposals").mkdir(parents=True)
+    (ws / "analysis" / "telemetry" / "proposals" / "_index.json").write_text(
+        json.dumps({
+            "proposals": [
+                {"proposal_id": "good-001", "title": "Safe one"},
+                {"proposal_id": "../bad", "title": "Traversal attempt"},
+                {"proposal_id": "a/b", "title": "Separator attempt"},
+                {"id": "good-002", "title": "Also safe (id key)"},
+                "not-a-dict",
+            ],
+        }),
+        encoding="utf-8",
+    )
+    # Plant the safe summary so the detail page actually renders.
+    (ws / "analysis" / "telemetry" / "proposals" / "good-001.summary.md").write_text(
+        "# good-001 summary", encoding="utf-8",
+    )
+    (ws / "analysis" / "telemetry" / "proposals" / "good-002.summary.md").write_text(
+        "# good-002 summary", encoding="utf-8",
+    )
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    out_dir = ws / "analysis" / "handoff" / "dashboard"
+    index_html = (out_dir / "phase7" / "index.html").read_text(encoding="utf-8")
+    # Safe proposals: link present.
+    assert "proposal_good-001.html" in index_html
+    assert "proposal_good-002.html" in index_html
+    # Unsafe entries: NOT linked.
+    assert "../bad" not in index_html
+    assert "proposal_a/b.html" not in index_html
+    # Detail pages: only safe ones written.
+    assert (out_dir / "phase7" / "proposal_good-001.html").is_file()
+    assert (out_dir / "phase7" / "proposal_good-002.html").is_file()
+    assert not (out_dir / "phase7" / "proposal_../bad.html").exists()
+
+
+def test_watch_snapshot_excludes_default_output_dir(main_module, tmp_path):
+    """Same defense for the default output_dir path."""
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "canonical").mkdir(parents=True)
+    (ws / "analysis" / "canonical" / "x.csv").write_text("a\n1\n", encoding="utf-8")
+    default_out = ws / "analysis" / "handoff" / "dashboard"
+    default_out.mkdir(parents=True)
+    (default_out / "index.html").write_text("<p>generated</p>", encoding="utf-8")
+
+    snapshot = main_module._snapshot_mtimes(ws, default_out)
+    assert all("dashboard" not in Path(p).parts for p in snapshot.keys())
+
+
 def test_idempotent_render(tmp_path):
     """Same input → byte-identical HTML (modulo generated_at timestamp,
     which we exclude by hashing only artifact pages)."""

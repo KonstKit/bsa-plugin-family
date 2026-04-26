@@ -130,6 +130,15 @@ def _atomic_write(target_path: Path, body: str) -> None:
         raise
 
 
+def _maybe_write(target_path: Path, body: str, *, dry_run: bool) -> None:
+    """Write atomically unless dry_run is True. v1.3.3 R1 fix #2:
+    --print-only must NOT touch the filesystem; pre-R1 the writes
+    happened before the print_only branch."""
+    if dry_run:
+        return
+    _atomic_write(target_path, body)
+
+
 # ---- Inventory → template-context shaping --------------------------
 
 
@@ -222,10 +231,37 @@ def _build_base_context(
     active_page: str,
     watch_mode: bool,
     depth: int,
+    rendered_sections: set[str] | None = None,
 ) -> dict:
     """Common context for base.html. `depth` = how many `..` to prepend
     to root_prefix and static_prefix (0 for top-level index, 1 for
-    pages in subfolders like artifacts/a50.html)."""
+    pages in subfolders like artifacts/a50.html).
+
+    v1.3.3 R1 fix #3: nav-link `has_X` flags are gated by BOTH (a) the
+    inventory has artifacts of type X AND (b) section X was actually
+    rendered in this run. Pre-R1 nav links pointed to ungenerated
+    pages when --filter excluded a section, producing 404s. Pass
+    `rendered_sections=None` to skip the gate (for example, when
+    rendering index.html during a full --filter index-only run from
+    a fresh workspace where you want to see what's available even
+    though it wasn't rendered)."""
+    inv_has = {
+        "artifacts": any(p is not None for p in inv.a_tables.values()),
+        "audits": any(p is not None for p in inv.audits.values()),
+        "handoff": any(p is not None for p in inv.handoff.values()),
+        "contracts": any(
+            files.get("spec") is not None for files in inv.contracts.values()
+        ),
+        "sidecars": any(files for files in inv.sidecars.values()),
+        "phase7": bool(inv.telemetry_runs or inv.proposals),
+    }
+    if rendered_sections is None:
+        gated = inv_has
+    else:
+        gated = {
+            section: present and (section in rendered_sections)
+            for section, present in inv_has.items()
+        }
     root_prefix = "../" * depth
     static_prefix = root_prefix + "static/"
     return {
@@ -236,34 +272,38 @@ def _build_base_context(
         "root_prefix": root_prefix,
         "static_prefix": static_prefix,
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
-        "has_artifacts": any(p is not None for p in inv.a_tables.values()),
-        "has_audits": any(p is not None for p in inv.audits.values()),
-        "has_handoff": any(p is not None for p in inv.handoff.values()),
-        "has_contracts": any(
-            files.get("spec") is not None for files in inv.contracts.values()
-        ),
-        "has_sidecars": any(files for files in inv.sidecars.values()),
-        "has_phase7": bool(inv.telemetry_runs or inv.proposals),
+        "has_artifacts": gated["artifacts"],
+        "has_audits": gated["audits"],
+        "has_handoff": gated["handoff"],
+        "has_contracts": gated["contracts"],
+        "has_sidecars": gated["sidecars"],
+        "has_phase7": gated["phase7"],
     }
 
 
 # ---- Per-page rendering -------------------------------------------
 
 
-def _render_index(env, inv, output_dir, *, watch_mode):
-    base = _build_base_context(inv, active_page="index", watch_mode=watch_mode, depth=0)
+def _render_index(env, inv, output_dir, *, watch_mode, dry_run, rendered_sections):
+    base = _build_base_context(
+        inv, active_page="index", watch_mode=watch_mode, depth=0,
+        rendered_sections=rendered_sections,
+    )
     ctx = {**base, **_build_index_context(inv)}
     html = env.get_template("index.html").render(**ctx)
     target = output_dir / DEFAULT_INDEX_FILENAME
-    _atomic_write(target, html)
+    _maybe_write(target, html, dry_run=dry_run)
     return [{"page": "index", "path": str(target.relative_to(output_dir))}]
 
 
-def _render_artifacts(env, inv, output_dir, *, watch_mode):
+def _render_artifacts(env, inv, output_dir, *, watch_mode, dry_run, rendered_sections):
     """Render artifacts/index.html + 10 per-A-table pages + claim layer
     + traceability."""
     pages: list[dict] = []
-    base = _build_base_context(inv, active_page="artifacts", watch_mode=watch_mode, depth=1)
+    base = _build_base_context(
+        inv, active_page="artifacts", watch_mode=watch_mode, depth=1,
+        rendered_sections=rendered_sections,
+    )
 
     # Cross-cutting view availability flags.
     has_claim_layer = inv.a_tables.get("a59") is not None
@@ -286,7 +326,7 @@ def _render_artifacts(env, inv, output_dir, *, watch_mode):
     }
     html = env.get_template("artifacts_index.html").render(**ctx)
     target = output_dir / "artifacts" / "index.html"
-    _atomic_write(target, html)
+    _maybe_write(target, html, dry_run=dry_run)
     pages.append({"page": "artifacts/index", "path": str(target.relative_to(output_dir))})
 
     # Per-A-table pages.
@@ -299,7 +339,7 @@ def _render_artifacts(env, inv, output_dir, *, watch_mode):
         ctx = {**base, **artifact_ctx}
         html = env.get_template("artifact_table.html").render(**ctx)
         target = output_dir / "artifacts" / f"{a_id}.html"
-        _atomic_write(target, html)
+        _maybe_write(target, html, dry_run=dry_run)
         pages.append({"page": f"artifacts/{a_id}", "path": str(target.relative_to(output_dir))})
 
     # Claim layer view.
@@ -312,7 +352,7 @@ def _render_artifacts(env, inv, output_dir, *, watch_mode):
         ctx = {**base, **cl_ctx}
         html = env.get_template("claim_layer.html").render(**ctx)
         target = output_dir / "artifacts" / "claim_layer.html"
-        _atomic_write(target, html)
+        _maybe_write(target, html, dry_run=dry_run)
         pages.append({"page": "artifacts/claim_layer", "path": str(target.relative_to(output_dir))})
 
     # Traceability matrix view.
@@ -321,15 +361,18 @@ def _render_artifacts(env, inv, output_dir, *, watch_mode):
         ctx = {**base, **tr_ctx}
         html = env.get_template("traceability.html").render(**ctx)
         target = output_dir / "artifacts" / "traceability.html"
-        _atomic_write(target, html)
+        _maybe_write(target, html, dry_run=dry_run)
         pages.append({"page": "artifacts/traceability", "path": str(target.relative_to(output_dir))})
 
     return pages
 
 
-def _render_audits(env, inv, output_dir, *, watch_mode):
+def _render_audits(env, inv, output_dir, *, watch_mode, dry_run, rendered_sections):
     pages: list[dict] = []
-    base = _build_base_context(inv, active_page="audits", watch_mode=watch_mode, depth=1)
+    base = _build_base_context(
+        inv, active_page="audits", watch_mode=watch_mode, depth=1,
+        rendered_sections=rendered_sections,
+    )
 
     audit_verdicts = [
         {
@@ -345,7 +388,7 @@ def _render_audits(env, inv, output_dir, *, watch_mode):
     ctx = {**base, "audit_verdicts": audit_verdicts}
     html = env.get_template("audits_index.html").render(**ctx)
     target = output_dir / "audits" / "index.html"
-    _atomic_write(target, html)
+    _maybe_write(target, html, dry_run=dry_run)
     pages.append({"page": "audits/index", "path": str(target.relative_to(output_dir))})
 
     for entry in audit_verdicts:
@@ -358,15 +401,18 @@ def _render_audits(env, inv, output_dir, *, watch_mode):
         ctx = {**base, **audit_ctx}
         html = env.get_template("audit_view.html").render(**ctx)
         target = output_dir / "audits" / f"{entry['id']}.html"
-        _atomic_write(target, html)
+        _maybe_write(target, html, dry_run=dry_run)
         pages.append({"page": f"audits/{entry['id']}", "path": str(target.relative_to(output_dir))})
 
     return pages
 
 
-def _render_handoff(env, inv, output_dir, *, watch_mode):
+def _render_handoff(env, inv, output_dir, *, watch_mode, dry_run, rendered_sections):
     pages: list[dict] = []
-    base = _build_base_context(inv, active_page="handoff", watch_mode=watch_mode, depth=1)
+    base = _build_base_context(
+        inv, active_page="handoff", watch_mode=watch_mode, depth=1,
+        rendered_sections=rendered_sections,
+    )
 
     handoff_packets = [
         {"id": pid, "label": HANDOFF_LABELS.get(pid, pid), "path": path}
@@ -376,7 +422,7 @@ def _render_handoff(env, inv, output_dir, *, watch_mode):
     ctx = {**base, "handoff_packets": handoff_packets}
     html = env.get_template("handoff_index.html").render(**ctx)
     target = output_dir / "handoff" / "index.html"
-    _atomic_write(target, html)
+    _maybe_write(target, html, dry_run=dry_run)
     pages.append({"page": "handoff/index", "path": str(target.relative_to(output_dir))})
 
     for entry in handoff_packets:
@@ -388,15 +434,18 @@ def _render_handoff(env, inv, output_dir, *, watch_mode):
         ctx = {**base, **h_ctx}
         html = env.get_template("handoff_view.html").render(**ctx)
         target = output_dir / "handoff" / f"{entry['id']}.html"
-        _atomic_write(target, html)
+        _maybe_write(target, html, dry_run=dry_run)
         pages.append({"page": f"handoff/{entry['id']}", "path": str(target.relative_to(output_dir))})
 
     return pages
 
 
-def _render_contracts(env, inv, output_dir, *, watch_mode):
+def _render_contracts(env, inv, output_dir, *, watch_mode, dry_run, rendered_sections):
     pages: list[dict] = []
-    base = _build_base_context(inv, active_page="contracts", watch_mode=watch_mode, depth=1)
+    base = _build_base_context(
+        inv, active_page="contracts", watch_mode=watch_mode, depth=1,
+        rendered_sections=rendered_sections,
+    )
 
     contract_exports = [
         {"id": fmt, "label": CONTRACT_LABELS.get(fmt, fmt)}
@@ -406,7 +455,7 @@ def _render_contracts(env, inv, output_dir, *, watch_mode):
     ctx = {**base, "contract_exports": contract_exports}
     html = env.get_template("contracts_index.html").render(**ctx)
     target = output_dir / "contracts" / "index.html"
-    _atomic_write(target, html)
+    _maybe_write(target, html, dry_run=dry_run)
     pages.append({"page": "contracts/index", "path": str(target.relative_to(output_dir))})
 
     for fmt, files in inv.contracts.items():
@@ -421,15 +470,18 @@ def _render_contracts(env, inv, output_dir, *, watch_mode):
         ctx = {**base, **c_ctx}
         html = env.get_template("contract_view.html").render(**ctx)
         target = output_dir / "contracts" / f"{fmt}.html"
-        _atomic_write(target, html)
+        _maybe_write(target, html, dry_run=dry_run)
         pages.append({"page": f"contracts/{fmt}", "path": str(target.relative_to(output_dir))})
 
     return pages
 
 
-def _render_sidecars(env, inv, output_dir, *, watch_mode):
+def _render_sidecars(env, inv, output_dir, *, watch_mode, dry_run, rendered_sections):
     pages: list[dict] = []
-    base = _build_base_context(inv, active_page="sidecars", watch_mode=watch_mode, depth=1)
+    base = _build_base_context(
+        inv, active_page="sidecars", watch_mode=watch_mode, depth=1,
+        rendered_sections=rendered_sections,
+    )
 
     sidecar_diagrams = [
         {"id": fmt, "label": SIDECAR_LABELS.get(fmt, fmt), "count": len(files)}
@@ -439,7 +491,7 @@ def _render_sidecars(env, inv, output_dir, *, watch_mode):
     ctx = {**base, "sidecar_diagrams": sidecar_diagrams}
     html = env.get_template("sidecars_index.html").render(**ctx)
     target = output_dir / "sidecars" / "index.html"
-    _atomic_write(target, html)
+    _maybe_write(target, html, dry_run=dry_run)
     pages.append({"page": "sidecars/index", "path": str(target.relative_to(output_dir))})
 
     for fmt, spec_paths in inv.sidecars.items():
@@ -454,43 +506,74 @@ def _render_sidecars(env, inv, output_dir, *, watch_mode):
         ctx = {**base, **s_ctx}
         html = env.get_template("sidecar_view.html").render(**ctx)
         target = output_dir / "sidecars" / f"{fmt}.html"
-        _atomic_write(target, html)
+        _maybe_write(target, html, dry_run=dry_run)
         pages.append({"page": f"sidecars/{fmt}", "path": str(target.relative_to(output_dir))})
 
     return pages
 
 
-def _render_phase7(env, inv, output_dir, *, watch_mode):
+def _render_phase7(env, inv, output_dir, *, watch_mode, dry_run, rendered_sections):
     pages: list[dict] = []
-    base = _build_base_context(inv, active_page="phase7", watch_mode=watch_mode, depth=1)
+    base = _build_base_context(
+        inv, active_page="phase7", watch_mode=watch_mode, depth=1,
+        rendered_sections=rendered_sections,
+    )
 
     proposals_meta = renderers.load_proposals_index(inv.proposals_index)
+    # v1.3.3 R2 fix: filter proposals_meta to safe-ID entries BEFORE
+    # passing to the index template so we don't render dead links to
+    # proposal_<id>.html pages that the per-proposal loop will skip
+    # (R1 fix #1 silently skips unsafe IDs at detail-page level; R2
+    # extends the filter upstream so the index also stays consistent).
+    # Also normalize `id` → `proposal_id` so the template can rely on
+    # a single key (Phase 7 patcher emits `proposal_id` but defensive
+    # against operator-edited _index.json using `id` shorthand).
+    safe_proposals_meta = []
+    for p in proposals_meta:
+        if not isinstance(p, dict):
+            continue
+        pid = p.get("proposal_id") or p.get("id")
+        if not renderers.is_safe_proposal_id(pid):
+            continue
+        normalized = dict(p)
+        normalized["proposal_id"] = pid
+        safe_proposals_meta.append(normalized)
     telemetry_runs_meta = [
         {"name": p.name, "path": str(p)} for p in inv.telemetry_runs
     ]
     ctx = {
         **base,
-        "proposals": proposals_meta,
+        "proposals": safe_proposals_meta,
         "telemetry_runs": telemetry_runs_meta,
         "telemetry_run_count": len(telemetry_runs_meta),
     }
     html = env.get_template("phase7_index.html").render(**ctx)
     target = output_dir / "phase7" / "index.html"
-    _atomic_write(target, html)
+    _maybe_write(target, html, dry_run=dry_run)
     pages.append({"page": "phase7/index", "path": str(target.relative_to(output_dir))})
 
     if inv.proposals_index:
         proposals_root = inv.proposals_index.parent
-        for proposal_meta in proposals_meta:
+        # Use the same safe-filtered list the index renders from (R2
+        # consistency fix); detail-page validation in
+        # build_proposal_context is preserved as defense-in-depth.
+        for proposal_meta in safe_proposals_meta:
             p_ctx = renderers.build_proposal_context(
                 proposal_meta=proposal_meta,
                 proposals_root=proposals_root,
             )
+            # v1.3.3 R1 fix #1: build_proposal_context returns None
+            # when proposal_id fails the safe-ID regex (untrusted-
+            # input-as-path-component defense). Skip such entries
+            # silently; they would otherwise let a crafted _index.json
+            # escape proposals_root or output_dir/phase7/.
+            if p_ctx is None:
+                continue
             ctx = {**base, **p_ctx}
             html = env.get_template("proposal_view.html").render(**ctx)
             pid = p_ctx["proposal_id"]
             target = output_dir / "phase7" / f"proposal_{pid}.html"
-            _atomic_write(target, html)
+            _maybe_write(target, html, dry_run=dry_run)
             pages.append({
                 "page": f"phase7/proposal_{pid}",
                 "path": str(target.relative_to(output_dir)),
@@ -519,8 +602,11 @@ def _make_jinja_env():
     )
 
 
-def _copy_static_assets(output_dir: Path) -> None:
-    """Copy bundled CSS + JS into output_dir/static/. Idempotent."""
+def _copy_static_assets(output_dir: Path, *, dry_run: bool) -> None:
+    """Copy bundled CSS + JS into output_dir/static/. Idempotent.
+    No-op when dry_run is True (v1.3.3 R1 fix #2)."""
+    if dry_run:
+        return
     target = output_dir / "static"
     target.mkdir(parents=True, exist_ok=True)
     for asset in STATIC_DIR.iterdir():
@@ -546,22 +632,21 @@ def render_dashboard(
     filter_pages: set[str] | None,
     watch_mode: bool,
     quiet: bool,
+    dry_run: bool = False,
 ) -> dict:
     """Generate the full dashboard HTML bundle. Returns a manifest dict
-    listing every page emitted."""
+    listing every page emitted. When `dry_run` is True (driven by
+    `--print-only`), the manifest is computed without touching the
+    filesystem (v1.3.3 R1 fix #2)."""
     env = _make_jinja_env()
     inv = loaders.discover(workspace)
 
     pages_to_render = filter_pages or set(FILTER_PAGES)
     manifest_pages: list[dict] = []
 
-    # Always render index.
-    if "index" in pages_to_render:
-        manifest_pages.extend(_render_index(env, inv, output_dir, watch_mode=watch_mode))
-
-    # Other sections — only render if both (a) requested via filter
-    # AND (b) the relevant inventory items exist (skip silently
-    # otherwise to keep the output minimal).
+    # Section visibility = inventory has artifacts AND filter requests
+    # the section. Compute this BEFORE rendering so we can pass the
+    # set to base_context for nav-link gating (v1.3.3 R1 fix #3).
     section_visibility = {
         "artifacts": any(p is not None for p in inv.a_tables.values()),
         "audits": any(p is not None for p in inv.audits.values()),
@@ -572,16 +657,34 @@ def render_dashboard(
         "sidecars": any(files for files in inv.sidecars.values()),
         "phase7": bool(inv.telemetry_runs or inv.proposals_index),
     }
+    rendered_sections = {
+        section for section, visible in section_visibility.items()
+        if section in pages_to_render and visible
+    }
+    # `index` is always rendered (FILTER_PAGES enforcer keeps it in
+    # the set even if operator passes --filter audits etc.). Add it
+    # to rendered_sections so nav can show the Overview link.
+    rendered_sections.add("index")
 
-    for section, visible in section_visibility.items():
-        if section in pages_to_render and visible:
+    # Always render index.
+    if "index" in pages_to_render:
+        manifest_pages.extend(_render_index(
+            env, inv, output_dir,
+            watch_mode=watch_mode, dry_run=dry_run,
+            rendered_sections=rendered_sections,
+        ))
+
+    for section in section_visibility:
+        if section in rendered_sections and section != "index":
             manifest_pages.extend(
                 _RENDERER_DISPATCH[section](
-                    env, inv, output_dir, watch_mode=watch_mode,
+                    env, inv, output_dir,
+                    watch_mode=watch_mode, dry_run=dry_run,
+                    rendered_sections=rendered_sections,
                 )
             )
 
-    _copy_static_assets(output_dir)
+    _copy_static_assets(output_dir, dry_run=dry_run)
 
     manifest = {
         "manifest_version": "1.0",
@@ -639,21 +742,37 @@ def render_dashboard(
 # ---- Watch mode (polling) ------------------------------------------
 
 
-def _snapshot_mtimes(workspace: Path) -> dict[str, float]:
-    """Walk analysis/ subtree and capture per-file mtimes."""
+def _snapshot_mtimes(
+    workspace: Path,
+    output_dir: Path,
+) -> dict[str, float]:
+    """Walk analysis/ subtree and capture per-file mtimes. v1.3.3 R1
+    fix #4: exclude any file under the resolved `output_dir` (not a
+    hardcoded `dashboard` segment) to avoid the watch loop snapshotting
+    its own outputs and re-rendering forever when `--output-dir` is
+    overridden."""
     snapshot: dict[str, float] = {}
     analysis_root = workspace / "analysis"
     if not analysis_root.is_dir():
         return snapshot
+    output_dir_resolved = output_dir.resolve()
     for path in analysis_root.rglob("*"):
-        # Skip the dashboard output dir itself to avoid feedback loops.
-        if "dashboard" in path.parts and path.suffix in {".html", ".css", ".js"}:
+        if not path.is_file():
             continue
-        if path.is_file():
-            try:
-                snapshot[str(path)] = path.stat().st_mtime
-            except OSError:
-                continue
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        # Skip files inside the actual output_dir (feedback-loop guard).
+        try:
+            resolved.relative_to(output_dir_resolved)
+            continue
+        except ValueError:
+            pass
+        try:
+            snapshot[str(path)] = path.stat().st_mtime
+        except OSError:
+            continue
     return snapshot
 
 
@@ -665,7 +784,7 @@ def _watch_loop(
     quiet: bool,
 ) -> int:
     """Poll workspace mtimes; regenerate when any file changes."""
-    last_snapshot = _snapshot_mtimes(workspace)
+    last_snapshot = _snapshot_mtimes(workspace, output_dir)
     if not quiet:
         print(
             f"dashboard: watching {workspace / 'analysis'} "
@@ -674,7 +793,7 @@ def _watch_loop(
     try:
         while True:
             time.sleep(WATCH_POLL_INTERVAL_S)
-            current_snapshot = _snapshot_mtimes(workspace)
+            current_snapshot = _snapshot_mtimes(workspace, output_dir)
             if current_snapshot != last_snapshot:
                 changed = sum(
                     1 for k, v in current_snapshot.items()
@@ -793,7 +912,11 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=output_dir,
             filter_pages=args.filter,
             watch_mode=args.watch,
-            quiet=args.quiet,
+            # v1.3.3 R1 fix #2: --print-only forces quiet for the
+            # human summary so stdout stays valid JSON, AND threads
+            # `dry_run=True` so no files get written.
+            quiet=args.quiet or args.print_only,
+            dry_run=args.print_only,
         )
     except RuntimeError as exc:
         print(f"dashboard: {exc}", file=sys.stderr)

@@ -18,3 +18,13 @@ jsonschema>=4.20,<5
 # in environments without pyyaml (the test class skips instead of
 # failing).
 PyYAML>=6.0,<7
+
+# jinja2 + markdown-it-py are optional runtime deps for the v1.3.3
+# operator-side dashboard (`scripts/generate_dashboard.py`). They are
+# imported lazily by the dashboard generator with a clear error
+# message if missing, so the rest of the test suite still runs cleanly
+# in environments without them. Pinned here so the dashboard tests
+# (scripts/test_generate_dashboard.py) actually exercise the renderers
+# rather than skipping silently.
+Jinja2>=3.1,<4
+markdown-it-py>=3.0,<4

@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,24 @@ ANCHOR_COLUMNS: dict[tuple[str, str], str] = {
 
 # Multi-value separators used in canonical CSVs.
 MULTI_VALUE_SPLIT_RE = re.compile(r"[;/]")
+
+# Proposal-ID safe-character regex. v1.3.3 R1 lesson #1 reapplied
+# (untrusted-input-as-path-component, mirroring v1.2.19 R1-FIX-1):
+# `_index.json` is operator-trusted in normal use BUT a maliciously
+# crafted entry with `../` or path separators could let the dashboard
+# read outside `analysis/telemetry/proposals/` AND write outside
+# `output_dir/phase7/`. Validate every proposal_id against this
+# pattern BEFORE any path join; skip non-conforming IDs.
+_PROPOSAL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def is_safe_proposal_id(proposal_id: object) -> bool:
+    """True iff `proposal_id` is a string matching the safe-ID regex.
+    Caller must use this check BEFORE any path join with proposal_id."""
+    return (
+        isinstance(proposal_id, str)
+        and bool(_PROPOSAL_ID_PATTERN.fullmatch(proposal_id))
+    )
 
 
 # ---- A-table rendering --------------------------------------------
@@ -278,10 +297,16 @@ def render_unified_diff_html(diff_text: str) -> str:
 def build_proposal_context(
     proposal_meta: dict[str, Any],
     proposals_root: Path,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     """Per-proposal page context. proposal_meta is one entry from
-    _index.json's `proposals` list."""
-    proposal_id = proposal_meta.get("proposal_id") or proposal_meta.get("id") or "unknown"
+    _index.json's `proposals` list. Returns None if the entry's
+    proposal_id is missing or fails the safe-ID regex (v1.3.3 R1
+    lesson #1: validate untrusted input BEFORE path construction)."""
+    if not isinstance(proposal_meta, dict):
+        return None
+    proposal_id = proposal_meta.get("proposal_id") or proposal_meta.get("id")
+    if not is_safe_proposal_id(proposal_id):
+        return None
     summary_path = proposals_root / f"{proposal_id}.summary.md"
     patch_path = proposals_root / f"{proposal_id}.patch"
 
@@ -295,8 +320,12 @@ def build_proposal_context(
         patch_text = patch_path.read_text(encoding="utf-8", errors="replace")
         diff_html = render_unified_diff_html(patch_text)
         # Operator-pasteable command. Patch path is repo-relative.
+        # shlex.quote() guards against spaces / shell metacharacters
+        # in proposal_id (lesson #4); `--` end-of-options separator
+        # already in place guards against leading-hyphen IDs (lesson
+        # #5). Both v1.2.19 patcher post-Codex lessons applied here.
         patch_relpath = f"analysis/telemetry/proposals/{proposal_id}.patch"
-        apply_command = f"git apply -- {patch_relpath}"
+        apply_command = f"git apply -- {shlex.quote(patch_relpath)}"
     else:
         diff_html = ""
         apply_command = None
