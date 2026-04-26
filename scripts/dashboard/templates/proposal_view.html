@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Proposal {{ proposal_id }}{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Proposal <code>{{ proposal_id }}</code></h1>
+  {%- if meta.tunable_id %}
+  <p class="workspace-path">Tunable: <code>{{ meta.tunable_id }}</code>{% if meta.change_class %} · class: <span class="proposal-class proposal-class-{{ meta.change_class }}">{{ meta.change_class }}</span>{% endif %}</p>
+  {%- endif %}
+</section>
+
+<section class="overview-section">
+  <h2>Summary</h2>
+  <article class="md-content">
+    {{ summary_html|safe }}
+  </article>
+</section>
+
+{%- if patch_present %}
+<section class="overview-section">
+  <h2>Apply</h2>
+  <div class="apply-box">
+    <p class="apply-note">Operator-side; the patcher never applies. Review the diff below first, then run:</p>
+    <div class="apply-command-row">
+      <code id="apply-command" class="apply-command">{{ apply_command }}</code>
+      <button type="button" class="copy-button" data-clipboard-target="#apply-command">Copy</button>
+    </div>
+  </div>
+</section>
+
+<section class="overview-section">
+  <h2>Patch (unified diff)</h2>
+  <pre class="diff-block"><code>{{ diff_html|safe }}</code></pre>
+</section>
+{%- else %}
+<p class="empty-note">No patch file present for this proposal.</p>
+{%- endif %}
+
+<script src="{{ static_prefix }}clipboard.js"></script>
+{% endblock %}

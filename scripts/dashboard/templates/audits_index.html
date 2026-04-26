@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Audits{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Audits</h1>
+  <p class="workspace-path">{{ audit_verdicts|length }} audit report{{ 's' if audit_verdicts|length != 1 else '' }} discovered</p>
+</section>
+
+{%- if audit_verdicts %}
+<section class="overview-section">
+  <ul class="verdict-list">
+    {%- for entry in audit_verdicts %}
+    <li class="verdict verdict-{{ entry.verdict }}">
+      <span class="verdict-badge">{{ entry.verdict }}</span>
+      <a href="{{ entry.id }}.html">{{ entry.label }}</a>
+    </li>
+    {%- endfor %}
+  </ul>
+</section>
+{%- else %}
+<p class="empty-note">No audit reports found in <code>analysis/canonical/</code> or <code>analysis/handoff/</code>.</p>
+{%- endif %}
+
+{% endblock %}

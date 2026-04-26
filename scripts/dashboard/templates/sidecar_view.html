@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ label }}{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>{{ label }}</h1>
+  <p class="workspace-path">{{ diagrams|length }} file{{ 's' if diagrams|length != 1 else '' }}</p>
+  {%- if render_hint %}
+  <p class="render-hint">{{ render_hint|safe }}</p>
+  {%- endif %}
+</section>
+
+{%- for diagram in diagrams %}
+<section class="overview-section">
+  <h2><code>{{ diagram.name }}</code></h2>
+  <p class="counter-sublabel">{{ diagram.source_path }}</p>
+  <pre class="code-block"><code class="lang-{{ fmt }}">{{ diagram.content }}</code></pre>
+</section>
+{%- endfor %}
+
+{%- if anchor_rows %}
+<section class="overview-section">
+  <h2>Anchor manifest mapping</h2>
+  <p class="section-intro">{{ anchor_rows|length }} view-element{{ 's' if anchor_rows|length != 1 else '' }} mapped to A61 anchors:</p>
+  <table class="artifact-table">
+    <thead>
+      <tr>
+        <th>view_element_id</th>
+        <th>view_element_kind</th>
+        <th>a61_anchor_id</th>
+      </tr>
+    </thead>
+    <tbody>
+    {%- for row in anchor_rows %}
+      <tr>
+        <td><code>{{ row.view_element_id }}</code></td>
+        <td>{{ row.view_element_kind }}</td>
+        <td><a href="../artifacts/a61.html#row-{{ row.a61_anchor_id }}">{{ row.a61_anchor_id }}</a></td>
+      </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+</section>
+{%- elif manifest_present %}
+<p class="empty-note">Anchor manifest present but contains no anchor_map entries.</p>
+{%- else %}
+<p class="empty-note">No anchor_manifest.json found in this sidecar's view directory.</p>
+{%- endif %}
+
+{% endblock %}

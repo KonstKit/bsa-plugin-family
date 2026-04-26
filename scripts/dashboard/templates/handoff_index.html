@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Handoff packets{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Handoff packets</h1>
+  <p class="workspace-path">H1-H4 deliverables for downstream stakeholders</p>
+</section>
+
+{%- if handoff_packets %}
+<ul class="handoff-list">
+  {%- for entry in handoff_packets %}
+  <li><a href="{{ entry.id }}.html">{{ entry.label }}</a></li>
+  {%- endfor %}
+</ul>
+{%- else %}
+<p class="empty-note">No handoff packets in <code>analysis/handoff/</code>.</p>
+{%- endif %}
+
+{% endblock %}

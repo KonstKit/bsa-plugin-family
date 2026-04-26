@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ label }}{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>{{ label }}</h1>
+  {%- if spec_path %}
+  <p class="workspace-path"><code>{{ spec_path }}</code></p>
+  {%- endif %}
+</section>
+
+{%- if spec_text %}
+<section class="overview-section">
+  <h2>Spec source</h2>
+  <pre class="code-block"><code class="lang-{{ language }}">{{ spec_text }}</code></pre>
+</section>
+{%- else %}
+<p class="empty-note">Spec file not present.</p>
+{%- endif %}
+
+{%- if anchor_rows %}
+<section class="overview-section">
+  <h2>Anchor mapping</h2>
+  <p class="section-intro">{{ anchor_rows|length }} element{{ 's' if anchor_rows|length != 1 else '' }} traced back to A61 anchors:</p>
+  <table class="artifact-table">
+    <thead>
+      <tr>
+        <th>view_element_id</th>
+        <th>view_element_kind</th>
+        <th>a61_anchor_id</th>
+        <th>notes</th>
+      </tr>
+    </thead>
+    <tbody>
+    {%- for row in anchor_rows %}
+      <tr>
+        <td><code>{{ row.view_element_id }}</code></td>
+        <td>{{ row.view_element_kind }}</td>
+        <td><a href="../artifacts/a61.html#row-{{ row.a61_anchor_id }}">{{ row.a61_anchor_id }}</a></td>
+        <td>{{ row.notes }}</td>
+      </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+</section>
+{%- endif %}
+
+{%- if unmapped_rows %}
+<section class="overview-section">
+  <h2>Unmapped anchors</h2>
+  <p class="section-intro">{{ unmapped_rows|length }} A61 anchor{{ 's' if unmapped_rows|length != 1 else '' }} considered but skipped (with structured reasons):</p>
+  <table class="artifact-table">
+    <thead>
+      <tr>
+        <th>a61_anchor_id</th>
+        <th>reason</th>
+        <th>element_id</th>
+      </tr>
+    </thead>
+    <tbody>
+    {%- for row in unmapped_rows %}
+      <tr>
+        <td><a href="../artifacts/a61.html#row-{{ row.a61_anchor_id }}">{{ row.a61_anchor_id }}</a></td>
+        <td><code class="unmapped-reason">{{ row.reason }}</code></td>
+        <td>{{ row.element_id }}</td>
+      </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+</section>
+{%- endif %}
+
+{% endblock %}

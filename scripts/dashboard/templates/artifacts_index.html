@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Artifacts{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Canonical artifacts</h1>
+  <p class="workspace-path">10 A-tables, glob-discovered across <code>analysis/canonical/**/</code></p>
+</section>
+
+<section class="overview-section">
+  <h2>All A-tables</h2>
+  <div class="counter-grid">
+    {%- for entry in a_table_counts %}
+    <div class="counter {% if entry.count == 0 %}counter-empty{% endif %}">
+      <div class="counter-label"><a href="{{ entry.id }}.html">{{ entry.id|upper }}</a></div>
+      <div class="counter-value">{{ entry.count }}</div>
+      <div class="counter-sublabel">{{ entry.label }}</div>
+    </div>
+    {%- endfor %}
+  </div>
+</section>
+
+<section class="overview-section">
+  <h2>Cross-cutting views</h2>
+  <ul class="handoff-list">
+    {%- if has_claim_layer %}
+    <li><a href="claim_layer.html">Claim layer view (A59 + A50 + A58 join)</a></li>
+    {%- endif %}
+    {%- if has_traceability %}
+    <li><a href="traceability.html">Traceability matrix (A72 grouped by StoryID)</a></li>
+    {%- endif %}
+  </ul>
+</section>
+
+{% endblock %}

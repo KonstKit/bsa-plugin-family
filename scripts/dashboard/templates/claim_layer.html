@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Claim layer{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Claim layer</h1>
+  <p class="workspace-path">{{ claim_count }} claim{{ 's' if claim_count != 1 else '' }} · A59 joined with A50 sources + A58 excerpts</p>
+</section>
+
+<div class="table-toolbar">
+  <input type="search" id="filter-input" placeholder="Filter claims by ID / text / source…" class="filter-input">
+  <span id="filter-count" class="filter-count">{{ claim_count }} / {{ claim_count }}</span>
+</div>
+
+<div id="claim-cards-container">
+{%- for card in claim_cards %}
+  {%- set claim = card.claim %}
+  <article class="claim-card filterable-row" data-claim-id="{{ claim.ClaimID }}">
+    <header class="claim-card-header">
+      <a class="claim-id" href="../artifacts/a59.html#row-{{ claim.ClaimID }}">{{ claim.ClaimID }}</a>
+      {%- if claim.Confidence %}<span class="claim-tag claim-tag-confidence-{{ claim.Confidence|lower }}">{{ claim.Confidence }}</span>{% endif %}
+      {%- if claim.Criticality %}<span class="claim-tag claim-tag-crit-{{ claim.Criticality|lower }}">{{ claim.Criticality }}</span>{% endif %}
+      {%- if claim.SourceType %}<span class="claim-tag">{{ claim.SourceType }}</span>{% endif %}
+    </header>
+    <p class="claim-text">{{ claim.ClaimText or claim.Statement or claim.Claim or '(no text)' }}</p>
+
+    {%- if card.bound_sources %}
+    <details class="claim-evidence">
+      <summary>{{ card.bound_sources|length }} bound source{{ 's' if card.bound_sources|length != 1 else '' }}</summary>
+      <ul class="evidence-list">
+        {%- for source in card.bound_sources %}
+        {%- if source %}
+        <li>
+          <a href="../artifacts/a50.html#row-{{ source.SourceID }}">{{ source.SourceID }}</a> ·
+          <span>{{ source.Title or '(untitled)' }}</span> ·
+          <span class="evidence-tier">{{ source.ReliabilityTier }}</span>
+        </li>
+        {%- endif %}
+        {%- endfor %}
+      </ul>
+    </details>
+    {%- endif %}
+
+    {%- if card.bound_excerpts %}
+    <details class="claim-evidence">
+      <summary>{{ card.bound_excerpts|length }} bound excerpt{{ 's' if card.bound_excerpts|length != 1 else '' }}</summary>
+      <ul class="evidence-list">
+        {%- for excerpt in card.bound_excerpts %}
+        {%- if excerpt %}
+        <li>
+          <a href="../artifacts/a58.html#row-{{ excerpt.ExcerptID }}">{{ excerpt.ExcerptID }}</a>:
+          <span class="evidence-quote">{{ (excerpt.ExcerptText or excerpt.Quote or '')[:200] }}{% if (excerpt.ExcerptText or excerpt.Quote or '')|length > 200 %}…{% endif %}</span>
+        </li>
+        {%- endif %}
+        {%- endfor %}
+      </ul>
+    </details>
+    {%- endif %}
+  </article>
+{%- endfor %}
+</div>
+
+<script src="{{ static_prefix }}claim_filter.js"></script>
+
+{% endblock %}

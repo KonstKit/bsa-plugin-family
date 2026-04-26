@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Phase 7 telemetry{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Phase 7 self-improvement loop</h1>
+  <p class="workspace-path">{{ telemetry_run_count }} telemetry run{{ 's' if telemetry_run_count != 1 else '' }} · {{ proposals|length }} proposal{{ 's' if proposals|length != 1 else '' }}</p>
+</section>
+
+{%- if proposals %}
+<section class="overview-section">
+  <h2>L2 patcher proposals</h2>
+  <p class="section-intro">Each proposal is operator-applied: review the diff, copy the <code>git apply</code> command, run it locally. The patcher itself NEVER applies (mirrors v1.2.19 patcher's never-list).</p>
+  <ul class="proposal-list">
+    {%- for proposal in proposals %}
+    <li class="proposal-row">
+      <a href="proposal_{{ proposal.proposal_id }}.html" class="proposal-link">
+        <span class="proposal-id">{{ proposal.proposal_id }}</span>
+        {%- if proposal.title %}
+        <span class="proposal-title">{{ proposal.title }}</span>
+        {%- endif %}
+      </a>
+      {%- if proposal.tunable_id %}
+      <code class="proposal-tunable">{{ proposal.tunable_id }}</code>
+      {%- endif %}
+      {%- if proposal.change_class %}
+      <span class="proposal-class proposal-class-{{ proposal.change_class }}">{{ proposal.change_class }}</span>
+      {%- endif %}
+    </li>
+    {%- endfor %}
+  </ul>
+</section>
+{%- else %}
+<p class="empty-note">No L2 patcher proposals in this workspace. Proposals live under <code>analysis/telemetry/proposals/</code>.</p>
+{%- endif %}
+
+{%- if telemetry_runs %}
+<section class="overview-section">
+  <h2>Recent telemetry runs</h2>
+  <ul class="handoff-list">
+    {%- for run in telemetry_runs[:20] %}
+    <li><code>{{ run.name }}</code> <span class="counter-sublabel">{{ run.path }}</span></li>
+    {%- endfor %}
+  </ul>
+  {%- if telemetry_runs|length > 20 %}
+  <p class="counter-sublabel">… plus {{ telemetry_runs|length - 20 }} more.</p>
+  {%- endif %}
+</section>
+{%- endif %}
+
+{% endblock %}

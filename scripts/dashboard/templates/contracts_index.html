@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Contract exports{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Contract exports</h1>
+  <p class="workspace-path">v1.3.x exporter family — REST / events / RPC contracts under <code>analysis/handoff/contracts/</code></p>
+</section>
+
+{%- if contract_exports %}
+<ul class="contract-list">
+  {%- for entry in contract_exports %}
+  <li><a href="{{ entry.id }}.html">{{ entry.label }}</a></li>
+  {%- endfor %}
+</ul>
+{%- else %}
+<p class="empty-note">No contract exports in <code>analysis/handoff/contracts/</code>. Run one of: <code>generate_openapi.py</code> / <code>generate_asyncapi.py</code> / <code>generate_proto.py</code>.</p>
+{%- endif %}
+
+{% endblock %}

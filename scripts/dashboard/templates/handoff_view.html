@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ label }}{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>{{ label }}</h1>
+  {%- if source_path %}
+  <p class="workspace-path"><code>{{ source_path }}</code></p>
+  {%- endif %}
+</section>
+
+<article class="md-content">
+  {{ html_body|safe }}
+</article>
+
+{% endblock %}

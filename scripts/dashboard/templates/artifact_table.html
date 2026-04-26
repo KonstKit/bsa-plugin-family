@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ a_id|upper }} — {{ label }}{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>{{ a_id|upper }} <span class="hero-sublabel">{{ label }}</span></h1>
+  <p class="workspace-path">
+    {%- if csv_path_str %}
+    <code>{{ csv_path_str }}</code>
+    {%- else %}
+    <em>not present in this workspace</em>
+    {%- endif %}
+    · {{ row_count }} row{{ 's' if row_count != 1 else '' }}
+  </p>
+</section>
+
+{%- if rows %}
+<div class="table-toolbar">
+  <input type="search" id="filter-input" placeholder="Filter rows…" class="filter-input">
+  <span id="filter-count" class="filter-count">{{ row_count }} / {{ row_count }}</span>
+</div>
+
+<div class="table-scroll">
+  <table class="artifact-table" data-a-id="{{ a_id }}">
+    <thead>
+      <tr>
+      {%- for header in headers %}
+        <th class="sortable" data-col="{{ loop.index0 }}">{{ header }} <span class="sort-indicator"></span></th>
+      {%- endfor %}
+      </tr>
+    </thead>
+    <tbody>
+    {%- for row in rows %}
+      {%- set row_idx = loop.index0 %}
+      {%- set row_class = row_classes[row_idx] %}
+      {%- set pk_value = row[pk_col] if pk_col else '' %}
+      <tr class="artifact-row {{ row_class }}"{% if pk_value %} id="row-{{ pk_value }}"{% endif %}>
+      {%- for header in headers %}
+        {%- set cell = row[header] %}
+        {%- set links = cell_links[row_idx][loop.index0] %}
+        <td>
+          {%- if links %}
+            {%- for link in links %}<a href="{{ link.href }}" class="anchor-link">{{ link.value }}</a>{% if not loop.last %}, {% endif %}{%- endfor %}
+          {%- else %}
+            {{ cell }}
+          {%- endif %}
+        </td>
+      {%- endfor %}
+      </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+</div>
+<script src="{{ static_prefix }}filterable_table.js"></script>
+{%- else %}
+<p class="empty-note">No rows in this artifact.</p>
+{%- endif %}
+
+{% endblock %}

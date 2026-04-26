@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Traceability matrix{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Traceability matrix</h1>
+  <p class="workspace-path">{{ trace_count }} A72 row{{ 's' if trace_count != 1 else '' }} · grouped under {{ story_count }} stor{{ 'ies' if story_count != 1 else 'y' }}</p>
+</section>
+
+{%- if grouped %}
+<div class="table-toolbar">
+  <input type="search" id="filter-input" placeholder="Filter by Story / Claim / Source ID…" class="filter-input">
+  <span id="filter-count" class="filter-count">{{ trace_count }} / {{ trace_count }}</span>
+</div>
+
+{%- for group in grouped %}
+<details class="trace-group filterable-row" open data-story-id="{{ group.story_id }}">
+  <summary class="trace-summary">
+    <a class="story-id" href="../artifacts/a70.html#row-{{ group.story_id }}">{{ group.story_id }}</a>
+    <span class="trace-count">{{ group.row_count }} trace{{ 's' if group.row_count != 1 else '' }}</span>
+  </summary>
+  <table class="artifact-table trace-table">
+    <thead>
+      <tr>
+        <th>TraceID</th>
+        <th>ClaimID</th>
+        <th>SourceID</th>
+        <th>LinkType</th>
+        <th>LinkStrength</th>
+        <th>A51Ref</th>
+      </tr>
+    </thead>
+    <tbody>
+    {%- for row in group.rows %}
+      <tr>
+        <td>{{ row.TraceID }}</td>
+        <td>{%- if row.ClaimID %}<a href="../artifacts/a59.html#row-{{ row.ClaimID }}">{{ row.ClaimID }}</a>{%- endif %}</td>
+        <td>{%- if row.SourceID %}<a href="../artifacts/a50.html#row-{{ row.SourceID }}">{{ row.SourceID }}</a>{%- endif %}</td>
+        <td>{{ row.LinkType }}</td>
+        <td>{{ row.LinkStrength }}</td>
+        <td>{%- if row.A51Ref %}<a href="../artifacts/a51.html#row-{{ row.A51Ref }}">{{ row.A51Ref }}</a>{%- endif %}</td>
+      </tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+</details>
+{%- endfor %}
+
+<script src="{{ static_prefix }}claim_filter.js"></script>
+{%- else %}
+<p class="empty-note">A72 traceability matrix not present in this workspace.</p>
+{%- endif %}
+
+{% endblock %}

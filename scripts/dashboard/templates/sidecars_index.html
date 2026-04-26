@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Sidecar diagrams{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Sidecar diagrams</h1>
+  <p class="workspace-path">Derived diagram views (NON-canonical) under <code>analysis/views/</code></p>
+</section>
+
+{%- if sidecar_diagrams %}
+<ul class="contract-list">
+  {%- for entry in sidecar_diagrams %}
+  <li><a href="{{ entry.id }}.html">{{ entry.label }} <span class="sidecar-count">({{ entry.count }} file{{ 's' if entry.count != 1 else '' }})</span></a></li>
+  {%- endfor %}
+</ul>
+{%- else %}
+<p class="empty-note">No sidecar diagrams in <code>analysis/views/</code>.</p>
+{%- endif %}
+
+{% endblock %}
