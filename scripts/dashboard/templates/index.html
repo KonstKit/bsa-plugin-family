@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+
+<section class="overview-hero">
+  <h1>Workspace Overview</h1>
+  <p class="workspace-path"><code>{{ workspace_path }}</code></p>
+</section>
+
+<section class="overview-section">
+  <h2>Pipeline state</h2>
+  {%- if pipeline_stages %}
+  <ul class="stage-list">
+    {%- for stage in pipeline_stages %}
+    <li class="stage stage-{{ stage.status }}">
+      <span class="stage-name">{{ stage.name }}</span>
+      <span class="stage-status">{{ stage.status }}</span>
+      {%- if stage.detail %}
+      <span class="stage-detail">{{ stage.detail }}</span>
+      {%- endif %}
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="empty-note">No canonical artifacts found in <code>analysis/canonical/</code>.</p>
+  {%- endif %}
+</section>
+
+{%- if a_table_counts %}
+<section class="overview-section">
+  <h2>Canonical artifacts</h2>
+  <div class="counter-grid">
+    {%- for entry in a_table_counts %}
+    <div class="counter {% if entry.count == 0 %}counter-empty{% endif %}">
+      <div class="counter-label"><a href="{{ root_prefix }}artifacts/{{ entry.id }}.html">{{ entry.id|upper }}</a></div>
+      <div class="counter-value">{{ entry.count }}</div>
+      <div class="counter-sublabel">{{ entry.label }}</div>
+    </div>
+    {%- endfor %}
+  </div>
+</section>
+{%- endif %}
+
+{%- if audit_verdicts %}
+<section class="overview-section">
+  <h2>Audits</h2>
+  <ul class="verdict-list">
+    {%- for entry in audit_verdicts %}
+    <li class="verdict verdict-{{ entry.verdict }}">
+      <span class="verdict-badge">{{ entry.verdict }}</span>
+      <a href="{{ root_prefix }}audits/{{ entry.id }}.html">{{ entry.label }}</a>
+    </li>
+    {%- endfor %}
+  </ul>
+</section>
+{%- endif %}
+
+{%- if handoff_packets %}
+<section class="overview-section">
+  <h2>Handoff packets</h2>
+  <ul class="handoff-list">
+    {%- for entry in handoff_packets %}
+    <li><a href="{{ root_prefix }}handoff/{{ entry.id }}.html">{{ entry.label }}</a></li>
+    {%- endfor %}
+  </ul>
+</section>
+{%- endif %}
+
+{%- if contract_exports %}
+<section class="overview-section">
+  <h2>Contract exports</h2>
+  <ul class="contract-list">
+    {%- for entry in contract_exports %}
+    <li><a href="{{ root_prefix }}contracts/{{ entry.id }}.html">{{ entry.label }}</a></li>
+    {%- endfor %}
+  </ul>
+</section>
+{%- endif %}
+
+{%- if sidecar_diagrams %}
+<section class="overview-section">
+  <h2>Sidecar diagrams</h2>
+  <ul class="sidecar-list">
+    {%- for entry in sidecar_diagrams %}
+    <li><a href="{{ root_prefix }}sidecars/{{ entry.id }}.html">{{ entry.label }} <span class="sidecar-count">({{ entry.count }})</span></a></li>
+    {%- endfor %}
+  </ul>
+</section>
+{%- endif %}
+
+{%- if phase7_summary %}
+<section class="overview-section">
+  <h2>Phase 7 telemetry</h2>
+  <ul class="phase7-list">
+    <li>Telemetry runs: <strong>{{ phase7_summary.runs }}</strong></li>
+    <li>Open proposals: <strong>{{ phase7_summary.proposals }}</strong> {%- if phase7_summary.proposals %} <a href="{{ root_prefix }}phase7/index.html">review →</a>{%- endif %}</li>
+  </ul>
+</section>
+{%- endif %}
+
+{% endblock %}
