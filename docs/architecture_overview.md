@@ -1,19 +1,27 @@
 # Architecture Overview
 
-High-level view of the BSA plugin family: what's in it, how the pieces fit together, and which invariants hold.
+High-level view of the BSA plugin family: what's in it, how the pieces fit together, and which invariants hold. Updated through v1.3.3 (operator-side dashboard).
 
-## 23 skills, six roles
+## 32 skills, eight roles (current as of v1.3.3)
 
 | Role | Skill count | Members |
 |---|---|---|
 | **Main-cycle workers** (produce canonical content) | 9 | `bsa-evidence-intake`, `bsa-claim-binder`, `bsa-context-framer`, `bsa-semantic-extractor`, `bsa-domain-modeler`, `bsa-backbone-builder`, `bsa-contract-builder`, `bsa-handoff-packager`, `bsa-validation-readiness` |
+| **Phase 3 dev-handoff workers** (Sprints 6-9; ship in v1.1.0) | 5 | `bsa-nfr-collector`, `bsa-story-writer`, `bsa-test-scenario-builder`, `bsa-traceability-matrix`, `bsa-backlog-bridge` |
 | **Discovery workers** (D1-D5 pre-intake phase) | 5 | `d0-problem-framer`, `d0-context-researcher`, `d0-hypothesis-prioritizer`, `d0-feasibility-assessor`, `d0-synthesis-gatekeeper` |
 | **Auditors** (verify + emit gate markers) | 5 | `bsa-citation-auditor`, `bsa-consistency-auditor`, `bsa-anchor-auditor`, `bsa-skeptical-reviewer`, `bsa-no-new-claims-auditor` |
-| **Sidecars** (derived-only, non-canonical views) | 2 | `c4-plantuml-from-context`, `camunda-bpmn-from-context` |
+| **Sidecars** (derived-only, non-canonical views) | 3 | `c4-plantuml-from-context`, `camunda-bpmn-from-context`, `dbml-from-context` (v1.2.11) |
+| **Stage 6 contract exporters** (operator-driven, deliverable-shipping) | 3 | `openapi-from-context` (v1.3.0), `asyncapi-from-context` (v1.3.1), `proto-from-context` (v1.3.2) |
 | **Orchestrator** | 1 | `bsa-orchestrator` — routes requests, holds promotion lock, emits markers |
 | **Meta** | 1 | `inot-prompt-builder` — prompt authoring helper (orthogonal to the main pipeline) |
 
-Total: 9 + 5 + 5 + 2 + 1 + 1 = 23 skill directories under `skills/`.
+Total: 9 + 5 + 5 + 5 + 3 + 3 + 1 + 1 = 32 skill directories under `skills/`.
+
+Plus the operator-side dashboard (v1.3.3) — `scripts/generate_dashboard.py` — a static-HTML viewer over canonical artifacts + handoff packets + audit reports + sidecar diagrams + Phase 7 telemetry. Read-only; never writes canonical state. Not a skill (canon-neutral operator-tooling). See [docs/dashboard_runbook.md](dashboard_runbook.md).
+
+Plus the Phase 7 self-improvement loop scripts — `scripts/phase_7_lint.py` (L0 inventory check, v1.1.14), `scripts/phase_7_telemetry_collector.py` (L1a per-run snapshots, v1.2.4), `scripts/phase_7_miner.py` (L1b skeleton, v1.2.18 — real algorithm deferred until enough pilot telemetry exists), `scripts/phase_7_patcher.py` (L2 proposal generation, v1.2.19). See [docs/phase_7_design.md](phase_7_design.md) + [docs/phase_7_runbook.md](phase_7_runbook.md).
+
+Plus reality-probe audits — `scripts/freshness_audit.py` (v1.2.16 — A50 EffectiveDate freshness), `scripts/triangulation_audit.py` (v1.2.17 — A59 SourceType independence for high-Severity claims). Both opt-in operator-runner pattern; emit JSON marker + Markdown report under `analysis/canonical/<stage>/<name>_audit.{json,md}` (per v1.2.16 convention; the dashboard's audit-discovery walks both `analysis/canonical/` and `analysis/handoff/` for compatibility).
 
 ## Data layers
 
@@ -51,7 +59,7 @@ Every pipeline transition emits a marker under `analysis/runtime/ready/` (main c
 
 ### Layer 2 — immutable invariants registry
 
-[governance/immutable_invariants.md](../governance/immutable_invariants.md) enumerates 7 invariants that cannot be relaxed without a **major** CanonPolicyVersion bump:
+[governance/immutable_invariants.md](../governance/immutable_invariants.md) enumerates 10 invariants that cannot be relaxed without a **major** CanonPolicyVersion bump:
 
 | ID | Invariant | Enforcement |
 |---|---|---|
@@ -62,6 +70,9 @@ Every pipeline transition emits a marker under `analysis/runtime/ready/` (main c
 | INV-05 | A51 is not a claim source (only uncertainty/contradiction/missing_source/decision_needed/boundary_risk/inventory_gap/cross_tier_contradiction routes) | A51 schema + review |
 | INV-06 | Composition via orchestrator (no direct skill-to-skill calls) | `bsa-orchestrator/SKILL.md` + review |
 | INV-07 | ClaimType enum closed to `{direct, inference, analyst_judgment}` | `bsa-claim-binder/SKILL.md` + fixture_runner + pytest |
+| INV-08 | Story-claim provenance (Phase 3): every A70 story traces to ≥1 ClaimID OR ≥1 NFRID | `bsa-story-writer/SKILL.md` + write_validator |
+| INV-09 | NFR measurability (Phase 3): every A62 row carries Metric + Target string | `bsa-nfr-collector/SKILL.md` + write_validator |
+| INV-10 | Test-scenario provenance (Phase 3): every A71 scenario traces to exactly one A70 story | `bsa-test-scenario-builder/SKILL.md` + write_validator |
 
 ### Layer 3 — canon policy version hash
 
@@ -112,7 +123,7 @@ Same pattern for audits — the orchestrator invokes the auditor, collects the r
 
 ## Sidecar model (integration contract)
 
-C4-PlantUML and BPMN sidecars produce **derived** views from the canonical A61 anchor map. They are **non-canonical**: sidecar output never feeds back into claims, and sidecar failures don't block promotion.
+C4-PlantUML, BPMN, and DBML sidecars produce **derived** views from the canonical A61 anchor map. They are **non-canonical**: sidecar output never feeds back into claims, and sidecar failures don't block promotion. Inventory + status table at [docs/sidecar_inventory.md](sidecar_inventory.md).
 
 Each sidecar carries an `integration-contract.md` describing:
 - The `anchor_manifest.json` it consumes.
@@ -160,15 +171,16 @@ analysis/
 ## Plugin surface
 
 ```
-.claude-plugin/plugin.json   ← discovery manifest
-commands/bsa-*.md             ← 6 slash commands
+.claude-plugin/plugin.json   ← discovery manifest (canonPolicyVersion + manifest version)
+commands/bsa-*.md             ← 7 slash commands (bsa-start / bsa-stage / bsa-promote / bsa-audit / bsa-handoff / bsa-dev-handoff / bsa-status)
 hooks/hooks.json              ← 3 safety hooks (SessionStart, PreToolUse:Write, PreToolUse:Bash)
-skills/                       ← 23 skill directories (each with SKILL.md + references/ + scripts/)
-config/request_skill_routes.json  ← orchestrator routing table
-scripts/                      ← validators, fixture runners, canon-hash computer
-fixtures/golden/              ← 3 regression fixtures + 1 adversarial prompt-injection fixture
-governance/                   ← immutable invariants registry
+skills/                       ← 32 skill directories (each with SKILL.md + references/ + scripts/)
+config/                       ← request_skill_routes.json + sidecar_registry.yaml + tunables.yaml
+scripts/                      ← validators, fixture runners, canon-hash computer, audits, Phase 7 L0/L1a/L1b/L2, contract exporters, dashboard generator
+fixtures/golden/              ← 4 project fixtures (project_0001..0004_sidecar_e2e) + 5 adversarial fixtures (block_on_contradiction, multi_way_contradiction, nfr_claim_contradiction, prompt_injection, tier_delta_auto_resolution)
+governance/                   ← immutable invariants registry + JSON Schemas + write_validator + loader
 migrations/                   ← v0.9 → v1.0 migration pack
+docs/                         ← architecture overview, runbooks (dashboard / Phase 7 / pilot), CONTRIBUTING, cookbook, retros, sidecar inventory, RELEASING
 ```
 
 Further reading:

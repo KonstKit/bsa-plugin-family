@@ -4,6 +4,50 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.3.4] — 2026-04-26
+
+**Knowledge consolidation — operator runbook + cookbook + CONTRIBUTING.** Distills 15 self-review lessons + Codex review workflow + canon-bump discipline accumulated across v1.0 → v1.3.3 into operator-facing documentation. Pure docs (canon-neutral; no POLICY_GLOBS edits, no script changes; manifest stays at 1.3.2+hash:a0cbc336).
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.3.2+hash:a0cbc336`.
+
+### Added
+
+- **`docs/dashboard_runbook.md`** — operator how-to for v1.3.3 dashboard. CLI surface, page map, 5 named workflows (post-pipeline check / Phase 7 review / live development with auto-refresh / filtered renders / dry-run inspect manifest), interpreting overview, cross-linking convention, filter+sort on A-table pages, failure modes table, safety properties.
+- **`docs/CONTRIBUTING.md`** — distilled 15-lesson checklist (process-side + domain-side + spec-side + untrusted-input-from-files), Codex review workflow with CLI invocation discipline + 7-section prompt format + per-release-shape round expectations, two-semver convention recap, canon-bump 8-step procedure, surprise patterns, file layout reference. The 5 hard rules + 15 lessons make this the pre-Codex checklist for ANY new contribution.
+- **`docs/cookbook/add_contract_exporter.md`** — 12-step recipe for new Stage 6 exporter (basis v1.3.0/1/2 OpenAPI/AsyncAPI/proto pattern); file scaffold, decision matrix, common pitfalls catalog from R1 retros.
+- **`docs/cookbook/add_audit.md`** — recipe for new reality-probe audit (basis v1.2.16/17 freshness/triangulation pattern). CLI surface mirrors freshness_audit.py exactly (`--workspace`, `--threshold-<knob>`, `--today`, `--output-path`, `--report-path`); verdict policy `pass / warn / n/a` only — no `fail` (audits are non-blocking by design); output paths under `analysis/canonical/<stage>/`.
+- **`docs/cookbook/add_sidecar.md`** — recipe for new diagram sidecar (basis c4/bpmn/dbml pattern); includes "sidecar vs exporter" decision matrix + complete `config/sidecar_registry.yaml` example with all 8 required fields.
+- **`docs/cookbook/add_phase7_tunable.md`** — recipe for new `config/tunables.yaml` entry. Real schema (`current_value`, `allowed_range`, `owner_skill`, `source_file`, `source_line`, `linked_invariants`, `change_class ∈ {L1_auto_tunable, L2_proposal_only}`, `rationale`); explicit non-negotiable on `linked_invariants: []` forbidden workaround; explicit lint failure modes including `C8_CURRENT_OUT_OF_RANGE`.
+
+### Updated
+
+- **`docs/architecture_overview.md`** — skill count 23→32, added Phase 3 dev-handoff role, Stage 6 contract exporters role, dbml sidecar; expanded invariants table 7→10 (added INV-08/09/10 for Phase 3); paragraphs on dashboard + Phase 7 self-improvement loop + reality-probe audits with correct emit paths under `analysis/canonical/<stage>/`; plugin-surface block updated (commands 6→7, skills 23→32, fixtures 4 project + 5 adversarial).
+- **`.claude-plugin/plugin.json`** — description count 29→32 + added Stage 6 exporters + dashboard mentions (canon-neutral; the manifest description is not in POLICY_GLOBS).
+
+### Result
+
+- Tests unchanged: 2493 passed (no test changes; pure docs).
+- Canon hash unchanged at `a0cbc336`. Manifest stays at 1.3.2.
+- Privacy scan: 0 blockers.
+- `phase_7_lint.py`: PASS.
+- Fixture runner: 9 PASS, 0 findings.
+
+### Codex review
+
+- **Round 1: REQUEST CHANGES.** Three MAJOR + two MINOR; all real:
+  * **MAJOR (add_phase7_tunable.md)** — used invented field names (`default`/`range`/`unit`/`consumer`/`L1_auto_apply`) instead of real schema. Recipe rewrite from the actual `config/tunables.yaml` header.
+  * **MAJOR (add_audit.md)** — invented CLI surface, output path, and `fail` verdict. Recipe rewrite from the actual `scripts/freshness_audit.py`.
+  * **MAJOR (add_sidecar.md)** — sidecar_registry.yaml example missed required fields. Recipe updated from actual lint contract.
+  * **MINOR (architecture_overview.md)** — stale numbers in later sections beyond the header table (invariants 7→10, sidecars 2→3, commands 6→7, skill dirs 23→32, fixtures `3 project + 1 adversarial` → `4 project + 5 adversarial`). Fixed all five.
+  * **MINOR (CONTRIBUTING.md)** — referenced `scripts/generate_proto.py` (dead path) instead of `skills/proto-from-context/scripts/generate_proto.py`. Fixed.
+- **Round 2: REQUEST CHANGES.** One MAJOR + two MINOR (all post-R1-fix drift):
+  * **MAJOR (add_audit.md step 5)** — R1 fix corrected the CLI/verdict but step 5 ("Update config/tunables.yaml") still showed invented keys. Replaced with real schema + pointer to add_phase7_tunable.md.
+  * **MINOR (add_phase7_tunable.md:158)** — lint failure message "default outside allowed_range" → real lint code `C8_CURRENT_OUT_OF_RANGE: current_value outside allowed_range`.
+  * **MINOR (architecture_overview.md:24)** — audit emit paths still said `analysis/handoff/`; corrected to `analysis/canonical/<stage>/<name>_audit.{json,md}` per v1.2.16 convention; added compatibility note about dashboard discovery walking both locations.
+- **Round 3: APPROVE** with no new findings.
+
+(Self-review lesson sharpening — lesson #16 NEW: when writing recipes about existing code, READ the actual code first. v1.3.4 R1 had 3 MAJOR factual contradictions all from inventing field names / CLI flags / file paths instead of reading `config/tunables.yaml` header / `scripts/freshness_audit.py --help` / `config/sidecar_registry.yaml` header. The 5-surface grep discipline (lesson #4 + #10) catches drift in code-vs-doc; lesson #16 covers doc-being-written-vs-code-it-describes.)
+
 ## [v1.3.3] — 2026-04-26
 
 **Static-HTML operator dashboard — read-only viewer over canonical artifacts + handoff packets + audit reports + sidecar diagrams + Phase 7 telemetry.** First operator-facing UI for the BSA plugin family. Reads `<workspace>/analysis/canonical/`, `analysis/handoff/`, `analysis/views/`, `analysis/telemetry/` via glob-based filename routing, renders 20+ static HTML pages under `<workspace>/analysis/handoff/dashboard/`. Operator opens `dashboard/index.html` in any browser; **no HTTP server, no backend, no canonical writes**. Pages: overview index (counts + verdict badges + pipeline state) → 10 sortable+filterable A-table pages with anchor-ID cross-links → claim-layer view (A59 joined with bound A50 sources + A58 excerpts) → traceability matrix (A72 grouped by StoryID) → audit dashboards (8 supported audits, MD→HTML via markdown-it-py) → handoff packets (H1-H4) → contract exports (OpenAPI/AsyncAPI/proto with anchor manifest mapping tables) → sidecar diagrams (C4/BPMN/DBML as code blocks + anchor manifest, lazy: operator runs `plantuml`/`bpmn-js`/`dbdiagram.io` separately) → Phase 7 L2 patcher proposals (per-proposal page with summary MD + inline-styled unified-diff viewer + clipboard-button for `git apply` command, shlex-quoted per lesson #4). **`--watch` flag** polls workspace mtimes every 2s and re-renders on change; browser auto-refreshes via injected `<meta http-equiv="refresh">` tag (only in watch mode). **`--filter` flag** lets operator render subset (e.g., `--filter audits,phase7`); `index` always rendered for navigation. Operator-tooling only — script not skill, **canon-neutral, manifest stays at 1.3.2**. NEVER runs git/commit/push, NEVER edits canonical state, NEVER modifies source files (mirrors v1.2.19 patcher's never-list).
