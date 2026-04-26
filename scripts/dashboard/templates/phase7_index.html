@@ -34,6 +34,24 @@
 <p class="empty-note">No L2 patcher proposals in this workspace. Proposals live under <code>analysis/telemetry/proposals/</code>.</p>
 {%- endif %}
 
+{%- if kpi_series %}
+<section class="overview-section">
+  <h2>KPI trends</h2>
+  <p class="section-intro">Numeric KPIs extracted from <code>analysis/telemetry/run_*.json</code> files, sorted chronologically. Hover any point for run_id / value.</p>
+  <div class="kpi-charts-grid">
+    {%- for series in kpi_series %}
+    <div class="kpi-chart-card">
+      <h3>{{ series.label }} <span class="counter-sublabel">({{ series.runs|length }} runs)</span></h3>
+      <canvas id="kpi-chart-{{ loop.index0 }}" data-kpi-id="{{ series.kpi_id }}"></canvas>
+    </div>
+    {%- endfor %}
+  </div>
+</section>
+<script src="{{ static_prefix }}vendor/chart.umd.js"></script>
+<script id="kpi-series-data" type="application/json">{{ kpi_series|tojson }}</script>
+<script src="{{ static_prefix }}kpi_charts.js"></script>
+{%- endif %}
+
 {%- if telemetry_runs %}
 <section class="overview-section">
   <h2>Recent telemetry runs</h2>

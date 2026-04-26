@@ -4,6 +4,56 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.3.5] — 2026-04-26
+
+**Dashboard polish — Mermaid traceability graph + bpmn-js inline viewer + full-text search + Chart.js KPI trends + keyboard shortcuts.** Builds on v1.3.3 dashboard baseline. Pure operator-tooling enhancements (canon-neutral; no POLICY_GLOBS edits, no script-public-API changes; manifest stays at 1.3.2+hash:a0cbc336).
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.3.2+hash:a0cbc336`.
+
+**Note on bundled assets:** v1.3.5 vendors 4 JS/CSS libraries (Mermaid 10.9.1, bpmn-js 17.9.1 NavigatedViewer + 2 stylesheets, Chart.js 4.4.0) under `scripts/dashboard/static/vendor/` — total ~4.4 MB committed to git. Trade-off: zero-friction operator UX (no `pip install` / `npm install` / `download_assets.sh` step before first generation) vs +4.4 MB repo size. Locked v1.3.3 design decision was "bundle locally" specifically to avoid CDN privacy leak. Operators uncomfortable with the repo-size delta can `.gitignore` the vendor/ directory and run a manual download via the URLs documented in `docs/dashboard_runbook.md` (added in this release).
+
+### Added
+
+- **`scripts/dashboard/static/vendor/`** — 5 bundled assets (mermaid.min.js / chart.umd.js / bpmn-navigated-viewer.js / bpmn-diagram.css / bpmn-embedded.css). Pinned versions per the URLs in dashboard_runbook.md; replace with newer pin via `curl -fsSL <url>` and re-run dashboard generation.
+- **Mermaid traceability flowchart** — `traceability.html` now renders A72 as a Mermaid `flowchart LR` (Story → Claim → Source) ABOVE the existing nested HTML table (kept as JS-disabled fallback). Three-tier color classes (story/claim/source). Multi-value `;`/`/`-joined IDs fan out into multiple nodes + edges. Node IDs sanitized via `_MERMAID_ID_SAFE` regex (any non-`[A-Za-z0-9_]` → `_`). Empty A72 → empty-but-valid flowchart with placeholder note.
+- **bpmn-js inline viewer** — `sidecar_view.html` (BPMN format only; conditional template branch) embeds `BpmnJS` NavigatedViewer for each `.bpmn` file. Source XML moved to a collapsible `<details>` block. Defensive: viewer init catches import errors and renders `bpmn-error` div instead of crashing the page; missing vendor JS shows a clear "viewer not loaded" message. Other sidecar formats (C4, DBML) remain code-block + manifest mapping (per locked v1.3.3 design).
+- **Full-text search** — nav search box (`/` keyboard shortcut to focus), instant client-side substring match across all rendered pages. `dashboard/search_index.json` emitted alongside `index.html`; ~30-character snippet per entry; capped at 30 results in dropdown with "refine your query" hint for overflow. Indexed entry types: A-table rows (one per row, indexed by primary key), audit reports, handoff packets, contract specs, sidecar diagrams, Phase 7 proposals (only safe-ID entries — v1.3.3 R1 lesson #15 reapplied so unsafe IDs from `_index.json` don't appear as dead links in search results either).
+- **Keyboard shortcuts** — `/` to focus search, `Escape` to blur + close results, `g` then letter for navigation (`g o` Overview, `g a` Artifacts, `g u` aUdits, `g h` Handoff, `g c` Contracts, `g d` Diagrams, `g p` Phase 7). 1500ms timeout for the second key. Disabled while typing in inputs (textarea/select/contentEditable also).
+- **Chart.js KPI trend charts** — `phase7/index.html` now renders one line chart per numeric KPI extracted from `analysis/telemetry/run_*.json` files. `_build_kpi_series()` walks runs, sorts chronologically per KPI, skips null/non-numeric values silently. Dark-mode-aware axis/grid/line colors via `prefers-color-scheme` JS check. Section only emitted when telemetry runs present.
+- **19 new tests** in `scripts/test_generate_dashboard.py` covering: search index emission + URL relativity + unsafe-proposal-ID skip + dry-run no-write; KPI series numeric extraction + chronological order + null skip + malformed-JSON defense + empty input; Mermaid source emission + multi-value fan-out + empty input + ID sanitization; traceability template loads Mermaid vendor; sidecar_view BPMN branch loads bpmn-js + non-BPMN does NOT; phase7_index loads Chart.js when telemetry present + does NOT when only proposals; vendor subdir recursive copy; base template includes search box.
+
+### Updated
+
+- **`scripts/dashboard/templates/base.html`** — added nav search box (with `data-search-index` + `data-root-prefix` attributes for search.js to consume), bumped footer version label to v1.3.5, loads search.js + keyboard_shortcuts.js in footer.
+- **`scripts/dashboard/templates/traceability.html`** — Mermaid flowchart section (top) + grouped-table section (kept). Vendor mermaid.min.js + init script.
+- **`scripts/dashboard/templates/sidecar_view.html`** — conditional `bpmn-container` div (BPMN only) + collapsible XML source + vendor bpmn-navigated-viewer.js + bpmn_viewer_init.js.
+- **`scripts/dashboard/templates/phase7_index.html`** — KPI charts grid (when `kpi_series` non-empty) with one canvas per series + Chart.js + kpi_charts.js.
+- **`scripts/dashboard/renderers.py`** — `build_traceability_context` now emits `mermaid_source` + `mermaid_node_count`. New helpers `_build_traceability_mermaid()`, `_count_mermaid_nodes()`, `_mermaid_node_id()`, `_MERMAID_ID_SAFE` regex.
+- **`scripts/generate_dashboard.py`** — new `_build_search_index(inv)` + `_build_kpi_series(telemetry_runs)` helpers. `_render_phase7` now passes `kpi_series` + `kpi_series_json` to template. `_copy_static_assets()` now recursive (uses `shutil.copytree(dirs_exist_ok=True)` for `vendor/` subdir; pre-v1.3.5 used `iterdir()` which silently skipped subdirs). `render_dashboard()` emits `search_index.json` after page renders.
+- **`scripts/dashboard/static/style.css`** — added Mermaid container, bpmn-js container (600px height), nav search box (with focus-expand to 300px), search results dropdown, breadcrumbs, KPI charts grid, keyboard hint badges.
+- **`docs/dashboard_runbook.md`** — added v1.3.5 features section: keyboard shortcuts table, search workflow, Mermaid graph interpretation, bpmn-js viewer, KPI charts. Plus vendor download instructions for operators who want to re-pin or re-bundle.
+
+### Result
+
+- `2493 → 2512` tests passing (+19 in `scripts/test_generate_dashboard.py`; all pass on first run after self-review checklist + 16 v1.2.19-v1.3.4 lessons applied pre-Codex).
+- Canon hash unchanged at `a0cbc336`. Manifest stays at 1.3.2.
+- Privacy scan: 0 blockers.
+- `phase_7_lint.py`: PASS.
+- Fixture runner: 9 PASS, 0 findings.
+- Repo size delta: +4.4 MB from `scripts/dashboard/static/vendor/` bundled libraries.
+
+### Codex review
+
+- **Round 1: REQUEST CHANGES.** Three MAJOR + one MINOR; all real:
+  * **MAJOR (search.js fetch over file://)** — `fetch('search_index.json')` is silently blocked by modern browsers under `file://` (the documented operator path). Search would silently fail in default usage. **Fixed**: changed emit to `search_index.js` containing `window.__BSA_SEARCH_INDEX__ = {...};`, loaded via `<script src>` in base.html (works on file://). Also defended against `</script>` in CSV cell content via `</` → `<\/` substitution before injecting into the JS payload. New regression: `test_search_index_js_safe_against_close_script_tag`.
+  * **MAJOR (XSS via `kpi_series_json|safe`)** — pre-R1 phase7_index.html used `{{ kpi_series_json|safe }}` over raw `json.dumps()`. A crafted `run_id` containing `</script>` in `analysis/telemetry/run_*.json` could break out of the `<script>` block and inject arbitrary JS. **Fixed**: removed `kpi_series_json` from context; template now uses `{{ kpi_series|tojson }}` which Jinja escapes for `<`, `>`, `&`, U+2028, U+2029. New regression: `test_kpi_series_template_uses_tojson_not_safe`.
+  * **MAJOR (XSS via search results innerHTML)** — search.js built result HTML via string concatenation + `innerHTML` assignment. A primary-key value with quotes (e.g., A-table row ID containing `"; alert(1); x="`) could inject HTML/JS via the href attribute. **Fixed**: rewrote `renderResults` to use DOM APIs only — `document.createElement` + `textContent` + `a.href = ...` (browser-side URI-encodes attribute values). No more `innerHTML` anywhere in search.js.
+  * **MINOR (--filter ignored by search + nav)** — `--filter audits` still emitted a full search index AND keyboard `g a` still routed to non-existent artifacts/index.html, reintroducing 404s the v1.3.3 R1 fix was supposed to prevent. **Fixed**: `_build_search_index(inv, *, rendered_sections=None)` now accepts the filter set + skips non-rendered sections (split into `_a_table_search_entries` / `_audit_search_entries` / etc. helpers); keyboard_shortcuts.js now derives nav targets from rendered `.site-nav a` href attributes — no hard-coded routes. New regression: `test_search_index_filtered_by_rendered_sections`.
+- **Round 2: APPROVE** with one new MINOR:
+  * **MINOR (`g o` broken on subpages)** — `keyboard_shortcuts.js` Overview detection used `href.indexOf("/") === -1`, but on subpages the Overview link is `../index.html` (contains `/`). **Fixed**: detect Overview as the first nav anchor whose href doesn't contain any section directory name (`artifacts/`, `audits/`, etc.).
+
+(Self-review lesson sharpening — lesson #17 NEW: when authoring web JS that fetches local JSON, **test under `file://` not just over a dev HTTP server**. The R1 #1 finding was a class my prior 16 lessons didn't cover — `fetch()` blocking is browser-side behavior that doesn't surface in any pytest. Pre-Codex check: for any `fetch(...)` in dashboard JS, ask "what happens if operator opens via file://?" and adjust delivery method (script-tag-with-global-assignment is the canonical workaround). Lesson #17 also covers other DOM/browser APIs that have file:// restrictions: ServiceWorker, Web Workers from local file, IndexedDB, navigator.clipboard read.)
+
 ## [v1.3.4] — 2026-04-26
 
 **Knowledge consolidation — operator runbook + cookbook + CONTRIBUTING.** Distills 15 self-review lessons + Codex review workflow + canon-bump discipline accumulated across v1.0 → v1.3.3 into operator-facing documentation. Pure docs (canon-neutral; no POLICY_GLOBS edits, no script changes; manifest stays at 1.3.2+hash:a0cbc336).

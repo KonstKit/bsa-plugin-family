@@ -215,6 +215,90 @@ Every A-table page has:
 - **Shell-injection defense**: the operator-pasteable `git apply` command uses `shlex.quote()` for the patch path AND `--` end-of-options separator (lesson #4 + #5 reapplied).
 - **HTML-injection defense**: markdown-it-py configured with `html: false` to block raw `<script>` injection from operator MD content; Jinja2 autoescape on for all templates.
 
+## v1.3.5 enhancements
+
+The v1.3.5 release added five operator-facing UX improvements layered on top of the v1.3.3 baseline. All canon-neutral; no breaking changes.
+
+### Keyboard shortcuts
+
+| Key | Effect |
+|---|---|
+| `/` | Focus the nav search box. |
+| `Escape` | Blur the active input + close any open dropdown. |
+| `g` then `o` | Navigate to Overview (index.html). |
+| `g` then `a` | Navigate to Artifacts. |
+| `g` then `u` | Navigate to a**U**dits (`a` is taken by Artifacts; `u` from "audit"). |
+| `g` then `h` | Navigate to Handoff. |
+| `g` then `c` | Navigate to Contracts. |
+| `g` then `d` | Navigate to Diagrams (sidecars). |
+| `g` then `p` | Navigate to Phase 7. |
+
+The `g`-prefix has a 1500ms timeout — if you don't press the second key within 1.5s, the prefix clears. Shortcuts are disabled while typing in inputs (input / textarea / select / contentEditable elements), so they don't interfere with the search box or the in-page filter inputs.
+
+### Full-text search
+
+Nav search box (right side of the header on every page) does instant client-side substring matching across all rendered content:
+
+- A-table rows (one entry per row, indexed by primary-key value — clicking lands on the row's `#row-<id>` anchor)
+- Audit reports (full Markdown body, snippet-truncated to 400 chars)
+- Handoff packets (same)
+- Contract specs (OpenAPI/AsyncAPI/proto source)
+- Sidecar diagrams (one entry per file)
+- Phase 7 proposals (summary MD; only safe-ID entries — unsafe IDs from `_index.json` are filtered out, same as the proposal page list)
+
+Source: `<dashboard_root>/search_index.json`. Browser fetches once, then filters in memory. Up to 30 results shown; refining the query narrows the set. Press `/` from anywhere to focus the box; `Escape` closes the dropdown.
+
+### Mermaid traceability flowchart
+
+`artifacts/traceability.html` now renders the A72 traceability matrix as a Mermaid `flowchart LR` (Story → Claim → Source) above the existing nested HTML table. Three-tier color classes:
+- 🟦 Story (blue)
+- 🟩 Claim (green)
+- 🟨 Source (amber)
+
+Multi-value `;`/`/`-joined IDs in any column fan out into multiple nodes + edges (e.g., one A72 row with `ClaimID=C-1;C-2` and `SourceID=S-1/S-2` produces 4 source-edges). Node IDs are sanitized to Mermaid-safe form (any non-`[A-Za-z0-9_]` char → `_`). The HTML table below remains as a JS-disabled fallback.
+
+For very large graphs (>50 unique nodes), a hint above the chart warns that rendering may take a few seconds.
+
+### bpmn-js inline viewer
+
+`sidecars/bpmn.html` embeds the [bpmn-js NavigatedViewer](https://github.com/bpmn-io/bpmn-js) for each `.bpmn` file in the workspace. The XML source is moved into a collapsible `<details>` block beneath the rendered diagram. Pan/zoom interactions work natively (mouse drag + scroll-wheel).
+
+If the bpmn-js bundle isn't loaded (e.g., `vendor/bpmn-navigated-viewer.js` missing), each viewer container shows a clear error message instead of failing silently.
+
+C4 (PlantUML) and DBML sidecar pages remain code-block + manifest mapping per the v1.3.3 locked design — those formats render via operator-side tools (`plantuml`, `dbdiagram.io`, etc.).
+
+### Chart.js KPI trend charts
+
+`phase7/index.html` now renders one line chart per numeric KPI extracted from `analysis/telemetry/run_*.json` files. Per chart:
+
+- X-axis: chronological by `generated_at` timestamp (sorted at index-build time)
+- Y-axis: numeric KPI value, starting at 0
+- Hover any point: tooltip with run_id + value
+- Dark-mode-aware (axis + grid + line colors auto-switch via `prefers-color-scheme`)
+
+KPIs with `null` or non-numeric values across all runs are silently skipped (telemetry collector emits `null` when upstream artifact missing per v1.2.4 contract). Section only appears when at least one telemetry run is present.
+
+### Vendor JS bundles
+
+v1.3.5 ships 5 bundled assets totaling ~4.4 MB under `scripts/dashboard/static/vendor/`:
+
+| File | Library | Version | Source URL |
+|---|---|---|---|
+| `mermaid.min.js` | Mermaid | 10.9.1 | `https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js` |
+| `chart.umd.js` | Chart.js | 4.4.0 | `https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js` |
+| `bpmn-navigated-viewer.js` | bpmn-js NavigatedViewer | 17.9.1 | `https://unpkg.com/bpmn-js@17.9.1/dist/bpmn-navigated-viewer.production.min.js` |
+| `bpmn-diagram.css` | bpmn-js diagram-js styles | 17.9.1 | `https://unpkg.com/bpmn-js@17.9.1/dist/assets/diagram-js.css` |
+| `bpmn-embedded.css` | bpmn-js embedded styles | 17.9.1 | `https://unpkg.com/bpmn-js@17.9.1/dist/assets/bpmn-js.css` |
+
+To re-pin or re-bundle:
+```bash
+cd scripts/dashboard/static/vendor
+curl -fsSL -o mermaid.min.js 'https://cdn.jsdelivr.net/npm/mermaid@<NEW>/dist/mermaid.min.js'
+# ... repeat for each lib
+```
+
+Operators uncomfortable with the +4.4 MB repo-size delta can `.gitignore` the vendor/ directory and run the curl commands above as a one-time setup step. The dashboard gracefully degrades if vendor files are missing (Mermaid blocks render plain `<pre>`; bpmn-containers show a "not loaded" error; KPI canvases show a similar error).
+
 ## Cross-references
 
 - `scripts/generate_dashboard.py` — main entry point + CLI surface.

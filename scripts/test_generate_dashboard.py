@@ -831,6 +831,390 @@ def test_watch_snapshot_excludes_default_output_dir(main_module, tmp_path):
     assert all("dashboard" not in Path(p).parts for p in snapshot.keys())
 
 
+# ---- v1.3.5 enhancements: search index, KPI series, Mermaid, bpmn-js
+
+
+def _read_search_index(out_dir: Path) -> dict:
+    """Helper: parse search_index.js (window.__BSA_SEARCH_INDEX__ = {...};).
+    v1.3.5 R1 fix #1: emitted as JS not JSON so it loads under file://
+    via <script src> (fetch() blocked for local files)."""
+    js_text = (out_dir / "search_index.js").read_text(encoding="utf-8")
+    # Strip the assignment wrapper to get the raw JSON object.
+    prefix = "window.__BSA_SEARCH_INDEX__ = "
+    suffix = ";\n"
+    assert js_text.startswith(prefix), (
+        f"search_index.js missing assignment wrapper; got: {js_text[:80]}..."
+    )
+    body = js_text[len(prefix):]
+    if body.endswith(suffix):
+        body = body[:-len(suffix)]
+    elif body.endswith(";"):
+        body = body[:-1]
+    return json.loads(body)
+
+
+def test_search_index_emitted_alongside_index(tmp_path):
+    """v1.3.5: search_index.js must land in dashboard root next to
+    index.html (loaded via <script src> in base.html — works on
+    file:// where fetch() is blocked. v1.3.5 R1 fix #1)."""
+    ws = _make_p0003_workspace(tmp_path)
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    out_dir = ws / "analysis" / "handoff" / "dashboard"
+    assert (out_dir / "search_index.js").is_file()
+    # And explicitly NOT the old .json form.
+    assert not (out_dir / "search_index.json").exists()
+    doc = _read_search_index(out_dir)
+    assert doc["manifest_version"] == "1.0"
+    assert doc["entry_count"] >= 5
+
+
+def test_search_index_includes_a_table_rows(tmp_path):
+    """Each A-table row gets one entry indexed by primary-key value."""
+    ws = _make_p0003_workspace(tmp_path)
+    _run_cli("--workspace", str(ws), "--quiet")
+    si = _read_search_index(ws / "analysis" / "handoff" / "dashboard")
+    sections = {e["section"] for e in si["entries"]}
+    for s in ("a50", "a51", "a58", "a59"):
+        assert s in sections, f"section '{s}' missing from search index"
+
+
+def test_search_index_url_relative_to_dashboard_root(tmp_path):
+    ws = _make_p0003_workspace(tmp_path)
+    _run_cli("--workspace", str(ws), "--quiet")
+    si = _read_search_index(ws / "analysis" / "handoff" / "dashboard")
+    for entry in si["entries"]:
+        assert not entry["url"].startswith("../"), (
+            f"search index URL has leading ..: {entry['url']}"
+        )
+
+
+def test_search_index_skips_unsafe_proposal_ids(tmp_path):
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "telemetry" / "proposals").mkdir(parents=True)
+    (ws / "analysis" / "telemetry" / "proposals" / "_index.json").write_text(
+        json.dumps({
+            "proposals": [
+                {"proposal_id": "good-001"},
+                {"proposal_id": "../escape"},
+                {"proposal_id": "a/b"},
+            ],
+        }),
+        encoding="utf-8",
+    )
+    (ws / "analysis" / "telemetry" / "proposals" / "good-001.summary.md").write_text(
+        "# good-001 summary", encoding="utf-8",
+    )
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    si = _read_search_index(ws / "analysis" / "handoff" / "dashboard")
+    proposal_entries = [e for e in si["entries"] if e["section"] == "phase7"]
+    assert any("good-001" in e["title"] for e in proposal_entries)
+    assert not any("escape" in e["title"] for e in proposal_entries)
+    assert not any("a/b" in e["title"] for e in proposal_entries)
+
+
+def test_search_index_dry_run_no_writes(tmp_path):
+    """--print-only must NOT write search_index.js."""
+    ws = _make_p0003_workspace(tmp_path)
+    out_dir = ws / "analysis" / "handoff" / "dashboard"
+    result = _run_cli("--workspace", str(ws), "--print-only")
+    assert result.returncode == 0
+    assert not out_dir.exists()
+
+
+def test_search_index_filtered_by_rendered_sections(tmp_path):
+    """v1.3.5 R1 MINOR fix: --filter audits must produce a search
+    index that only contains audit entries (no A-table entries that
+    would 404 when clicked)."""
+    ws = _make_p0003_workspace(tmp_path)
+    result = _run_cli("--workspace", str(ws), "--filter", "audits", "--quiet")
+    assert result.returncode == 0
+    si = _read_search_index(ws / "analysis" / "handoff" / "dashboard")
+    sections = {e["section"] for e in si["entries"]}
+    assert "audit" in sections
+    # A-tables not rendered → not indexed.
+    assert "a50" not in sections
+    assert "a59" not in sections
+
+
+def test_search_index_js_safe_against_close_script_tag(tmp_path):
+    """v1.3.5 R1 fix #1 (XSS defense): even if a CSV cell value
+    contains literal `</script>` text, the JS payload escapes it via
+    `</` → `<\\/` so the surrounding <script> block can't be closed
+    by attacker-controlled content."""
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "canonical" / "core_controls").mkdir(parents=True)
+    a50 = ws / "analysis" / "canonical" / "core_controls" / "A50_source_register.csv"
+    # Header from real schema; one row whose Title contains </script>.
+    a50.write_text(
+        "SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,"
+        "Priority,Language,DateOrVersion,EffectiveDate,Notes\n"
+        'S-001,policy_document,"Has </script> in title",origin,readable,'
+        'T2,high,en,2026-01-01,2026-01-01,n\n',
+        encoding="utf-8",
+    )
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    js_text = (
+        ws / "analysis" / "handoff" / "dashboard" / "search_index.js"
+    ).read_text(encoding="utf-8")
+    # Literal `</script>` must NOT appear in the emitted JS — it
+    # would terminate the surrounding <script> block.
+    assert "</script>" not in js_text
+    # Escaped form should appear instead.
+    assert "<\\/script>" in js_text
+
+
+def test_kpi_series_template_uses_tojson_not_safe(tmp_path):
+    """v1.3.5 R1 fix #2: kpi_series_data must be Jinja-tojson-encoded,
+    not raw json.dumps + |safe. Test: a `</script>` in a run_id can't
+    terminate the <script id="kpi-series-data"> block."""
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "telemetry").mkdir(parents=True)
+    # run_id with </script> in it.
+    (ws / "analysis" / "telemetry" / "run_001.json").write_text(
+        json.dumps({
+            "run_id": "rogue</script><img src=x>",
+            "generated_at": "2026-04-01T00:00:00Z",
+            "kpis": {"kpi_a": 1.0},
+        }),
+        encoding="utf-8",
+    )
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    p7_html = (
+        ws / "analysis" / "handoff" / "dashboard" / "phase7" / "index.html"
+    ).read_text(encoding="utf-8")
+    # The literal `</script>` must NOT appear in the raw HTML
+    # (Jinja's tojson escapes < > & U+2028 U+2029).
+    assert "rogue</script>" not in p7_html
+    # The <script id="kpi-series-data"> tag itself (opening/closing)
+    # must still appear — payload integrity preserved.
+    assert 'id="kpi-series-data"' in p7_html
+
+
+def test_kpi_series_extracts_numeric_values(main_module, tmp_path):
+    """_build_kpi_series walks run_*.json files, extracts numeric
+    KPIs, sorts chronologically per KPI."""
+    runs_dir = tmp_path / "telemetry"
+    runs_dir.mkdir()
+    for i, ts in enumerate(["2026-04-01T00:00:00Z", "2026-04-15T00:00:00Z", "2026-04-26T00:00:00Z"]):
+        (runs_dir / f"run_00{i+1}.json").write_text(
+            json.dumps({
+                "run_id": f"run_00{i+1}",
+                "generated_at": ts,
+                "kpis": {
+                    "kpi_a": 0.5 + i * 0.1,
+                    "kpi_b": None,  # null skipped
+                    "kpi_c": 100,
+                },
+            }),
+            encoding="utf-8",
+        )
+    series = main_module._build_kpi_series(sorted(runs_dir.glob("run_*.json")))
+    by_id = {s["kpi_id"]: s for s in series}
+    assert "kpi_a" in by_id
+    assert "kpi_c" in by_id
+    assert "kpi_b" not in by_id  # null skipped
+    assert len(by_id["kpi_a"]["runs"]) == 3
+    # Chronological order.
+    assert by_id["kpi_a"]["runs"][0]["timestamp"] < by_id["kpi_a"]["runs"][-1]["timestamp"]
+
+
+def test_kpi_series_handles_missing_telemetry(main_module):
+    assert main_module._build_kpi_series([]) == []
+
+
+def test_kpi_series_handles_malformed_json(main_module, tmp_path):
+    """Defensive: malformed JSON file is skipped silently."""
+    bad = tmp_path / "run_bad.json"
+    bad.write_text("{not valid json", encoding="utf-8")
+    good = tmp_path / "run_good.json"
+    good.write_text(
+        json.dumps({"run_id": "g", "kpis": {"x": 1.0}}), encoding="utf-8",
+    )
+    series = main_module._build_kpi_series([bad, good])
+    assert len(series) == 1
+    assert series[0]["kpi_id"] == "x"
+
+
+def test_traceability_mermaid_source_emitted(renderers, tmp_path):
+    """v1.3.5: Mermaid flowchart source emitted in traceability ctx."""
+    a72 = tmp_path / "a72.csv"
+    a72.write_text(
+        "TraceID,StoryID,ClaimID,SourceID,LinkType\n"
+        "T-001,STR-1,C-1,S-1,direct\n"
+        "T-002,STR-1,C-2,S-2,indirect\n",
+        encoding="utf-8",
+    )
+    ctx = renderers.build_traceability_context(a72)
+    src = ctx["mermaid_source"]
+    assert "flowchart LR" in src
+    # Sanitized node IDs: prefix + safe chars.
+    assert "s_STR_1" in src
+    assert "c_C_1" in src
+    assert "src_S_1" in src
+    # Edges Story → Claim → Source.
+    assert "s_STR_1 --> c_C_1" in src
+    assert "c_C_1 --> src_S_1" in src
+
+
+def test_traceability_mermaid_handles_multi_value(renderers, tmp_path):
+    """`;`/`/`-joined IDs fan out into multiple nodes + edges."""
+    a72 = tmp_path / "a72.csv"
+    a72.write_text(
+        "TraceID,StoryID,ClaimID,SourceID,LinkType\n"
+        "T-001,STR-1,C-1;C-2,S-1/S-2,direct\n",
+        encoding="utf-8",
+    )
+    ctx = renderers.build_traceability_context(a72)
+    src = ctx["mermaid_source"]
+    # 1 story × 2 claims × 2 sources = 6 edges total
+    # Story→Claim: 1×2=2, Claim→Source: 2×2=4
+    assert src.count("-->") == 6
+    assert ctx["mermaid_node_count"] == 5  # 1 story + 2 claims + 2 sources
+
+
+def test_traceability_mermaid_empty_input(renderers):
+    src = renderers._build_traceability_mermaid([])
+    assert "flowchart LR" in src
+    assert "No A72 rows" in src
+
+
+def test_traceability_mermaid_node_id_sanitization(renderers):
+    """Mermaid identifiers must match `[A-Za-z0-9_]+`. Special chars
+    in source IDs get replaced with `_`."""
+    nid = renderers._mermaid_node_id("s", "STR-1.2/abc")
+    assert nid == "s_STR_1_2_abc"
+
+
+def test_traceability_template_loads_mermaid_vendor(tmp_path):
+    """Smoke: rendered traceability page references the bundled
+    Mermaid lib + initializes it."""
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "canonical" / "core_controls").mkdir(parents=True)
+    a72 = ws / "analysis" / "canonical" / "core_controls" / "A72_traceability_matrix.csv"
+    a72.write_text(
+        "TraceID,StoryID,ClaimID,SourceID,LinkType,LinkStrength\n"
+        "T-001,STR-1,C-1,S-1,direct,high\n",
+        encoding="utf-8",
+    )
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    tr_html = (
+        ws / "analysis" / "handoff" / "dashboard" / "artifacts" / "traceability.html"
+    ).read_text(encoding="utf-8")
+    assert 'class="mermaid"' in tr_html
+    assert 'flowchart LR' in tr_html
+    assert "vendor/mermaid.min.js" in tr_html
+
+
+def test_sidecar_bpmn_template_loads_bpmnjs_vendor(tmp_path):
+    """Smoke: rendered BPMN sidecar page references the bundled
+    bpmn-js viewer + init script."""
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "canonical").mkdir(parents=True)
+    bpmn_dir = ws / "analysis" / "views" / "bpmn"
+    bpmn_dir.mkdir(parents=True)
+    (bpmn_dir / "sample.bpmn").write_text(
+        '<?xml version="1.0"?><bpmn:definitions/>',
+        encoding="utf-8",
+    )
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    bpmn_html = (
+        ws / "analysis" / "handoff" / "dashboard" / "sidecars" / "bpmn.html"
+    ).read_text(encoding="utf-8")
+    assert "bpmn-container" in bpmn_html
+    assert "vendor/bpmn-navigated-viewer.js" in bpmn_html
+    assert "bpmn_viewer_init.js" in bpmn_html
+
+
+def test_sidecar_non_bpmn_does_not_load_bpmnjs(tmp_path):
+    """C4 / DBML pages must NOT pull in bpmn-js (it's BPMN-only)."""
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "canonical").mkdir(parents=True)
+    c4_dir = ws / "analysis" / "views" / "c4"
+    c4_dir.mkdir(parents=True)
+    (c4_dir / "sample.puml").write_text("@startuml\n@enduml\n", encoding="utf-8")
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    c4_html = (
+        ws / "analysis" / "handoff" / "dashboard" / "sidecars" / "c4.html"
+    ).read_text(encoding="utf-8")
+    assert "bpmn-navigated-viewer.js" not in c4_html
+
+
+def test_phase7_index_loads_chartjs_when_telemetry_present(tmp_path):
+    """KPI charts require Chart.js + kpi_charts.js + a JSON data
+    payload embedded in the page."""
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "telemetry").mkdir(parents=True)
+    (ws / "analysis" / "telemetry" / "run_001.json").write_text(
+        json.dumps({"run_id": "r", "kpis": {"kpi_a": 0.5}}),
+        encoding="utf-8",
+    )
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    p7_html = (
+        ws / "analysis" / "handoff" / "dashboard" / "phase7" / "index.html"
+    ).read_text(encoding="utf-8")
+    assert "vendor/chart.umd.js" in p7_html
+    assert "kpi_charts.js" in p7_html
+    assert 'id="kpi-series-data"' in p7_html
+
+
+def test_phase7_index_no_chartjs_when_no_telemetry(tmp_path):
+    """When there are no run_*.json files but proposals exist (or
+    inverse), don't pull in Chart.js."""
+    ws = tmp_path / "ws"
+    (ws / "analysis" / "telemetry" / "proposals").mkdir(parents=True)
+    (ws / "analysis" / "telemetry" / "proposals" / "_index.json").write_text(
+        json.dumps({"proposals": [{"proposal_id": "p-1"}]}),
+        encoding="utf-8",
+    )
+    (ws / "analysis" / "telemetry" / "proposals" / "p-1.summary.md").write_text(
+        "# p-1", encoding="utf-8",
+    )
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    p7_html = (
+        ws / "analysis" / "handoff" / "dashboard" / "phase7" / "index.html"
+    ).read_text(encoding="utf-8")
+    assert "chart.umd.js" not in p7_html
+
+
+def test_vendor_subdir_recursively_copied(tmp_path):
+    """v1.3.5: scripts/dashboard/static/vendor/ must be copied
+    recursively to output_dir/static/vendor/. Pre-fix, only top-level
+    files in static/ were copied (iterdir non-recursive)."""
+    ws = _make_p0003_workspace(tmp_path)
+    result = _run_cli("--workspace", str(ws), "--quiet")
+    assert result.returncode == 0
+    vendor_dir = ws / "analysis" / "handoff" / "dashboard" / "static" / "vendor"
+    assert vendor_dir.is_dir()
+    # At least one of the bundled vendors should be present.
+    bundled_files = list(vendor_dir.iterdir())
+    assert len(bundled_files) > 0
+
+
+def test_base_template_includes_search_box(tmp_path):
+    """Every page (here: index.html) must include the nav search box +
+    keyboard_shortcuts.js + search_index.js (loaded via <script src>
+    so file:// works — v1.3.5 R1 fix #1)."""
+    ws = _make_p0003_workspace(tmp_path)
+    _run_cli("--workspace", str(ws), "--quiet")
+    idx_html = (
+        ws / "analysis" / "handoff" / "dashboard" / "index.html"
+    ).read_text(encoding="utf-8")
+    assert 'id="nav-search-input"' in idx_html
+    assert 'data-root-prefix=' in idx_html
+    assert "search_index.js" in idx_html
+    assert "search.js" in idx_html
+    assert "keyboard_shortcuts.js" in idx_html
+
+
 def test_idempotent_render(tmp_path):
     """Same input → byte-identical HTML (modulo generated_at timestamp,
     which we exclude by hashing only artifact pages)."""

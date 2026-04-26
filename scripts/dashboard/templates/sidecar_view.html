@@ -14,9 +14,24 @@
 <section class="overview-section">
   <h2><code>{{ diagram.name }}</code></h2>
   <p class="counter-sublabel">{{ diagram.source_path }}</p>
+  {%- if fmt == 'bpmn' %}
+  <div class="bpmn-container" data-bpmn-source-id="bpmn-source-{{ loop.index0 }}"></div>
+  <details>
+    <summary>BPMN XML source</summary>
+    <pre class="code-block"><code class="lang-{{ fmt }}" id="bpmn-source-{{ loop.index0 }}">{{ diagram.content }}</code></pre>
+  </details>
+  {%- else %}
   <pre class="code-block"><code class="lang-{{ fmt }}">{{ diagram.content }}</code></pre>
+  {%- endif %}
 </section>
 {%- endfor %}
+
+{%- if fmt == 'bpmn' and diagrams %}
+<link rel="stylesheet" href="{{ static_prefix }}vendor/bpmn-diagram.css">
+<link rel="stylesheet" href="{{ static_prefix }}vendor/bpmn-embedded.css">
+<script src="{{ static_prefix }}vendor/bpmn-navigated-viewer.js"></script>
+<script src="{{ static_prefix }}bpmn_viewer_init.js"></script>
+{%- endif %}
 
 {%- if anchor_rows %}
 <section class="overview-section">

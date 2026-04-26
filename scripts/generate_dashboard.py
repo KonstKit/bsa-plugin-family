@@ -139,6 +139,237 @@ def _maybe_write(target_path: Path, body: str, *, dry_run: bool) -> None:
     _atomic_write(target_path, body)
 
 
+# ---- Search index (v1.3.5) -----------------------------------------
+
+
+# Search-snippet limit per entry. Kept short to keep search_index.json
+# compact even on large workspaces (10 A-tables × 1000 rows each ≈
+# 100k entries × 200 chars ≈ 20MB → cap snippets at 400 chars to keep
+# the JSON loadable in browsers).
+_SEARCH_SNIPPET_MAX = 400
+
+
+def _build_search_index(
+    inv: loaders.Inventory,
+    *,
+    rendered_sections: set[str] | None = None,
+) -> dict[str, Any]:
+    """Build a search index from the workspace inventory. Walks A-table
+    CSVs (one entry per row, snippet = row text), audit MDs (one entry
+    per audit, snippet = first ~400 chars), handoff packets (same),
+    contract specs (same), Phase 7 proposals (one per proposal). Emits
+    `dashboard/search_index.js` (loaded via `<script src>` in base.html
+    so it works under file:// — fetch() is blocked for local files in
+    modern browsers, see v1.3.5 R1 fix #1).
+
+    v1.3.5. Filename-relative URLs (no `../` prefix) — search.js
+    prepends the page-local root_prefix at click time.
+
+    v1.3.5 R1 fix #4 (MINOR): respects `rendered_sections` so a
+    `--filter audits` run doesn't index entries pointing at unrendered
+    pages (which would 404 from the search dropdown).
+    """
+    entries: list[dict[str, Any]] = []
+    sections = rendered_sections  # alias for readability
+
+    # A-tables: one entry per row, indexed by primary-key value.
+    if sections is None or "artifacts" in sections:
+        for a_id, csv_path in inv.a_tables.items():
+            if csv_path is None:
+                continue
+            entries.extend(_a_table_search_entries(a_id, csv_path))
+
+    # Audit reports.
+    if sections is None or "audits" in sections:
+        entries.extend(_audit_search_entries(inv))
+    # Handoff.
+    if sections is None or "handoff" in sections:
+        entries.extend(_handoff_search_entries(inv))
+    # Contracts.
+    if sections is None or "contracts" in sections:
+        entries.extend(_contract_search_entries(inv))
+    # Sidecars.
+    if sections is None or "sidecars" in sections:
+        entries.extend(_sidecar_search_entries(inv))
+    # Phase 7.
+    if sections is None or "phase7" in sections:
+        entries.extend(_phase7_search_entries(inv))
+
+    return {
+        "manifest_version": "1.0",
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "entry_count": len(entries),
+        "entries": entries,
+    }
+
+
+def _a_table_search_entries(a_id: str, csv_path: Path) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    headers, rows = renderers.load_csv_rows(csv_path)
+    pk_col = renderers._detect_primary_key_column(a_id, headers)
+    for row in rows:
+        pk_value = (row.get(pk_col, "") if pk_col else "").strip()
+        text_parts = [
+            f"{col}={(row.get(col) or '').strip()}"
+            for col in headers
+            if (row.get(col) or "").strip()
+        ]
+        text = " · ".join(text_parts)[:_SEARCH_SNIPPET_MAX]
+        url = f"artifacts/{a_id}.html"
+        if pk_value:
+            url += f"#row-{pk_value}"
+        title = pk_value or f"{a_id.upper()} row"
+        out.append({
+            "section": a_id,
+            "title": title,
+            "url": url,
+            "text": text,
+        })
+    return out
+
+
+def _audit_search_entries(inv: loaders.Inventory) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for audit_id, md_path in inv.audits.items():
+        if md_path is None:
+            continue
+        try:
+            text = md_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        out.append({
+            "section": "audit",
+            "title": AUDIT_LABELS.get(audit_id, audit_id),
+            "url": f"audits/{audit_id}.html",
+            "text": text[:_SEARCH_SNIPPET_MAX],
+        })
+    return out
+
+
+def _handoff_search_entries(inv: loaders.Inventory) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for packet_id, md_path in inv.handoff.items():
+        if md_path is None:
+            continue
+        try:
+            text = md_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        out.append({
+            "section": "handoff",
+            "title": HANDOFF_LABELS.get(packet_id, packet_id),
+            "url": f"handoff/{packet_id}.html",
+            "text": text[:_SEARCH_SNIPPET_MAX],
+        })
+    return out
+
+
+def _contract_search_entries(inv: loaders.Inventory) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for fmt, files in inv.contracts.items():
+        spec_path = files.get("spec")
+        if spec_path is None:
+            continue
+        try:
+            text = spec_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        out.append({
+            "section": "contract",
+            "title": CONTRACT_LABELS.get(fmt, fmt),
+            "url": f"contracts/{fmt}.html",
+            "text": text[:_SEARCH_SNIPPET_MAX],
+        })
+    return out
+
+
+def _sidecar_search_entries(inv: loaders.Inventory) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for fmt, spec_paths in inv.sidecars.items():
+        for spec_path in spec_paths:
+            try:
+                text = spec_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                text = ""
+            out.append({
+                "section": "sidecar",
+                "title": f"{SIDECAR_LABELS.get(fmt, fmt)}: {spec_path.name}",
+                "url": f"sidecars/{fmt}.html",
+                "text": text[:_SEARCH_SNIPPET_MAX],
+            })
+    return out
+
+
+def _phase7_search_entries(inv: loaders.Inventory) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if not inv.proposals_index:
+        return out
+    proposals_meta = renderers.load_proposals_index(inv.proposals_index)
+    proposals_root = inv.proposals_index.parent
+    for p in proposals_meta:
+        if not isinstance(p, dict):
+            continue
+        pid = p.get("proposal_id") or p.get("id")
+        if not renderers.is_safe_proposal_id(pid):
+            continue
+        summary_path = proposals_root / f"{pid}.summary.md"
+        try:
+            text = summary_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        out.append({
+            "section": "phase7",
+            "title": f"Proposal {pid}",
+            "url": f"phase7/proposal_{pid}.html",
+            "text": text[:_SEARCH_SNIPPET_MAX],
+        })
+    return out
+
+
+# ---- KPI extraction for Chart.js (v1.3.5) --------------------------
+
+
+def _build_kpi_series(telemetry_runs: list[Path]) -> list[dict[str, Any]]:
+    """Walk telemetry run_*.json files, extract per-KPI series.
+
+    Returns a list of {kpi_id, label, runs[{run_id, timestamp, value}]}
+    suitable for Chart.js line charts. Defensive: malformed JSON or
+    missing KPI fields are skipped silently.
+    """
+    if not telemetry_runs:
+        return []
+    series: dict[str, dict[str, Any]] = {}
+    for run_path in telemetry_runs:
+        try:
+            doc = json.loads(run_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(doc, dict):
+            continue
+        run_id = doc.get("run_id") or run_path.stem
+        timestamp = doc.get("generated_at") or doc.get("timestamp") or ""
+        kpis = doc.get("kpis", {})
+        if not isinstance(kpis, dict):
+            continue
+        for kpi_id, value in kpis.items():
+            # Skip non-numeric values (e.g., null when upstream missing).
+            if not isinstance(value, (int, float)):
+                continue
+            series.setdefault(kpi_id, {
+                "kpi_id": kpi_id,
+                "label": kpi_id.replace("_", " "),
+                "runs": [],
+            })["runs"].append({
+                "run_id": run_id,
+                "timestamp": timestamp,
+                "value": value,
+            })
+    # Sort each series by timestamp (chronological) for line charts.
+    for s in series.values():
+        s["runs"].sort(key=lambda r: r.get("timestamp", ""))
+    return sorted(series.values(), key=lambda s: s["kpi_id"])
+
+
 # ---- Inventory → template-context shaping --------------------------
 
 
@@ -519,6 +750,9 @@ def _render_phase7(env, inv, output_dir, *, watch_mode, dry_run, rendered_sectio
         rendered_sections=rendered_sections,
     )
 
+    # v1.3.5: KPI trend series for Chart.js line charts.
+    kpi_series = _build_kpi_series(inv.telemetry_runs)
+
     proposals_meta = renderers.load_proposals_index(inv.proposals_index)
     # v1.3.3 R2 fix: filter proposals_meta to safe-ID entries BEFORE
     # passing to the index template so we don't render dead links to
@@ -546,6 +780,11 @@ def _render_phase7(env, inv, output_dir, *, watch_mode, dry_run, rendered_sectio
         "proposals": safe_proposals_meta,
         "telemetry_runs": telemetry_runs_meta,
         "telemetry_run_count": len(telemetry_runs_meta),
+        "kpi_series": kpi_series,
+        # v1.3.5 R1 fix #2: pass the Python object; the template uses
+        # Jinja's `|tojson` filter which escapes <, >, &, U+2028,
+        # U+2029 (defends against `</script>` in run_id / KPI keys
+        # injected via crafted `analysis/telemetry/run_*.json`).
     }
     html = env.get_template("phase7_index.html").render(**ctx)
     target = output_dir / "phase7" / "index.html"
@@ -603,8 +842,10 @@ def _make_jinja_env():
 
 
 def _copy_static_assets(output_dir: Path, *, dry_run: bool) -> None:
-    """Copy bundled CSS + JS into output_dir/static/. Idempotent.
-    No-op when dry_run is True (v1.3.3 R1 fix #2)."""
+    """Copy bundled CSS + JS (including vendor/ subdir) into
+    output_dir/static/. Idempotent. No-op when dry_run is True
+    (v1.3.3 R1 fix #2). v1.3.5: recursive — vendored libs (Mermaid,
+    bpmn-js, Chart.js) live under STATIC_DIR/vendor/."""
     if dry_run:
         return
     target = output_dir / "static"
@@ -612,6 +853,11 @@ def _copy_static_assets(output_dir: Path, *, dry_run: bool) -> None:
     for asset in STATIC_DIR.iterdir():
         if asset.is_file():
             shutil.copy2(asset, target / asset.name)
+        elif asset.is_dir():
+            # Recursively copy the vendor/ subdirectory (and any
+            # future asset subdirs). dirs_exist_ok=True keeps the
+            # operation idempotent across re-runs.
+            shutil.copytree(asset, target / asset.name, dirs_exist_ok=True)
 
 
 _RENDERER_DISPATCH = {
@@ -685,6 +931,29 @@ def render_dashboard(
             )
 
     _copy_static_assets(output_dir, dry_run=dry_run)
+
+    # v1.3.5: emit search_index.js alongside index.html. Loaded via
+    # `<script src>` in base.html so it works under file:// (modern
+    # browsers block fetch() for local files — v1.3.5 R1 fix #1).
+    # Filtered to rendered_sections so --filter audits doesn't index
+    # entries pointing at unrendered pages (R1 MINOR fix).
+    search_index = _build_search_index(
+        inv, rendered_sections=rendered_sections,
+    )
+    # The JS payload assigns to a global so search.js can read it
+    # synchronously without fetch(). JSON-encoded body avoids any
+    # template-injection concerns (json.dumps escapes <, >, &).
+    safe_index_json = json.dumps(search_index).replace(
+        "</", "<\\/",  # Defense against `</script>` in any string field
+    )
+    search_index_js = (
+        "window.__BSA_SEARCH_INDEX__ = " + safe_index_json + ";\n"
+    )
+    _maybe_write(
+        output_dir / "search_index.js",
+        search_index_js,
+        dry_run=dry_run,
+    )
 
     manifest = {
         "manifest_version": "1.0",

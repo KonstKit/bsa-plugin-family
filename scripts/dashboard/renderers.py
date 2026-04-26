@@ -528,8 +528,9 @@ def build_claim_layer_context(
 
 
 def build_traceability_context(a72_path: Path | None) -> dict[str, Any]:
-    """Build traceability view from A72. Renders as nested HTML table
-    grouped by StoryID; no Mermaid dep."""
+    """Build traceability view from A72. Renders as Mermaid flowchart
+    (Story→Claim→Source) PLUS nested HTML table grouped by StoryID
+    (fallback for when JS is disabled). v1.3.5 enhancement."""
     _, a72_rows = load_csv_rows(a72_path) if a72_path else ([], [])
 
     by_story: dict[str, list[dict[str, str]]] = {}
@@ -546,8 +547,100 @@ def build_traceability_context(a72_path: Path | None) -> dict[str, Any]:
         for story_id, rows in sorted(by_story.items())
     ]
 
+    mermaid_source = _build_traceability_mermaid(a72_rows)
+
     return {
         "grouped": grouped,
         "story_count": len(grouped),
         "trace_count": len(a72_rows),
+        "mermaid_source": mermaid_source,
+        "mermaid_node_count": _count_mermaid_nodes(a72_rows),
     }
+
+
+# Mermaid identifier sanitizer — Mermaid node IDs match `[A-Za-z0-9_]+`
+# and cannot start with reserved words. Replace anything else with `_`.
+_MERMAID_ID_SAFE = re.compile(r"[^A-Za-z0-9_]")
+
+
+def _mermaid_node_id(prefix: str, raw: str) -> str:
+    """Produce a Mermaid-safe node id like `s_STORY_001`."""
+    sanitized = _MERMAID_ID_SAFE.sub("_", raw or "unknown")
+    return f"{prefix}_{sanitized}"
+
+
+def _build_traceability_mermaid(a72_rows: list[dict[str, str]]) -> str:
+    """Build Mermaid flowchart source from A72 rows.
+
+    Three node tiers (left → right):
+      Story (s_*)  →  Claim (c_*)  →  Source (src_*)
+
+    Multi-value StoryID/ClaimID/SourceID cells (`;`/`/`-joined per
+    canonical CSV convention) fan out into multiple edges.
+
+    Returns the full `flowchart LR ... ` source. Empty input → empty
+    flowchart with a placeholder note (still valid Mermaid)."""
+    if not a72_rows:
+        return "flowchart LR\n    empty[\"No A72 rows\"]\n"
+
+    nodes: dict[str, str] = {}  # node_id → label
+    edges: set[tuple[str, str]] = set()
+
+    for row in a72_rows:
+        story_ids = [
+            v.strip() for v in MULTI_VALUE_SPLIT_RE.split(row.get("StoryID", "") or "")
+            if v.strip()
+        ] or ["(unspecified)"]
+        claim_ids = [
+            v.strip() for v in MULTI_VALUE_SPLIT_RE.split(row.get("ClaimID", "") or "")
+            if v.strip()
+        ] or ["(unspecified)"]
+        source_ids = [
+            v.strip() for v in MULTI_VALUE_SPLIT_RE.split(row.get("SourceID", "") or "")
+            if v.strip()
+        ] or ["(unspecified)"]
+
+        for sid in story_ids:
+            sid_node = _mermaid_node_id("s", sid)
+            nodes[sid_node] = sid
+            for cid in claim_ids:
+                cid_node = _mermaid_node_id("c", cid)
+                nodes[cid_node] = cid
+                edges.add((sid_node, cid_node))
+                for srcid in source_ids:
+                    srcid_node = _mermaid_node_id("src", srcid)
+                    nodes[srcid_node] = srcid
+                    edges.add((cid_node, srcid_node))
+
+    lines = ["flowchart LR"]
+    # Style classes per tier.
+    lines.append("    classDef story fill:#dbeafe,stroke:#2563eb,color:#1e40af")
+    lines.append("    classDef claim fill:#dcfce7,stroke:#16a34a,color:#14532d")
+    lines.append("    classDef source fill:#fef3c7,stroke:#d97706,color:#78350f")
+    for node_id, label in nodes.items():
+        # Mermaid label syntax: `id["label text"]`. Escape quotes in label.
+        safe_label = label.replace('"', '&quot;')
+        lines.append(f'    {node_id}["{safe_label}"]')
+        if node_id.startswith("s_"):
+            lines.append(f"    class {node_id} story")
+        elif node_id.startswith("c_"):
+            lines.append(f"    class {node_id} claim")
+        elif node_id.startswith("src_"):
+            lines.append(f"    class {node_id} source")
+    for src, dst in sorted(edges):
+        lines.append(f"    {src} --> {dst}")
+    return "\n".join(lines) + "\n"
+
+
+def _count_mermaid_nodes(a72_rows: list[dict[str, str]]) -> int:
+    """Distinct Story/Claim/Source IDs across all rows. Cheap upper
+    bound for UX warning ('large graph; rendering may be slow')."""
+    ids: set[str] = set()
+    for row in a72_rows:
+        for col in ("StoryID", "ClaimID", "SourceID"):
+            cell = row.get(col, "") or ""
+            for v in MULTI_VALUE_SPLIT_RE.split(cell):
+                v = v.strip()
+                if v:
+                    ids.add(v)
+    return len(ids)

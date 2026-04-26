@@ -4,14 +4,26 @@
 
 <section class="overview-hero">
   <h1>Traceability matrix</h1>
-  <p class="workspace-path">{{ trace_count }} A72 row{{ 's' if trace_count != 1 else '' }} · grouped under {{ story_count }} stor{{ 'ies' if story_count != 1 else 'y' }}</p>
+  <p class="workspace-path">{{ trace_count }} A72 row{{ 's' if trace_count != 1 else '' }} · grouped under {{ story_count }} stor{{ 'ies' if story_count != 1 else 'y' }} · {{ mermaid_node_count }} unique node{{ 's' if mermaid_node_count != 1 else '' }}</p>
 </section>
 
 {%- if grouped %}
-<div class="table-toolbar">
-  <input type="search" id="filter-input" placeholder="Filter by Story / Claim / Source ID…" class="filter-input">
-  <span id="filter-count" class="filter-count">{{ trace_count }} / {{ trace_count }}</span>
-</div>
+<section class="overview-section">
+  <h2>Flowchart (Story → Claim → Source)</h2>
+  {%- if mermaid_node_count > 50 %}
+  <p class="counter-sublabel">Large graph ({{ mermaid_node_count }} nodes). Rendering may take a few seconds.</p>
+  {%- endif %}
+  <div class="mermaid-container">
+    <pre class="mermaid">{{ mermaid_source }}</pre>
+  </div>
+</section>
+
+<section class="overview-section">
+  <h2>Grouped table view</h2>
+  <div class="table-toolbar">
+    <input type="search" id="filter-input" placeholder="Filter by Story / Claim / Source ID…" class="filter-input">
+    <span id="filter-count" class="filter-count">{{ trace_count }} / {{ trace_count }}</span>
+  </div>
 
 {%- for group in grouped %}
 <details class="trace-group filterable-row" open data-story-id="{{ group.story_id }}">
@@ -45,7 +57,14 @@
   </table>
 </details>
 {%- endfor %}
+</section>
 
+<script src="{{ static_prefix }}vendor/mermaid.min.js"></script>
+<script>
+  if (window.mermaid) {
+    mermaid.initialize({startOnLoad: true, theme: 'default', flowchart: {curve: 'basis'}});
+  }
+</script>
 <script src="{{ static_prefix }}claim_filter.js"></script>
 {%- else %}
 <p class="empty-note">A72 traceability matrix not present in this workspace.</p>
