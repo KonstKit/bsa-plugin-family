@@ -404,6 +404,27 @@ def test_build_bundle_repeated_template_dedupes(helper) -> None:
     assert list(ch["parameters"].keys()) == ["id"]
 
 
+def test_build_bundle_emits_anchor_status_candidate(helper) -> None:
+    """v1.3.7: every materialized anchor_map entry MUST carry
+    anchor_status='candidate' so CI / release-readiness gates can grep
+    for un-promoted skeletons."""
+    rows = [
+        _row("ANC-001", element_id="/user/signedup"),
+        _row("ANC-002", element_id="/order/created"),
+    ]
+    _, manifest = helper.build_bundle(
+        rows, title="T", version="1.0.0", api_path_str="asyncapi.yaml",
+    )
+    am = manifest["view_files"][0]["anchor_map"]
+    # 2 anchors × 2 entries each (Channel + Operation) = 4 entries
+    assert len(am) == 4
+    statuses = [e.get("anchor_status") for e in am]
+    assert all(s == "candidate" for s in statuses), (
+        f"every anchor_map entry must carry anchor_status='candidate'; "
+        f"got {statuses}"
+    )
+
+
 def test_build_bundle_a51_ref_used_when_no_claim_id(helper) -> None:
     rows = [_row(
         "ANC-002", element_id="/orders/created",

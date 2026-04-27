@@ -521,6 +521,26 @@ def test_build_bundle_root_path_routes_to_synthesis_failure(helper) -> None:
     assert unmapped[0]["reason"] == "proto_identifier_synthesis_failed"
 
 
+def test_build_bundle_emits_anchor_status_candidate(helper) -> None:
+    """v1.3.7: every materialized anchor_map entry MUST carry
+    anchor_status='candidate' so CI / release-readiness gates can grep
+    for un-promoted skeletons."""
+    rows = [
+        _row("ANC-001", element_id="/orders/created"),
+        _row("ANC-002", element_id="/users/registered"),
+    ]
+    _, manifest = helper.build_bundle(
+        rows, package="bsa.contracts", proto_path_str="services.proto",
+    )
+    am = manifest["view_files"][0]["anchor_map"]
+    statuses = [e.get("anchor_status") for e in am]
+    assert statuses, "anchor_map must not be empty"
+    assert all(s == "candidate" for s in statuses), (
+        f"every anchor_map entry must carry anchor_status='candidate'; "
+        f"got {statuses}"
+    )
+
+
 def test_build_bundle_a51_ref_used_when_no_claim_id(helper) -> None:
     rows = [_row(
         "ANC-001", element_id="/orders/created",

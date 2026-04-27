@@ -535,6 +535,12 @@ def build_bundle(
                 "view_element_id": service_name,
                 "view_element_kind": "Service",
                 "a61_anchor_id": anchor_id,
+                # v1.3.7: every v1.3.0+ skeleton entry is by definition
+                # a candidate (operator must enrich message fields
+                # before the contract is real). Tagged explicitly so
+                # CI / release-readiness gates can grep for un-promoted
+                # skeletons.
+                "anchor_status": "candidate",
                 "notes": (
                     f"placeholder service block (first-seen anchor "
                     f"contributing to this service); trace: "
@@ -546,6 +552,7 @@ def build_bundle(
             "view_element_id": rpc_key,
             "view_element_kind": "Rpc",
             "a61_anchor_id": anchor_id,
+            "anchor_status": "candidate",
             "notes": (
                 f"placeholder unary rpc (operator may switch to "
                 f"streaming with `stream` keyword); trace: "

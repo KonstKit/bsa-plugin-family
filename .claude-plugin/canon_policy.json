@@ -1,8 +1,8 @@
 {
   "_comment": "Canon-policy version block — extracted from .claude-plugin/plugin.json in v1.3.6 hotfix because Claude Code v2.1.19 plugin install schema rejects unknown top-level keys. Consumers (tests/test_plugin_manifest.py + scripts/dashboard/renderers.py + skills/{openapi,asyncapi,proto}-from-context/scripts/*) now read this file. Recomputed manually via scripts/compute_canon_hash.py after any POLICY_GLOBS edit; tests/test_plugin_manifest.py::test_manifest_canon_hash_matches_current_script_output fails locally on any drift.",
-  "semver": "1.3.2",
-  "hash_prefix": "a0cbc336",
-  "hash_full": "a0cbc336039b50d21c320d226cbc69228a65a8db18f0d7ef51b19d8ab281eb62",
+  "semver": "1.3.3",
+  "hash_prefix": "fd65cecb",
+  "hash_full": "fd65cecb7ad582eaec92a522119a44b8eac7ded24fc356b87e94b91620445578",
   "computed_by": "scripts/compute_canon_hash.py",
-  "computed_at": "2026-04-26T03:45:00Z"
+  "computed_at": "2026-04-26T16:40:00Z"
 }

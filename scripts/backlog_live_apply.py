@@ -8,7 +8,9 @@ and posts each row to the live platform API.
 Properties:
   - **Idempotent** per-row (idempotency_key = ``bsa-{StoryID}-{canon_hash_prefix}``).
     Re-runs against an unchanged export read the prior
-    ``live_api_response.json`` and skip already-created rows.
+    ``live_api_response_<platform>.json`` and skip already-created rows.
+    (v1.1.6 round-1 split a previously shared ``live_api_response.json``
+    into one file per platform — see RESPONSE_FILENAME_TEMPLATE below.)
   - **Dry-run by default** (``--apply`` to actually POST).
   - **Stdlib-only** (``urllib.request`` for HTTP — no ``requests`` /
     ``httpx`` dep).
@@ -23,8 +25,10 @@ Properties:
   - **JSONL log** under ``<workspace>/handoff/live_api_log.jsonl`` —
     one record per HTTP attempt (request URL, status code, attempt
     number, timestamp; NO body, NO headers).
-  - **Idempotency state** in ``<workspace>/handoff/live_api_response.json``
-    — F5-validated structured outcome record.
+  - **Idempotency state** in ``<workspace>/handoff/live_api_response_<platform>.json``
+    — F5-validated structured outcome record. One file per platform
+    (v1.1.6 round-1 fix); the OLDER shared filename is no longer
+    written.
 
 Auth:
   Jira:   ``--jira-base-url=https://acme.atlassian.net``
@@ -41,10 +45,20 @@ Auth:
 Exit codes:
   0 — all OK (or dry-run clean)
   1 — partial failure: at least one row failed but the run completed
-      gracefully (log + response.json written; operator sees per-row
-      outcome)
+      gracefully (log + per-platform response.json written; operator
+      sees per-row outcome)
   2 — invocation error (missing arg, missing env var, malformed export,
-      total network failure on attempt 1)
+      total network failure on attempt 1, F5 schema rejection on the
+      response document before write, lock-file contention)
+  3 — ledger-write loss (v1.3.7 fail-loud): live API calls already
+      mutated the platform but the local
+      ``live_api_response_<platform>.json`` write failed
+      (``IsADirectoryError``, disk full, permissions). The script
+      dumps the in-memory ledger between ``---LEDGER-BEGIN---`` /
+      ``---LEDGER-END---`` markers on stderr so the operator can
+      persist it manually before re-running ``--apply`` (re-running
+      without persistence would double-create every successfully-
+      created row).
 
 Stdlib-only. Python 3.9+.
 """
@@ -901,7 +915,36 @@ def run(args: argparse.Namespace) -> int:
             try:
                 response_path.write_text(response_json, encoding="utf-8")
             except OSError as exc:
-                print(f"WARN: cannot write response {response_path}: {exc}", file=sys.stderr)
+                # v1.3.7 fail-loud: pre-v1.3.7 we only WARN'd and fell
+                # through to a `return 0/1` that ignored this failure.
+                # That is unsafe in apply-mode: by this point the live
+                # API calls have already mutated the external platform
+                # (issues created in Jira/Linear/GitHub), and the local
+                # idempotency ledger (live_api_response_<platform>.json)
+                # is our ONLY record of which story_ids landed under
+                # which platform IDs. If we lose the ledger, the next
+                # `--apply` run will treat all rows as new and DOUBLE-
+                # CREATE every successful story. Refuse silently — exit
+                # 3 (distinct from 1 = per-row API failure, 2 = pre-write
+                # F5 schema rejection) to force operator attention. The
+                # full response document is also dumped to stderr so the
+                # operator can manually persist it from the failure log
+                # before re-running.
+                print(
+                    f"ERROR: cannot write idempotency ledger {response_path}: {exc}",
+                    file=sys.stderr,
+                )
+                print(
+                    "ERROR: external API calls have ALREADY mutated the platform; "
+                    "the ledger below is the only record. Persist it manually "
+                    "BEFORE re-running --apply or you will double-create every "
+                    "successfully-created row.",
+                    file=sys.stderr,
+                )
+                print("---LEDGER-BEGIN---", file=sys.stderr)
+                print(response_json, file=sys.stderr)
+                print("---LEDGER-END---", file=sys.stderr)
+                return 3
 
         # Console summary
         mode_label = "applied" if args.apply else "dry-run"

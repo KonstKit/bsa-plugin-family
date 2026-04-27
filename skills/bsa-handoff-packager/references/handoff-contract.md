@@ -10,6 +10,16 @@ Cross-pack rules for the H1-H4 handoff bundle produced by `bsa-handoff-packager`
 - `handoff_manifest.json` — conforms to [handoff_manifest.schema.json](handoff_manifest.schema.json).
 - `handoff_evidence_binding_map.csv` — cross-reference of every `[C-xxx]` / `[AJ:C-xxx]` / `[A51-xxx]` citation used across H1-H4 back to its canonical origin (A59 / A51). One row per citation occurrence.
 
+## Output Locations (v1.3.7+)
+
+The six required outputs live at TWO paths during a single `/bsa-handoff` invocation:
+
+1. **Worker (proposal) location** — `analysis/proposals/stage7_8/handoff/` — gated by the F5 dispatcher + the no-new-claims auditor before the route step fires. Worker writes happen here exclusively.
+
+2. **Terminal (operator-facing) location** — `analysis/handoff/` — after the no-new-claims auditor passes, the orchestrator copies each file byte-for-byte to this path. The terminal copies are what every downstream consumer reads (`/bsa-dev-handoff`, dashboard, backlog-bridge). Pre-v1.3.7 the routing step was implicit; consumers found nothing at the terminal path because the SKILL.md only documented the proposal location and there was no explicit step to move/copy.
+
+The route is a copy, not a regenerate — the manifest's checksum (computed at the proposal location over the byte-identical files) remains valid at the terminal location.
+
 ## Rules
 - Every decision-bearing or high-impact statement must carry `ClaimID` or `A51Ref`.
 - `H4` is the only valid sink for unresolved items; unresolved items must not be silently blended into `H1-H3`.

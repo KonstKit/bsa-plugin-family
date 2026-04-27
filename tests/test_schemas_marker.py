@@ -335,6 +335,165 @@ def test_schema_alphabet_matches_doc() -> None:
     assert not msg_parts, " | ".join(msg_parts)
 
 
+def test_marker_schema_accepts_partial_verdict_with_by_platform(marker_validator) -> None:
+    """v1.3.7: phase3.backlog_exported under --platform=all may emit
+    verdict=PARTIAL when some platforms succeeded and others failed.
+    The PARTIAL marker MUST carry by_platform[] enumerating per-target
+    outcomes so the operator knows which exports landed and which to
+    retry. Pre-v1.3.7 the verdict enum was {PASS, FAIL, READY, MERGED,
+    GO, PIVOT, MORE_RESEARCH, NO_GO} — PARTIAL was rejected and the
+    skill had to choose between hiding partial success (verdict=FAIL,
+    operator loses the successful exports) or hiding partial failure
+    (verdict=PASS, missing platform silently masked)."""
+    marker = {
+        "marker_id": "phase3.backlog_exported",
+        "stage": "phase3.backlog",
+        "verdict": "PARTIAL",
+        "timestamp": "2026-04-26T16:30:00Z",
+        "canon_policy_version": "1.3.3",
+        "by_platform": [
+            {"platform": "jira", "verdict": "PASS"},
+            {"platform": "linear", "verdict": "PASS"},
+            {
+                "platform": "generic",
+                "verdict": "FAIL",
+                "reason": "F5 write-validator rejected backlog_export_generic.csv: row STORY-007 missing SourceClaimIDs",
+            },
+        ],
+    }
+    errors = sorted(marker_validator.iter_errors(marker), key=lambda e: e.path)
+    assert not errors, (
+        f"Valid PARTIAL marker rejected: {[e.message for e in errors]}"
+    )
+
+
+def test_marker_schema_rejects_unknown_platform_in_by_platform(marker_validator) -> None:
+    """The platform enum in by_platform[] is closed (jira/linear/generic/github).
+    A typo'd platform name MUST be rejected so an operator can't accidentally
+    invent a target."""
+    marker = {
+        "marker_id": "phase3.backlog_exported",
+        "stage": "phase3.backlog",
+        "verdict": "PARTIAL",
+        "timestamp": "2026-04-26T16:30:00Z",
+        "canon_policy_version": "1.3.3",
+        "by_platform": [
+            {"platform": "jira", "verdict": "PASS"},
+            {"platform": "azure-devops", "verdict": "PASS"},  # not in enum
+        ],
+    }
+    errors = list(marker_validator.iter_errors(marker))
+    assert errors, "Unknown platform must be rejected"
+
+
+def test_marker_schema_rejects_partial_without_by_platform(marker_validator) -> None:
+    """v1.3.7 R1: PARTIAL verdict MUST be paired with by_platform[].
+    Pre-R1 the schema accepted PARTIAL with no breakdown, defeating the
+    point of the verdict (operator wouldn't know what failed)."""
+    marker = {
+        "marker_id": "phase3.backlog_exported",
+        "stage": "phase3.backlog",
+        "verdict": "PARTIAL",
+        "timestamp": "2026-04-26T16:30:00Z",
+        "canon_policy_version": "1.3.3",
+        # by_platform deliberately omitted
+    }
+    errors = list(marker_validator.iter_errors(marker))
+    assert errors, "PARTIAL without by_platform must be rejected"
+
+
+def test_marker_schema_rejects_partial_on_non_backlog_marker(marker_validator) -> None:
+    """v1.3.7 R1: PARTIAL is only valid for phase3.backlog_exported (the
+    only multi-target marker today). Emitting it on a single-target
+    audit-pass marker is a contract violation."""
+    marker = {
+        "marker_id": "stage1.ready",
+        "stage": "stage1",
+        "verdict": "PARTIAL",
+        "timestamp": "2026-04-26T16:30:00Z",
+        "canon_policy_version": "1.3.3",
+        "by_platform": [
+            {"platform": "jira", "verdict": "PASS"},
+            {"platform": "linear", "verdict": "FAIL"},
+        ],
+    }
+    errors = list(marker_validator.iter_errors(marker))
+    assert errors, "PARTIAL on non-backlog marker must be rejected"
+
+
+def test_marker_schema_rejects_by_platform_on_unrelated_marker(marker_validator) -> None:
+    """v1.3.7 R1: by_platform is forbidden on any marker except
+    phase3.backlog_exported. A stray field on stage1.ready would
+    otherwise silently masquerade as a backlog gate."""
+    marker = {
+        "marker_id": "stage1.ready",
+        "stage": "stage1",
+        "verdict": "READY",
+        "timestamp": "2026-04-26T16:30:00Z",
+        "canon_policy_version": "1.3.3",
+        "by_platform": [
+            {"platform": "jira", "verdict": "PASS"},
+        ],
+    }
+    errors = list(marker_validator.iter_errors(marker))
+    assert errors, "by_platform on unrelated marker must be rejected"
+
+
+def test_marker_schema_rejects_partial_when_all_by_platform_pass(marker_validator) -> None:
+    """v1.3.7 R1: PARTIAL means MIXED — at least one PASS and at least
+    one FAIL must appear in by_platform. All-PASS with verdict=PARTIAL
+    is a contract drift (operator should set verdict=PASS instead)."""
+    marker = {
+        "marker_id": "phase3.backlog_exported",
+        "stage": "phase3.backlog",
+        "verdict": "PARTIAL",
+        "timestamp": "2026-04-26T16:30:00Z",
+        "canon_policy_version": "1.3.3",
+        "by_platform": [
+            {"platform": "jira", "verdict": "PASS"},
+            {"platform": "linear", "verdict": "PASS"},
+        ],
+    }
+    errors = list(marker_validator.iter_errors(marker))
+    assert errors, "PARTIAL with all-PASS must be rejected"
+
+
+def test_marker_schema_rejects_partial_when_all_by_platform_fail(marker_validator) -> None:
+    """Mirror of the all-PASS case: all-FAIL with verdict=PARTIAL is a
+    contract drift (use FAIL)."""
+    marker = {
+        "marker_id": "phase3.backlog_exported",
+        "stage": "phase3.backlog",
+        "verdict": "PARTIAL",
+        "timestamp": "2026-04-26T16:30:00Z",
+        "canon_policy_version": "1.3.3",
+        "by_platform": [
+            {"platform": "jira", "verdict": "FAIL", "reason": "auth"},
+            {"platform": "linear", "verdict": "FAIL", "reason": "F5 reject"},
+        ],
+    }
+    errors = list(marker_validator.iter_errors(marker))
+    assert errors, "PARTIAL with all-FAIL must be rejected"
+
+
+def test_marker_schema_rejects_by_platform_inner_unknown_verdict(marker_validator) -> None:
+    """by_platform[].verdict is restricted to PASS/FAIL — no READY,
+    no PARTIAL (PARTIAL only makes sense at the top level, never per-
+    platform), no GO, etc."""
+    marker = {
+        "marker_id": "phase3.backlog_exported",
+        "stage": "phase3.backlog",
+        "verdict": "PARTIAL",
+        "timestamp": "2026-04-26T16:30:00Z",
+        "canon_policy_version": "1.3.3",
+        "by_platform": [
+            {"platform": "jira", "verdict": "PARTIAL"},  # not allowed
+        ],
+    }
+    errors = list(marker_validator.iter_errors(marker))
+    assert errors, "by_platform[].verdict=PARTIAL must be rejected"
+
+
 def test_audit_pass_sequences_are_subset_of_alphabet() -> None:
     """Gating sequences must be drawn from the marker_id alphabet."""
     from governance.schemas import loader

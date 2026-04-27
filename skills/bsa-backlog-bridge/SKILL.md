@@ -65,8 +65,12 @@ After successful write of all requested platform files + report, emits:
    - Operator-facing import instructions (Jira: POST per-issue to /rest/api/3/issue; Linear: import CSV via Settings → Import; generic: paste into target tool).
 
 6. **Emit markers** under `analysis/runtime/ready/`:
-   - `phase3.backlog_exported.json` — verdict=PASS, stage=phase3.backlog. Always emitted on successful write.
-   - `pipeline.phase3.complete.json` — verdict=PASS, stage=phase3.complete. Emitted ONLY when invoked as the terminal Phase-3 step (`/bsa-dev-handoff` full chain, not under `--only=backlog-bridge`).
+   - `phase3.backlog_exported.json` — stage=phase3.backlog. Verdict computed from per-platform outcomes (v1.3.7+):
+     - **All requested platforms succeeded** → verdict=PASS. `by_platform` is OPTIONAL (operator can infer from `analysis/handoff/backlog_export_*` files).
+     - **Some succeeded, some failed** (only possible when `--platform=all` or a comma-list with mixed outcomes) → verdict=PARTIAL. `by_platform` MUST be present, listing each requested platform with its individual PASS/FAIL + a short `reason` on FAIL rows. The successful exports stay on disk under `analysis/handoff/`; downstream consumers are expected to import the PASS-platform files and fix + re-run only the FAIL platforms (idempotent re-run is safe — exports are byte-identical for unchanged inputs).
+     - **All requested platforms failed** → verdict=FAIL. `by_platform` is OPTIONAL but recommended for operator triage.
+     - PARTIAL is INTENTIONALLY distinct from FAIL: a fully-failed run leaves no exports under `analysis/handoff/`; a mixed run leaves the successful artifacts there. Treating PARTIAL as FAIL would silently discard valid work; treating PARTIAL as PASS would silently mask a missing platform.
+   - `pipeline.phase3.complete.json` — verdict=PASS, stage=phase3.complete. Emitted ONLY when invoked as the terminal Phase-3 step (`/bsa-dev-handoff` full chain, not under `--only=backlog-bridge`) AND the backlog marker above resolved to verdict=PASS (the terminal marker is gated on a clean backlog export, not a partial one).
 
 ## Format conventions
 

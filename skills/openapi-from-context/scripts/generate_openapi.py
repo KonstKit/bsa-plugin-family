@@ -357,6 +357,11 @@ def build_bundle(
             "view_element_id": element_id,
             "view_element_kind": "PathItem",
             "a61_anchor_id": anchor_id,
+            # v1.3.7: every v1.3.0+ skeleton entry is by definition a
+            # candidate (operator must enrich request/response schemas
+            # before the contract is real). Tagged explicitly so CI /
+            # release-readiness gates can grep for un-promoted skeletons.
+            "anchor_status": "candidate",
             "notes": (
                 f"placeholder; trace: {tag_provenance}"
                 if tag_provenance else "placeholder"
@@ -366,6 +371,7 @@ def build_bundle(
             "view_element_id": f"GET {element_id}",
             "view_element_kind": "Operation",
             "a61_anchor_id": anchor_id,
+            "anchor_status": "candidate",
             "notes": (
                 f"placeholder GET op; trace: {tag_provenance}"
                 if tag_provenance else "placeholder"

@@ -75,6 +75,11 @@
                 "notes": {
                   "type": "string",
                   "description": "Optional free-text annotation. Common content: original ClaimID/A51Ref this anchor traces to (mirrored into the AsyncAPI operation's tag); rationale for the channel placeholder when the operator should refine."
+                },
+                "anchor_status": {
+                  "type": "string",
+                  "enum": ["candidate", "promoted"],
+                  "description": "v1.3.7+: machine-readable promotion status. 'candidate' = exporter produced a v1.3.0+ skeleton placeholder for this anchor (no real payload schemas synthesized — operator must enrich the AsyncAPI before shipping). 'promoted' is reserved for future releases that auto-synthesize real shapes from interface_contract_model.md. v1.3.0..v1.3.6 emitted no anchor_status (legacy consumers should treat absence as 'candidate'); v1.3.7+ emits 'candidate' explicitly so 'this is a skeleton, enrich it' is grep-able from CI / release-readiness gates."
                 }
               }
             }

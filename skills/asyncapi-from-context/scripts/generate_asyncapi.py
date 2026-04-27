@@ -364,12 +364,18 @@ def build_bundle(
             "view_element_id": channel_key,
             "view_element_kind": "Channel",
             "a61_anchor_id": anchor_id,
+            # v1.3.7: every v1.3.0+ skeleton entry is by definition a
+            # candidate (operator must enrich payload schemas before the
+            # contract is real). Tagged explicitly so CI / release-
+            # readiness gates can grep for un-promoted skeletons.
+            "anchor_status": "candidate",
             "notes": f"placeholder; trace: {tag_provenance}",
         })
         anchor_map.append({
             "view_element_id": f"send {channel_key}",
             "view_element_kind": "Operation",
             "a61_anchor_id": anchor_id,
+            "anchor_status": "candidate",
             "notes": (
                 f"placeholder send op (operator may switch to receive); "
                 f"trace: {tag_provenance}"

@@ -91,7 +91,7 @@
     },
     "verdict": {
       "type": "string",
-      "description": "Outcome of the stage/audit this marker represents. READY = stage entry; PASS/FAIL = audit outcome; MERGED = composite-promotion merge marker (e.g., stage1.excerpts.merged reports 'merged' rather than a pass/fail since the merge itself is the event, audit outcomes ride on separate markers); GO/PIVOT/MORE_RESEARCH/NO_GO = discovery-exit decision.",
+      "description": "Outcome of the stage/audit this marker represents. READY = stage entry; PASS/FAIL = audit outcome; MERGED = composite-promotion merge marker (e.g., stage1.excerpts.merged reports 'merged' rather than a pass/fail since the merge itself is the event, audit outcomes ride on separate markers); GO/PIVOT/MORE_RESEARCH/NO_GO = discovery-exit decision; PARTIAL = multi-target marker (today: phase3.backlog_exported under --platform=all) where SOME targets succeeded and OTHERS failed (e.g., generic CSV written but Jira write rejected by F5). When verdict=PARTIAL the marker MUST also carry by_platform[] enumerating per-target outcomes — operator reads it to triage which targets to retry. PARTIAL is INTENTIONALLY distinct from FAIL: a fully-failed run emits FAIL with no successful exports; a mixed run emits PARTIAL so the successful artifacts under analysis/handoff/ are not silently treated as if no work happened.",
       "enum": [
         "PASS",
         "FAIL",
@@ -100,8 +100,35 @@
         "GO",
         "PIVOT",
         "MORE_RESEARCH",
-        "NO_GO"
+        "NO_GO",
+        "PARTIAL"
       ]
+    },
+    "by_platform": {
+      "type": "array",
+      "description": "v1.3.7+: per-target verdict breakdown for multi-target markers (today: phase3.backlog_exported emitted by bsa-backlog-bridge under --platform=all). REQUIRED when the marker's top-level verdict is PARTIAL — gives the operator a per-platform PASS/FAIL list so they know which targets to retry. Optional when verdict is PASS or FAIL (the operator can infer from CWD inspection of analysis/handoff/backlog_export_*). Out-of-scope for single-target markers (stage*.audit.pass etc.) — those markers MUST NOT carry this field.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["platform", "verdict"],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": ["jira", "linear", "generic", "github"],
+            "description": "Backlog target. Closed enum mirroring bsa-backlog-bridge's --platform alphabet (jira/linear/generic) plus github (added by Section C live-API mode in v1.1.6)."
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["PASS", "FAIL"],
+            "description": "Per-target outcome. PASS = export file written + F5-accepted under analysis/handoff/. FAIL = export aborted (write-validator rejection, missing input, etc.). Marker top-level verdict is PARTIAL when this list contains BOTH a PASS and a FAIL; PASS when all are PASS; FAIL when all are FAIL."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional short operator-facing reason when verdict=FAIL (e.g., 'F5 write-validator rejected backlog_export_jira.json: row STORY-007 missing SourceClaimIDs'). Omit on PASS rows."
+          }
+        }
+      }
     },
     "timestamp": {
       "type": "string",
@@ -121,6 +148,74 @@
     }
   },
   "additionalProperties": true,
+  "allOf": [
+    {
+      "_comment": "v1.3.7 R1 fix: PARTIAL is ONLY meaningful for multi-target backlog markers; emitting it on a single-target audit-pass marker is a contract violation. Pre-R1 the verdict enum allowed PARTIAL globally with no constraint — Codex caught it as a MAJOR drift.",
+      "if": {
+        "properties": {
+          "verdict": {"const": "PARTIAL"}
+        },
+        "required": ["verdict"]
+      },
+      "then": {
+        "properties": {
+          "marker_id": {
+            "enum": ["phase3.backlog_exported"]
+          }
+        },
+        "required": ["marker_id", "by_platform"]
+      }
+    },
+    {
+      "_comment": "v1.3.7 R1 fix: by_platform is the per-target breakdown for multi-target markers. Forbid it on every other marker_id so a stray field on stage1.ready can't masquerade as a backlog gate.",
+      "if": {
+        "not": {
+          "properties": {
+            "marker_id": {"enum": ["phase3.backlog_exported"]}
+          },
+          "required": ["marker_id"]
+        }
+      },
+      "then": {
+        "not": {
+          "required": ["by_platform"]
+        }
+      }
+    },
+    {
+      "_comment": "v1.3.7 R1 fix: PARTIAL means MIXED — both PASS and FAIL must appear in by_platform. All-PASS or all-FAIL with verdict=PARTIAL is a contract violation (use PASS or FAIL respectively). Enforced via two anyOf conditions: at least one PASS row AND at least one FAIL row.",
+      "if": {
+        "properties": {
+          "verdict": {"const": "PARTIAL"}
+        },
+        "required": ["verdict"]
+      },
+      "then": {
+        "properties": {
+          "by_platform": {
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "verdict": {"const": "PASS"}
+                  },
+                  "required": ["verdict"]
+                }
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "verdict": {"const": "FAIL"}
+                  },
+                  "required": ["verdict"]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
   "x-bsa-audit-pass-sequence": {
     "_comment": "Audit-pass sequences used by scripts/validate_marker_chain.py for chain-gating checks. NOT the full marker alphabet — only the mandatory gate markers that form the promotion chain. Ready markers (stage*.ready) and end-state markers (handoff.ready, pipeline.complete) are in the marker_id alphabet above but not part of the gating sequence.",
     "main": [

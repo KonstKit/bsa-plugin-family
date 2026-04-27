@@ -293,6 +293,28 @@ def test_build_bundle_happy_path_emits_two_manifest_entries_per_anchor(
     assert kinds == {"PathItem", "Operation"}
 
 
+def test_build_bundle_emits_anchor_status_candidate(helper) -> None:
+    """v1.3.7: every materialized anchor_map entry MUST carry
+    anchor_status='candidate' so CI / release-readiness gates can grep
+    for un-promoted skeletons. v1.3.0..v1.3.6 omitted this field; the
+    schema makes it optional but v1.3.7+ emits it explicitly."""
+    rows = [
+        _row("ANC-001", element_id="/users"),
+        _row("ANC-002", element_id="/orders"),
+    ]
+    _, manifest = helper.build_bundle(
+        rows, title="T", version="1.0.0", api_path_str="api.yaml",
+    )
+    am = manifest["view_files"][0]["anchor_map"]
+    # 2 anchors × 2 entries each (PathItem + Operation) = 4 entries
+    assert len(am) == 4
+    statuses = [e.get("anchor_status") for e in am]
+    assert all(s == "candidate" for s in statuses), (
+        f"every anchor_map entry must carry anchor_status='candidate'; "
+        f"got {statuses}"
+    )
+
+
 def test_build_bundle_a51_ref_used_when_no_claim_id(helper) -> None:
     """Anchor routed via A51 (no ClaimID) → tag uses A51Ref."""
     rows = [_row(

@@ -386,6 +386,31 @@ def test_pre_bash_promote_always_allows_dry_run(tmp_path: Path) -> None:
     assert result.returncode == 0
 
 
+def test_pre_bash_promote_dry_run_match_is_boundary_aware(tmp_path: Path) -> None:
+    """v1.3.7 P0 regression: pre-v1.3.7 the dry-run short-circuit used a
+    `*--dry-run*` substring glob, so any token CONTAINING the substring
+    falsely activated dry-run mode (e.g., `--dry-run-disabled`,
+    `foo=--dry-run-EXTRA`, `--dry-runner`). Each near-miss MUST still
+    gate on missing markers (returncode 1)."""
+    ws = _init_workspace(tmp_path, "stage3")
+    near_misses = [
+        "--dry-run-disabled",
+        "--dry-runner",
+        "foo=--dry-run-EXTRA",
+        "x--dry-run",
+    ]
+    for arg in near_misses:
+        result = _run(PRE_BASH, arg, cwd=ws)
+        assert result.returncode == 1, (
+            f"Near-miss arg {arg!r} falsely activated --dry-run "
+            "(substring match regression).\n"
+            f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+        )
+    # Sanity: real `--dry-run` still works.
+    result_ok = _run(PRE_BASH, "--dry-run", cwd=ws)
+    assert result_ok.returncode == 0
+
+
 def test_pre_bash_promote_handles_discovery_stage(tmp_path: Path) -> None:
     ws = _init_workspace(tmp_path, "d2", mode="discovery_then_bsa")
     result = _run(PRE_BASH, cwd=ws)
@@ -761,6 +786,98 @@ def test_pre_write_f5_identity_failure_short_circuits() -> None:
     assert "INV-02" in result.stderr
     # F5 schema BLOCKED message must NOT appear — identity check fired first.
     assert "BLOCKED: schema validation failed" not in result.stderr
+
+
+def test_pre_write_f5_edit_shape_blocks_with_relative_path(tmp_path: Path) -> None:
+    """v1.3.7 P0 regression: Edit-shape file_path may be workspace-relative
+    (Claude Code passes paths as the user typed them — both absolute and
+    relative are common). Pre-v1.3.7 the Python extraction block ran inside
+    `cd PLUGIN_REPO`, so a relative path resolved against PLUGIN_REPO,
+    target.is_file() returned False, and the hook silently exited 0 —
+    bypassing schema validation entirely. Fix anchors relative paths
+    against BSA_USER_CWD (forwarded from the hook's outer pwd) before
+    the file-existence check."""
+    canonical = tmp_path / "analysis" / "canonical" / "core_controls"
+    canonical.mkdir(parents=True)
+    target = canonical / "A48_run_context_card.md"
+    target.write_text(
+        "# A48 Run Context Card\n\n"
+        "- `RunID`: x\n"
+        "- `Mode`: direct\n"
+        "- `CurrentStage`: stage1\n"
+        "- `CanonPolicyVersion`: 1.0.0\n",
+        encoding="utf-8",
+    )
+    relative_path = "analysis/canonical/core_controls/A48_run_context_card.md"
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": relative_path,
+                "old_string": "- `CurrentStage`: stage1",
+                "new_string": "- `CurrentStage`: stage42",
+            }
+        }
+    )
+    merged_env = os.environ.copy()
+    merged_env["BSA_WRITER"] = "bsa-orchestrator"
+    merged_env["BSA_PLUGIN_REPO"] = str(REPO_ROOT)
+    result = subprocess.run(
+        ["/bin/bash", str(PRE_WRITE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        env=merged_env,
+        cwd=tmp_path,
+    )
+    assert result.returncode == 1, (
+        "Edit with relative path producing invalid post-image was NOT blocked "
+        "(F5 silently bypassed via relative path).\n"
+        f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+    )
+    assert "BLOCKED" in result.stderr
+    assert "CurrentStage" in result.stderr or "stage42" in result.stderr
+
+
+def test_pre_write_f5_edit_shape_passes_with_relative_path_when_valid(
+    tmp_path: Path,
+) -> None:
+    """Companion to the BLOCK case above: a valid post-image via relative
+    path must still PASS (anchor must not break the happy path)."""
+    canonical = tmp_path / "analysis" / "canonical" / "core_controls"
+    canonical.mkdir(parents=True)
+    target = canonical / "A48_run_context_card.md"
+    target.write_text(
+        "# A48 Run Context Card\n\n"
+        "- `RunID`: x\n"
+        "- `Mode`: direct\n"
+        "- `CurrentStage`: stage1\n"
+        "- `CanonPolicyVersion`: 1.0.0\n",
+        encoding="utf-8",
+    )
+    relative_path = "analysis/canonical/core_controls/A48_run_context_card.md"
+    payload = json.dumps(
+        {
+            "tool_input": {
+                "file_path": relative_path,
+                "old_string": "- `CurrentStage`: stage1",
+                "new_string": "- `CurrentStage`: stage3",
+            }
+        }
+    )
+    merged_env = os.environ.copy()
+    merged_env["BSA_WRITER"] = "bsa-orchestrator"
+    merged_env["BSA_PLUGIN_REPO"] = str(REPO_ROOT)
+    result = subprocess.run(
+        ["/bin/bash", str(PRE_WRITE)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        env=merged_env,
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, (
+        f"Valid Edit via relative path was blocked.\nstderr={result.stderr}"
+    )
 
 
 def test_pre_bash_promote_table_a48_with_real_fixture_path(tmp_path: Path) -> None:

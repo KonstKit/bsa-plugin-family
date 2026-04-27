@@ -618,6 +618,66 @@ def test_linear_graphql_success_marks_created(tmp_path: Path) -> None:
     assert "OPS-789" in result.platform_url
 
 
+def test_apply_returns_3_when_ledger_write_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """v1.3.7 P1 regression: if the live API call succeeds (external
+    state mutated) but writing the local idempotency ledger fails, the
+    script MUST exit non-zero AND dump the in-memory ledger to stderr
+    so the operator can persist it manually before re-running. The
+    pre-v1.3.7 behavior was to print WARN and fall through to
+    `return 0/1 based on summary['failed']` — that lost the ledger and
+    set up the next --apply run to double-create every row.
+
+    Simulates the failure by pre-creating the ledger path AS A DIRECTORY
+    so write_text raises IsADirectoryError (a subclass of OSError)."""
+    import argparse
+
+    mod = _import_script_as_module()
+    ws = _make_workspace_with_jira_export(tmp_path)
+    monkeypatch.setenv("BSA_JIRA_EMAIL", "test@example.com")
+    monkeypatch.setenv("BSA_JIRA_TOKEN", "test-token-redacted")
+
+    handoff = ws / "analysis" / "handoff"
+    response_path = handoff / "live_api_response_jira.json"
+    response_path.mkdir()
+
+    args = argparse.Namespace(
+        workspace=ws,
+        platform="jira",
+        apply=True,
+        canon_hash="eefb7204",
+        run_id="demo-test-001",
+        jira_base_url="https://acme.atlassian.net",
+        jira_email_env="BSA_JIRA_EMAIL",
+        jira_token_env="BSA_JIRA_TOKEN",
+        linear_base_url="",
+        linear_token_env="BSA_LINEAR_TOKEN",
+        linear_team_id="",
+        github_base_url="",
+        github_repo="",
+        github_token_env="BSA_GITHUB_TOKEN",
+    )
+
+    response = _make_mock_response(201, {"key": "BSA-42", "id": "10042"})
+    with patch("urllib.request.urlopen", return_value=response):
+        rc = mod.run(args)
+
+    assert rc == 3, (
+        f"ledger-write failure must return exit 3 (got {rc}); "
+        "silent return 0 means operator will double-create on re-run"
+    )
+    captured = capsys.readouterr()
+    assert "cannot write idempotency ledger" in captured.err
+    assert "---LEDGER-BEGIN---" in captured.err
+    assert "---LEDGER-END---" in captured.err
+    # The in-memory ledger MUST be present in stderr for manual recovery.
+    assert "BSA-42" in captured.err
+    assert "STORY-001" in captured.err
+
+
 def test_429_retries_then_succeeds(tmp_path: Path) -> None:
     mod = _import_script_as_module()
     # Speed up backoff for test

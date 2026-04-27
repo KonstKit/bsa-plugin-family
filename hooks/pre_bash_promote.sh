@@ -24,10 +24,17 @@ DISCOVERY_MARKERS_DIR="${CWD}/analysis/discovery/runtime/ready"
 # --dry-run invocations skip the marker check — dry-run never mutates.
 # The matcher fires on /bsa[- ]promote/, so the full invoked command is
 # available to inspect via the script's argv (Claude Code passes it).
+#
+# v1.3.7 P0 fix: boundary-aware match. Pre-v1.3.7 used `*--dry-run*`
+# substring glob, which silently activated dry-run mode on misleading
+# inputs like `--dry-run-disabled`, `foo=--dry-run-EXTRA`, or any token
+# containing the substring. We mirror the existing --strict-on-hard-a51
+# regex below: require word boundary on both sides (start-of-string OR
+# whitespace before; end-of-string OR whitespace OR `=` after).
 for arg in "$@"; do
-  case "${arg}" in
-    *--dry-run*) exit 0 ;;
-  esac
+  if [[ "${arg}" =~ (^|[[:space:]])--dry-run($|[[:space:]]|=) ]]; then
+    exit 0
+  fi
 done
 
 if [ ! -f "${A48_PATH}" ]; then

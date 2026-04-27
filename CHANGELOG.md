@@ -4,6 +4,51 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.3.7] — 2026-04-26
+
+**Hotfix: 8 findings batched (3 P0/P1 code + 5 governance) from the v1.3.6 post-release review.** Two P0 hook bugs that silently bypassed the F5 schema gate in specific shapes, one P1 idempotency-ledger silent-loss bug in the live-API runner, plus 5 governance gaps surfaced by an end-to-end pipeline run on a real engagement (anchor-status markup, EvidenceStatus enum drift, A51Ref stale-ref check on A72, backlog gate PARTIAL verdict, H1-H4 routing into terminal handoff dir).
+
+**Tag target**: this commit. **Canon policy version**: bumps `1.3.2+hash:a0cbc336` → `1.3.3+hash:fd65cecb` — additive policy edits across **6** POLICY_GLOBS files:
+
+1. `skills/openapi-from-context/references/anchor_manifest.schema.json` — `anchor_status` enum addition.
+2. `skills/asyncapi-from-context/references/anchor_manifest.schema.json` — same.
+3. `skills/proto-from-context/references/anchor_manifest.schema.json` — same.
+4. `skills/bsa-backlog-bridge/SKILL.md` — PARTIAL/by_platform marker contract.
+5. `skills/bsa-handoff-packager/SKILL.md` — explicit two-stage routing (Stage A proposals → Stage B `analysis/handoff/`).
+6. `skills/bsa-handoff-packager/references/handoff-contract.md` — Output Locations section codifying the dual-path convention.
+
+### Fixed (P0/P1 code bugs)
+
+- **`hooks/pre_write_canonical.sh` (P0)** — relative-path F5 bypass. Pre-v1.3.7 the Edit-shape extraction Python block ran inside `cd "${PLUGIN_REPO}"`, so a workspace-relative `file_path` (e.g., `analysis/canonical/core_controls/A48_run_context_card.md`) resolved against PLUGIN_REPO instead of the workspace, `target.is_file()` returned False, and the hook silently exited 0 — bypassing schema validation entirely for any caller that passed a relative path. Fix: capture `USER_CWD="$(pwd)"` BEFORE entering the Python block, forward via `BSA_USER_CWD` env var, and anchor relative paths against it before the existence check. **2 new regression tests** in `tests/test_plugin_hooks.py`: BLOCK on relative-path Edit producing invalid post-image; PASS on relative-path Edit producing valid post-image.
+- **`hooks/pre_bash_promote.sh` (P0)** — substring `*--dry-run*` glob falsely activated dry-run mode on misleading inputs (`--dry-run-disabled`, `foo=--dry-run-EXTRA`, `--dry-runner`). Fix: mirror the existing `--strict-on-hard-a51` regex pattern — require word boundary on both sides via `[[ "$arg" =~ (^|[[:space:]])--dry-run($|[[:space:]]|=) ]]`. **1 new regression test** covers 4 near-miss arg forms + sanity check that real `--dry-run` still works.
+- **`scripts/backlog_live_apply.py` (P1)** — idempotency-ledger silent loss. Pre-v1.3.7 a write failure on `live_api_response_<platform>.json` only printed `WARN:` to stderr and fell through to `return 0` (or 1 based on summary) — but by that point the live API calls had ALREADY mutated the external platform (issues created in Jira/Linear/GitHub) and the local ledger was the only record of which story_ids landed under which platform IDs. Losing the ledger silently sets the next `--apply` run up to double-create every successfully-created row. Fix: on `OSError` write the in-memory ledger document to stderr between `---LEDGER-BEGIN---` / `---LEDGER-END---` markers and exit 3 (distinct from 1 = per-row API failure, 2 = pre-write F5 schema rejection). Operator can copy the ledger from stderr, persist manually, then re-run safely. **1 new regression test** simulates the failure by pre-creating the ledger path AS A DIRECTORY so `write_text` raises `IsADirectoryError`.
+
+### Fixed (governance / output-review findings)
+
+- **3 contract exporters (`openapi-from-context`, `asyncapi-from-context`, `proto-from-context`)** — every emitted `anchor_map[]` entry now carries `anchor_status: "candidate"`. Pre-v1.3.7 the v1.3.0+ skeleton output looked like a fully-spec'd contract; nothing distinguished it programmatically from a future release that synthesizes real schemas. Adding the field makes "this is a skeleton, enrich it" grep-able from CI / release-readiness gates. Schema additions are backward-compatible (optional field with enum `["candidate", "promoted"]`); legacy v1.3.0..v1.3.6 manifests pass new validation as well. **3 new tests** (one per exporter) verify every emitted entry carries the field.
+- **`skills/bsa-semantic-extractor/references/core-first-row.md`** — added explicit definitions for the `EvidenceStatus(F/I/A/Q/C)` enum. Pre-v1.3.7 the row contract listed the codes but never defined the meanings; an analyst reading the reference had to guess (or rely on industry context). Now defined as fact / inference / assumption / question / contradiction with examples and per-code rules (e.g., `A`/`Q`/`C` MUST lower Confidence + route via IssueID).
+- **`governance/schemas/a72.schema.json`** — added `x-bsa-foreign-key-refs` block that enforces `A51Ref → A51_issue_route_register.csv.A51Ref` resolution at F5 hook time. Pre-v1.3.7 A72 carried only the A72-specific `x-bsa-foreign-key-rules` (Story/Claim/Source) + `x-bsa-deferral-rules` (which only checks A51Ref is non-blank when `LinkType=a51-routed`, NOT that the value resolves). A typo'd A51Ref like `A51-999` (when the register only had rows up to A51-005) silently propagated through downstream coverage reports. The two extensions cover disjoint columns — no double-emit risk; updated `test_a72_keeps_a72_specific_extension_not_generic` (renamed to `test_a72_has_both_specific_and_generic_fks_on_disjoint_columns`) to lock the disjoint invariant. **2 new e2e tests** prove the orphan rejection + the resolvable-pass mirror.
+- **`governance/schemas/marker.schema.json`** — added `PARTIAL` to the `verdict` enum + an optional top-level `by_platform[]` array (per-target `{platform, verdict, reason?}` objects). For the `phase3.backlog_exported` marker under `--platform=all`, the orchestrator can now emit a mixed-outcome marker without choosing between hiding the partial success (verdict=FAIL, operator loses successful exports) or hiding the partial failure (verdict=PASS, missing platform silently masked). **3 new tests** cover PARTIAL acceptance, unknown-platform rejection, and inner-verdict-PARTIAL rejection (PARTIAL only valid at top level). Per-skill contract update in `skills/bsa-backlog-bridge/SKILL.md` documents when to emit PARTIAL vs PASS vs FAIL.
+- **`skills/bsa-handoff-packager/SKILL.md` + `references/handoff-contract.md` + `commands/bsa-handoff.md`** — explicit two-stage routing for H1-H4. Pre-v1.3.7 the SKILL.md listed only the proposal-stage paths under `analysis/proposals/stage7_8/handoff/`, but downstream consumers (`/bsa-dev-handoff`, dashboard, backlog-bridge) all read from `analysis/handoff/` per the documented dependencies. The implicit "route to terminal location" step was missing from both skill workflow + command spec — operators saw H1-H4 emitted but downstream tooling reported them as missing. Now Step 6 is an explicit byte-for-byte copy from proposal → terminal location after the no-new-claims auditor passes; manifest checksum (computed at proposal location) remains valid post-route.
+
+### Added
+
+- **`.claude-plugin/canon_policy.json`** — semver `1.3.2 → 1.3.3`, hash `a0cbc336 → fd65cecb`. Encompasses 6 POLICY_GLOBS edits across the release (enumerated in the header narrative above).
+- **`.claude-plugin/plugin.json`** — version `1.3.2 → 1.3.3` (lockstep with canon_policy.json::semver, enforced by `tests/test_plugin_manifest.py::test_manifest_version_and_canon_semver_agree`).
+
+### Changed
+
+- **Fixture `project_0004_sidecar_e2e`** — bumped canon refs in `fixture_metadata.json` + `expected_markers/stage1.excerpts.merged.json` + 3 `expected_outputs/views/{c4,bpmn,dbml}/anchor_manifest.json` from `1.3.2+hash:a0cbc336` to `1.3.3+hash:fd65cecb` (the only fixture pinned to canon).
+
+### Tests
+
+- **8 new regression tests** + **5 contract-update tests** (renamed `test_a72_*` for the disjoint-FK invariant; 3 new marker tests for PARTIAL + by_platform; 2 e2e A72 stale-A51Ref tests). Total suite: **1971 passed** (was 1958 pre-v1.3.7 — 13 net new).
+- **Self-review pre-Codex** per the v1.2.x lessons: impact analysis (3 hooks + 1 script + 6 schemas + 3 SKILL.md + 1 contract + 1 command + 1 fixture), cross-schema (a72 + a59/a60/a62/a70/a71 disjoint FK columns), edge cases (relative-vs-absolute paths, dry-run boundary forms, OSError on ledger write, blank A51Ref, mixed-platform verdicts, copy-vs-regenerate semantics), layer overlap (a72 dual FK extensions documented + tested for column disjointness), reach equality (#1 hook gate now matches validator gate; #2 dry-run match now matches strict-on-hard-a51 pattern; #3 exit code 3 distinct from 0/1/2).
+
+### Codex Review
+
+- TBD on commit (R1 advisory mode, sandbox=read-only, gpt-5.4).
+
 ## [v1.3.6] — 2026-04-26
 
 **Hotfix: plugin install schema cleanup — unblocks Claude Code v2.1.19 marketplace install.** Pre-v1.3.6 `claude plugin install bsa-full@bsa-marketplace` failed with three schema rejections (`Invalid input` on `repository: {type, url}` object form, `Unrecognized key: bugs`, `Unrecognized key: canonPolicyVersion`). The plugin had been installable via session-only `claude --plugin-dir <path>` but never via the marketplace install path that the documented operator workflow expects. Pure infrastructure fix; manifest version stays at 1.3.2 (canon hash unchanged at `a0cbc336`).

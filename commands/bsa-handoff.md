@@ -33,7 +33,8 @@ Delegate to `bsa-orchestrator`, which routes to `bsa-handoff-packager`:
 3. Build `handoff_evidence_binding_map.csv` — one row per inline `[C-xxx]`, `[AJ:C-xxx]`, `[A51-xxx]` citation across H1-H4, linked back to its A59/A51 row.
 4. Build `handoff_manifest.json` per `handoff_manifest.schema.json`: pack_id, pack_version, generated_at, canon_policy_version, includes (h1..h4 paths), evidence_binding_map_path, no_new_claims_verdict, checksum (sha256 over covers[]).
 5. Run `bsa-no-new-claims-auditor` in handoff mode over H1-H4. Embed the verdict (verdict + leakage_count + analyst_judgment_valid/invalid + report_path) in `handoff_manifest.json.no_new_claims_verdict`.
-6. Emit `handoff.ready.json` marker on success.
+6. **Route H1-H4 to `analysis/handoff/`** (v1.3.7+ — output review #3.8 fix). On no-new-claims PASS, copy each of `H1_exec_brief.md`, `H2_delivery_packet.md`, `H3_validation_packet.md`, `H4_open_items_packet.md`, `handoff_manifest.json`, and `handoff_evidence_binding_map.csv` from `analysis/proposals/stage7_8/handoff/` to `analysis/handoff/`. The route is a byte-identical copy — the manifest's checksum (computed in step 4) remains valid post-route. Pre-v1.3.7 the handoff command stopped at step 5 and silently relied on the orchestrator to know the terminal location; downstream consumers (`/bsa-dev-handoff`, dashboard, backlog-bridge) found nothing at the documented `analysis/handoff/` paths because the routing step was implicit/missing.
+7. Emit `handoff.ready.json` marker on success.
 
 ## Output
 

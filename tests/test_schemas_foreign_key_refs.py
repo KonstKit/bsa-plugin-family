@@ -247,6 +247,14 @@ _EXPECTED_FKS = {
         ("RelatedNFRID", "A62_nfr_register.csv", "NFRID", False),
         ("A51Ref", "A51_issue_route_register.csv", "A51Ref", True),
     ],
+    # v1.3.7: A72 keeps its A72-specific x-bsa-foreign-key-rules for
+    # Story / Claim / Source resolution + claim_source_consistency,
+    # AND adds the generic x-bsa-foreign-key-refs for A51Ref ONLY (the
+    # one column the A72-specific handler doesn't cover). The two
+    # handlers operate on disjoint column sets — no double-emit risk.
+    "a72": [
+        ("A51Ref", "A51_issue_route_register.csv", "A51Ref", True),
+    ],
 }
 
 
@@ -282,20 +290,41 @@ def test_schema_declares_expected_fk_inventory(
     )
 
 
-def test_a72_keeps_a72_specific_extension_not_generic() -> None:
-    """A72 keeps x-bsa-foreign-key-rules (its A72-specific extension
-    that also carries claim_source_consistency). A72 MUST NOT also
-    declare the new generic x-bsa-foreign-key-refs — two handlers
-    would emit duplicate violations on the same FK."""
+def test_a72_has_both_specific_and_generic_fks_on_disjoint_columns() -> None:
+    """v1.3.7: A72 carries BOTH FK extensions, deliberately split by
+    column ownership:
+
+      * x-bsa-foreign-key-rules (A72-specific, kept) — Story / Claim /
+        Source resolution + claim_source_consistency. These three
+        columns participate in the matrix join and need the consistency
+        rule that the generic handler doesn't model.
+      * x-bsa-foreign-key-refs (generic, ADDED in v1.3.7) — A51Ref ONLY.
+        Stale-A51Ref detection (v1.3.6 output review #3.6 fix). The
+        deferral-rules extension only checks A51Ref is non-blank when
+        LinkType=a51-routed, NOT that the value resolves in A51 — pre-
+        v1.3.7 a typo'd A51Ref would silently propagate.
+
+    The two handlers operate on disjoint column sets (Story/Claim/Source
+    vs A51Ref) — no double-emit risk. The pre-v1.3.7 assertion that
+    A72 must have ONLY one extension was over-conservative."""
     from governance.schemas.loader import load_schema
     a72 = load_schema("a72")
     assert "x-bsa-foreign-key-rules" in a72, (
         "A72 lost its A72-specific FK rules — must be preserved"
     )
-    assert "x-bsa-foreign-key-refs" not in a72, (
-        "A72 has BOTH the A72-specific AND the generic FK extension. "
-        "Pick one — a72 uses x-bsa-foreign-key-rules for claim/source "
-        "consistency."
+    assert "x-bsa-foreign-key-refs" in a72, (
+        "A72 lost the v1.3.7 generic FK refs (A51Ref stale-ref check)"
+    )
+    # Disjoint column-set invariant: the two handlers MUST cover
+    # different columns. If a future edit moves A51Ref into the
+    # A72-specific handler OR adds Story/Claim/Source to the generic
+    # refs, the two will overlap and double-emit on every orphan.
+    refs_columns = {
+        fk["column"] for fk in a72["x-bsa-foreign-key-refs"]["foreign_keys"]
+    }
+    assert refs_columns == {"A51Ref"}, (
+        f"A72 generic refs must cover ONLY A51Ref to avoid overlap with "
+        f"the A72-specific handler; got columns {refs_columns}"
     )
 
 
@@ -479,6 +508,126 @@ def test_e2e_a59_non_blank_orphan_source_id_rejected(tmp_path: Path) -> None:
     assert ok is False, f"A59: orphan SourceID should fail; got ok={ok}"
     fk_msgs = [m for m in msgs if "x-bsa-foreign-key-refs" in m]
     assert any("S-999" in m for m in fk_msgs), f"FK msgs miss S-999: {msgs}"
+
+
+def test_e2e_a72_orphan_a51_ref_rejected(tmp_path: Path) -> None:
+    """v1.3.7 stale-A51Ref regression (output review #3.6).
+
+    Pre-v1.3.7 A72 carried only x-bsa-foreign-key-rules (the A72-
+    specific extension covering Story/Claim/Source) + x-bsa-deferral-
+    rules (which only checks A51Ref is non-blank when LinkType=
+    a51-routed). Neither extension verified that A51Ref actually
+    resolved in A51_issue_route_register.csv — a typo'd A51Ref like
+    'A51-999' (when the register only has rows up to A51-005) silently
+    propagated through downstream coverage reports.
+
+    v1.3.7 adds x-bsa-foreign-key-refs to A72 with a single entry:
+    A51Ref → A51_issue_route_register.csv. The two extensions cover
+    disjoint columns (Story/Claim/Source vs A51Ref) — no double-emit.
+    This test pins the regression by feeding an a51-routed A72 row
+    whose A51Ref does NOT resolve in A51 and asserting the dispatcher
+    rejects with a cite of A51-999."""
+    from governance.schemas.write_validator import validate_canonical_write
+    canon = _make_canon_workspace_with(tmp_path, {
+        "A50_source_register.csv": (
+            "SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,"
+            "Priority,Language,DateOrVersion,Notes\n"
+            "S-001,document,Foo,origin,readable,T2,high,en,2026-01-01,\n"
+        ),
+        "A58_evidence_excerpts.csv": (
+            "ExcerptID,SourceID,Locator,ExcerptText,Notes\n"
+            "E-001,S-001,loc,text,\n"
+        ),
+        "A59_claim_register.csv": (
+            "ClaimID,SourceID,ExcerptID,ClaimType,Statement,"
+            "JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes\n"
+            "C-001,S-001,E-001,direct,stmt,,,0.85,level-2,\n"
+        ),
+        "A70_story_register.csv": (
+            "StoryID,Title,Persona,StoryText,AcceptanceCriteria,"
+            "SourceClaimIDs,RelatedNFRIDs,Priority,EstimationHint,"
+            "INVESTStatus,A51Ref,Notes\n"
+            "STORY-001,Foo,P,stxt,ac,C-001,,,,,,\n"
+        ),
+        "A51_issue_route_register.csv": (
+            "A51Ref,IssueType,Severity,BlockingStatus,RaisedByStage,"
+            "RelatedSourceID,RelatedClaimID,NextAction,ResolutionStatus\n"
+            "A51-001,uncertainty,low,informational,stage1,S-001,C-001,"
+            "do something,open\n"
+        ),
+    })
+    bad = (
+        "TraceID,StoryID,ClaimID,SourceID,LinkType,LinkStrength,A51Ref,Notes\n"
+        # All resolvable except A51Ref (A51-999 NOT in the register).
+        "TR-001,STORY-001,C-001,S-001,a51-routed,low,A51-999,\n"
+    )
+    path = str(canon / "A72_traceability_matrix.csv")
+    ok, msgs = validate_canonical_write(path, bad)
+    assert ok is False, (
+        f"A72: orphan A51Ref should fail; got ok={ok}, msgs={msgs}"
+    )
+    fk_msgs = [m for m in msgs if "x-bsa-foreign-key-refs" in m]
+    assert fk_msgs, (
+        f"no FK-refs violation on A51-999 (the v1.3.7 fix didn't fire); "
+        f"all msgs: {msgs}"
+    )
+    assert any("A51-999" in m for m in fk_msgs), (
+        f"FK-refs msgs miss A51-999: {fk_msgs}"
+    )
+
+
+def test_e2e_a72_resolvable_a51_ref_passes_when_other_fks_pass(
+    tmp_path: Path,
+) -> None:
+    """Mirror of the orphan test: a fully resolvable A72 row (Story /
+    Claim / Source AND A51Ref all resolve) MUST pass through both
+    handlers without violation. Pins the no-double-emit invariant."""
+    from governance.schemas.write_validator import validate_canonical_write
+    canon = _make_canon_workspace_with(tmp_path, {
+        "A50_source_register.csv": (
+            "SourceID,SourceType,Title,Origin,AccessStatus,ReliabilityTier,"
+            "Priority,Language,DateOrVersion,Notes\n"
+            "S-001,document,Foo,origin,readable,T2,high,en,2026-01-01,\n"
+        ),
+        "A58_evidence_excerpts.csv": (
+            "ExcerptID,SourceID,Locator,ExcerptText,Notes\n"
+            "E-001,S-001,loc,text,\n"
+        ),
+        "A59_claim_register.csv": (
+            "ClaimID,SourceID,ExcerptID,ClaimType,Statement,"
+            "JustificationRationale,A51Ref,ClaimStrength,Criticality,Notes\n"
+            "C-001,S-001,E-001,direct,stmt,,,0.85,level-2,\n"
+        ),
+        "A70_story_register.csv": (
+            "StoryID,Title,Persona,StoryText,AcceptanceCriteria,"
+            "SourceClaimIDs,RelatedNFRIDs,Priority,EstimationHint,"
+            "INVESTStatus,A51Ref,Notes\n"
+            "STORY-001,Foo,P,stxt,ac,C-001,,,,,,\n"
+        ),
+        "A51_issue_route_register.csv": (
+            "A51Ref,IssueType,Severity,BlockingStatus,RaisedByStage,"
+            "RelatedSourceID,RelatedClaimID,NextAction,ResolutionStatus\n"
+            "A51-001,uncertainty,low,informational,stage1,S-001,C-001,"
+            "do something,open\n"
+        ),
+    })
+    good = (
+        "TraceID,StoryID,ClaimID,SourceID,LinkType,LinkStrength,A51Ref,Notes\n"
+        "TR-001,STORY-001,C-001,S-001,a51-routed,low,A51-001,\n"
+    )
+    path = str(canon / "A72_traceability_matrix.csv")
+    ok, msgs = validate_canonical_write(path, good)
+    # v1.3.7 R1 Codex MINOR fix: assert ok is True up front so a
+    # non-FK validation failure surfaces here rather than passing
+    # silently with an empty fk_msgs subset.
+    assert ok is True, (
+        f"resolvable A72 row should pass canonical write outright; "
+        f"got ok={ok}, msgs={msgs}"
+    )
+    fk_msgs = [m for m in msgs if "x-bsa-foreign-key-refs" in m]
+    assert not fk_msgs, (
+        f"FK-refs handler must NOT flag a resolvable A51Ref; got: {fk_msgs}"
+    )
 
 
 # ---- v1.2.14 hotfix regressions ---------------------------------

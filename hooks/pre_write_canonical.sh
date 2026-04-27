@@ -118,9 +118,28 @@ fi
 TMPBASE="${TMPDIR:-/tmp}/bsa-f5-$$"
 trap 'rm -f "${TMPBASE}.path" "${TMPBASE}.content"' EXIT
 
-printf '%s' "${TOOL_INPUT_JSON}" | (cd "${PLUGIN_REPO}" && TMPBASE="${TMPBASE}" python3 -c '
+# Capture the original user-shell CWD BEFORE entering the Python
+# extraction block. Two consumers depend on it:
+#
+#   1. Edit-shape extraction (Python block below) needs it to resolve
+#      a workspace-relative file_path (e.g., "analysis/canonical/.../A48.md")
+#      back to an absolute path on disk before reading the existing file.
+#      v1.3.7 fix: pre-v1.3.7 the Python ran inside `cd "${PLUGIN_REPO}"`,
+#      so a relative file_path resolved against PLUGIN_REPO instead of
+#      the workspace, the file was not found, and the hook silently
+#      exited 0 — bypassing schema validation entirely for any caller
+#      that passed a relative path. Now BSA_USER_CWD is forwarded into
+#      the Python child env and used to anchor the path.
+#
+#   2. The validator invocation further down (BSA_WORKSPACE_CWD) — same
+#      reason: validator's _resolve_sibling_dir uses it for FK / NFR
+#      cross-artifact sibling lookups (Codex v1.1.3 round-1 finding).
+USER_CWD="$(pwd)"
+
+printf '%s' "${TOOL_INPUT_JSON}" | (cd "${PLUGIN_REPO}" && TMPBASE="${TMPBASE}" BSA_USER_CWD="${USER_CWD}" python3 -c '
 import json, os, sys
 tmpbase = os.environ["TMPBASE"]
+user_cwd = os.environ.get("BSA_USER_CWD", "")
 try:
     payload = json.loads(sys.stdin.read())
 except json.JSONDecodeError:
@@ -144,6 +163,12 @@ if "old_string" in ti and "new_string" in ti:
     from pathlib import Path
     from governance.schemas.write_validator import apply_edit, EditError
     target = Path(path)
+    # Anchor workspace-relative paths against the original user CWD,
+    # not against PLUGIN_REPO (we are running inside `cd PLUGIN_REPO`
+    # so a bare `Path(path).is_file()` would resolve against the wrong
+    # root and silently skip validation — the v1.3.7 P0 fix).
+    if not target.is_absolute() and user_cwd:
+        target = Path(user_cwd) / target
     if not target.is_file():
         sys.exit(0)
     existing = target.read_text(encoding="utf-8")
@@ -171,15 +196,6 @@ if [ ! -f "${TMPBASE}.path" ] || [ ! -f "${TMPBASE}.content" ]; then
 fi
 
 TARGET_PATH="$(cat "${TMPBASE}.path")"
-
-# Capture the original user-shell CWD before we cd into PLUGIN_REPO to
-# invoke the validator. The validator's _resolve_sibling_dir uses this
-# to anchor cross-artifact (FK / NFR-coverage) sibling lookups when
-# TARGET_PATH is a workspace-relative path. Without BSA_WORKSPACE_CWD
-# the validator would resolve relative paths against PLUGIN_REPO and
-# silently miss the user's real workspace — opening the FK/NFR rules
-# to bypass via relative-path writes (Codex v1.1.3 round-1 finding).
-USER_CWD="$(pwd)"
 
 # Pipe the post-image content into the validator. Validator reads
 # stdin as the proposed file content; on violation it prints

@@ -99,5 +99,18 @@
     "source_id_resolves_in": "A50_source_register.csv",
     "claim_source_consistency": true,
     "rationale": "Without this rule, the skill could emit phantom traces: TraceID rows pointing at StoryIDs that don't exist or at Claim/Source pairs that A59 disagrees with. The whole point of the matrix is mechanical traceability; an unverified join defeats it."
+  },
+  "x-bsa-foreign-key-refs": {
+    "_comment": "EXECUTABLE at the F5 hook layer as of v1.3.7 (closes the stale-A51Ref gap surfaced in the v1.3.6 output review). Parallel to A59 / A60 / A62 / A70 / A71 \u2014 every A51Ref column MUST resolve in A51_issue_route_register.csv. A72's older x-bsa-foreign-key-rules covers Story/Claim/Source resolution but not A51Ref; the deferral rule (x-bsa-deferral-rules above) only checks that A51Ref is non-blank when LinkType=a51-routed, NOT that the value points to an actual A51 row. Without this addition, an a51-routed trace can carry a non-blank but stale A51Ref (e.g., A51-007 typed when the register only has rows up to A51-005) and silently propagate through downstream coverage reports. Generic refs handler + multi=true matches the A51Ref column pattern (single-or-list with `;` / `/` delimiter).",
+    "applies_to_all_rows": true,
+    "foreign_keys": [
+      {
+        "column": "A51Ref",
+        "table": "A51_issue_route_register.csv",
+        "target_column": "A51Ref",
+        "multi": true,
+        "rationale": "When the trace row is a51-routed, A51Ref MUST resolve in A51_issue_route_register.csv. Blank A51Ref is allowed (the deferral-rules extension above gates the non-blank requirement when LinkType=a51-routed)."
+      }
+    ]
   }
 }
