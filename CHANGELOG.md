@@ -4,6 +4,44 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.2] — 2026-04-28
+
+**Feature: `bsa materials` json/tsv/graphql support + `--max-json-chars` CLI override.**
+
+Pre-v1.4.2 the v1.4.1 inventory pass against a 100-source engagement classified `.json` (5 files: voicescribe traces, explorer payloads, process-graph dumps), `.tsv` (1 file: process_steps_flat), and `.graphql` (1 file: API schema) as `unsupported`. v1.4.2 closes that gap by adding three classifications + extracting tsv/json into dedicated converters that share the v1.4.1 streaming + encoding-fallback infrastructure with csv.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3` (no POLICY_GLOBS edits — `scripts/*.py` isn't in canon-globs).
+
+### Added
+
+- **`_convert_json(path, max_chars=200_000)`** in `scripts/_bsa_cli_materials.py` — uses stdlib `json` only. Output shape: structure summary header (top-level type + key/item count + sample) followed by pretty-printed body in a ```json``` code fence. Truncation footer when body exceeds `max_chars`. Encoding fallback (UTF-8 → latin-1). Malformed JSON raises `ConversionFailed` (no graceful degradation — operator should fix the source before pipeline ingest).
+- **`_convert_tsv(path, max_rows=5000)`** — thin wrapper over the new shared `_convert_delimited_table` helper with `delimiter='\\t'`. Same markdown table rendering + truncation + encoding-fallback contract as csv.
+- **`_convert_delimited_table(path, *, max_rows, delimiter, label)`** — extracted shared streaming reader. The csv/tsv extractors are now thin one-line wrappers selecting delimiter + label.
+- **`.graphql`** classified as `text` kind (no dedicated converter). GraphQL SDL is human-readable + analyst-grep-friendly; passes through `_read_text` verbatim like `.md`/`.txt`.
+- **`--max-json-chars=<int>`** CLI flag on `bsa materials` (default 200_000 ≈ 200 KB pretty-printed body). Caps the json extractor's body length so a 50MB minified json doesn't expand to a 500MB md file.
+- **`_count_kinds`** updated: includes TSV + JSON labels in the per-kind preview header.
+- **15 new tests** in `tests/test_bsa_cli_materials_xlsx_csv.py`: extension-map (3 new), tsv happy/truncation-footer-says-tsv/streaming, json object-root/array-root/scalar-root/truncation/malformed/empty, CLI tsv-dry-run/json-commit/graphql-as-text/--max-json-chars.
+
+### Changed
+
+- **`_convert_csv`** is now a thin wrapper around `_convert_delimited_table(delimiter=',')` — behavior preserved (verified by existing tests + new test_convert_csv_happy_path).
+- **`_convert_one(p, max_rows_per_table, max_json_chars)`** dispatches tsv/json kinds.
+- **`cmd_materials`** threads `args.max_json_chars` → `_convert_one`. Uses `getattr` with default 200000 for back-compat.
+- **Subcommand help** lists all 9 supported extensions (was 7).
+
+### Tests
+
+Total suite: **2071 passed** (was 2057 in v1.4.1 — +14 net new for tsv/json/graphql coverage).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 1 MAJOR (`_convert_json` materialized FULL pretty-printed body via `_json.dumps()` BEFORE truncation; help text claimed `--max-json-chars` prevented expansion but it didn't) + 1 MINOR (array-of-scalars / array-of-arrays got count-only summaries, no first-item sample).
+  - MAJOR fixed: replaced `_json.dumps(...)` with `_json.JSONEncoder(indent=2, ensure_ascii=False).iterencode(doc)` streaming. Loop accumulates chunks until `total_len + chunk_len > max_chars`, takes a partial slice of the overflow chunk, breaks. Memory peak now bounded by `max_chars + one chunk`. Doc tree itself stays in RAM (no streaming PARSER in stdlib; ijson is heavy + out of scope).
+  - MINOR fixed: array branch now samples ANY non-empty array — dict items get key sample (existing), list items get inner length, scalar items get type + value preview.
+- **R2**: REQUEST CHANGES — both R1 fixes verified PASS, but +1 NEW MAJOR on the regression test itself: `test_convert_json_streams_does_not_materialize_full_body` (and the sibling `test_convert_csv_streams_does_not_load_full_file`) used `tracemalloc.take_snapshot()` AFTER the function returned, summing live allocations. A regression that allocated full body transiently then released it would slip through.
+  - Fixed: replaced both tests' `take_snapshot()` + sum-statistics pattern with `tracemalloc.get_traced_memory()` returning `(current, peak)` — peak captures transient allocations regardless of liveness at measurement time.
+- **R3**: APPROVE — peak-measurement fix verified in both tests. Spot-checks confirm a regression to full-buffer (csv) or full-dumps (json) would now correctly fail the assertions.
+
 ## [v1.4.1] — 2026-04-28
 
 **Feature: `bsa materials` xlsx/csv support + `--max-mb` CLI override.**

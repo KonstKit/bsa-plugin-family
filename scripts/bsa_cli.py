@@ -1073,18 +1073,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_mat = subparsers.add_parser(
         "materials",
         help=(
-            "Stage external PDF/DOCX/MD/TXT/XLSX/CSV files into "
-            "analysis/proposals/stage1/inputs/ + draft source_manifest.csv. "
-            "Default is dry-run; pass --commit to write."
+            "Stage external PDF/DOCX/MD/TXT/XLSX/CSV/TSV/JSON/GraphQL "
+            "files into analysis/proposals/stage1/inputs/ + draft "
+            "source_manifest.csv. Default is dry-run; pass --commit to write."
         ),
     )
     p_mat.add_argument(
         "src_dir",
         help=(
             "Directory containing source files to stage. Supported "
-            "extensions (v1.4.1): .pdf, .docx, .md/.markdown, .txt, "
-            ".xlsx, .csv. Anything else is reported as 'unsupported' "
-            "and skipped."
+            "extensions (v1.4.2): .pdf, .docx, .md/.markdown, .txt, "
+            ".xlsx, .csv, .tsv, .json, .graphql. Anything else is "
+            "reported as 'unsupported' and skipped."
         ),
     )
     p_mat.add_argument(
@@ -1119,9 +1119,22 @@ def main(argv: Optional[list[str]] = None) -> int:
         type=int,
         default=5000,
         help=(
-            "v1.4.1: row cap for tabular extractors (xlsx + csv). "
-            "Sheets / files exceeding this are truncated to the first "
-            "N rows with a clear footer note. Default: 5000."
+            "v1.4.1+: row cap for tabular extractors (xlsx + csv + tsv "
+            "as of v1.4.2). Sheets / files exceeding this are truncated "
+            "to the first N rows with a clear footer note. Default: 5000."
+        ),
+    )
+    p_mat.add_argument(
+        "--max-json-chars",
+        type=int,
+        default=200_000,
+        help=(
+            "v1.4.2: char cap for the json extractor's pretty-printed "
+            "body. Files whose pretty-printed body exceeds this are "
+            "truncated with a clear footer note. Default: 200000 chars "
+            "(~200 KB body — enough for typical voicescribe traces / "
+            "explorer payloads, small enough to keep a 50MB minified "
+            "json from expanding to a 500MB md file)."
         ),
     )
     p_mat.set_defaults(func=cmd_materials)

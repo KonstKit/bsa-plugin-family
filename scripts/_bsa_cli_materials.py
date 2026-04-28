@@ -54,6 +54,15 @@ from typing import Optional
 # v1.4.1 adds xlsx + csv (closes the call-data staging gap — call
 # data tables are typically xlsx/csv, and pre-v1.4.1 they were
 # silently classified as `unsupported`).
+# v1.4.2 adds json + tsv + graphql:
+#   - json: structured data dumps (e.g., voicescribe traces, explorer
+#     payloads). Pretty-printed in a code fence with a structure
+#     summary header so analysts can grep claims without parsing.
+#   - tsv: tab-separated tables (process_steps_flat etc.). Reuses the
+#     csv extractor with a tab delimiter — same streaming + truncation
+#     + encoding-fallback semantics.
+#   - graphql: SDL text; classified as `text` because the syntax is
+#     human-readable and analyst-grep-friendly without conversion.
 _EXT_TO_KIND: dict[str, str] = {
     ".pdf": "pdf",
     ".docx": "docx",
@@ -62,6 +71,9 @@ _EXT_TO_KIND: dict[str, str] = {
     ".txt": "text",
     ".xlsx": "xlsx",
     ".csv": "csv",
+    ".json": "json",
+    ".tsv": "tsv",
+    ".graphql": "text",
 }
 
 # Per-file safety caps. The user is pointing this at arbitrary
@@ -326,22 +338,49 @@ def _convert_xlsx(path: Path, max_rows_per_table: int = _DEFAULT_MAX_ROWS_PER_TA
 def _convert_csv(path: Path, max_rows: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str:
     """Extract a CSV as a single markdown table — STREAMING.
 
-    v1.4.1 (closes the call-data staging gap). First row is the
-    header; subsequent rows are data. Encoding tolerated via UTF-8
-    → latin-1 fallback. Truncation footer when row count exceeds
-    `max_rows`.
+    v1.4.1 (closes the call-data staging gap). Delimiter `,`. See
+    `_convert_delimited_table` for the shared streaming + encoding-
+    fallback + truncation implementation."""
+    return _convert_delimited_table(path, max_rows=max_rows, delimiter=",", label="csv")
+
+
+def _convert_tsv(path: Path, max_rows: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str:
+    """Extract a TSV (tab-separated values) as a single markdown table.
+
+    v1.4.2 (closes the call-data tsv gap — `process_steps_flat.tsv`
+    etc.). Same streaming + encoding-fallback + truncation semantics
+    as `_convert_csv`; only the delimiter differs (`\\t` vs `,`)."""
+    return _convert_delimited_table(path, max_rows=max_rows, delimiter="\t", label="tsv")
+
+
+def _convert_delimited_table(
+    path: Path,
+    *,
+    max_rows: int,
+    delimiter: str,
+    label: str,
+) -> str:
+    """Shared streaming reader for csv (delimiter=`,`) and tsv
+    (delimiter=`\\t`).
 
     v1.4.1 R1 fix: STREAMING. Initial v1.4.1 implementation used
     `path.read_text()` + `list(reader)` which materialized the
     entire file in RAM before applying `max_rows`. A 30MB call-data
-    CSV would then expand to 100-200MB Python objects (string
+    table would then expand to 100-200MB Python objects (string
     overhead) and stall the staging step. Post-fix: open the file
     handle, iterate rows lazily, keep only the header + first
     `max_rows` data rows in memory, count the rest without
     storing. Truncation footer reports the EXACT total row count.
 
+    v1.4.1 R2 fix: encoding fallback is a streaming try/retry over
+    `("utf-8", "latin-1")`. UTF-8 attempt fails fast on any invalid
+    byte mid-stream; on failure, accumulators (header, rows_kept,
+    total_data_rows) are reset and retry runs with latin-1 (which
+    maps every byte 0-255 and cannot raise UnicodeDecodeError).
+
     Stdlib `csv` only (no pandas dep). Honors RFC4180 quoting.
-    """
+    `label` controls the label that appears in error messages /
+    truncation footer (e.g., "csv" vs "tsv")."""
     import csv as _csv
 
     # Encoding fallback: try UTF-8 first, fall back to latin-1 on
@@ -368,7 +407,7 @@ def _convert_csv(path: Path, max_rows: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str
         total_data_rows = 0
         try:
             with path.open(encoding=encoding, newline="") as fh:
-                reader = _csv.reader(fh)
+                reader = _csv.reader(fh, delimiter=delimiter)
                 for i, raw_row in enumerate(reader):
                     row = [
                         ("" if c is None else str(c).strip())
@@ -390,7 +429,7 @@ def _convert_csv(path: Path, max_rows: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str
                 # corrupted at the OS level (read returned data
                 # that wasn't a byte stream — extremely unusual).
                 raise ConversionFailed(
-                    f"csv encoding fallback exhausted for {path.name}: "
+                    f"{label} encoding fallback exhausted for {path.name}: "
                     f"both UTF-8 and latin-1 raised UnicodeDecodeError "
                     f"(possible filesystem-level corruption)"
                 )
@@ -398,15 +437,15 @@ def _convert_csv(path: Path, max_rows: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str
             continue
         except _csv.Error as exc:
             raise ConversionFailed(
-                f"csv parse failed on {path.name}: {exc}"
+                f"{label} parse failed on {path.name}: {exc}"
             ) from exc
         except OSError as exc:
             raise ConversionFailed(
-                f"csv read failed on {path.name}: {exc}"
+                f"{label} read failed on {path.name}: {exc}"
             ) from exc
 
     if header is None:
-        return "_[csv was empty]_\n"
+        return f"_[{label} was empty]_\n"
 
     # Normalize column count against header (defensive against
     # ragged rows). Only the rows we KEPT need normalization.
@@ -432,6 +471,156 @@ def _convert_csv(path: Path, max_rows: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str
             f"\n_[truncated: showing first {max_rows} data row(s) of "
             f"{total_data_rows} total; raise `--max-rows-per-table` or "
             f"sample externally to see more]_\n"
+        )
+    return "\n".join(parts).strip() + "\n"
+
+
+def _convert_json(path: Path, max_chars: int = 200_000) -> str:
+    """Extract a JSON file as a structure summary + pretty-printed body.
+
+    v1.4.2 (closes the json gap — voicescribe traces, explorer
+    payloads, process-graph dumps). Output shape:
+
+        ## Structure summary
+        - top-level type: object
+        - top-level keys (count: N): key1, key2, key3, ...
+        OR
+        - top-level type: array
+        - top-level items (count: N)
+
+        ```json
+        { ...pretty-printed with indent=2... }
+        ```
+
+    The structure summary helps an analyst grep for relevant top-
+    level keys before diving into the full body. The body is wrapped
+    in a ```json``` code fence so markdown renderers display it as
+    literal JSON without trying to interpret special chars.
+
+    Truncation: if the pretty-printed body exceeds `max_chars`, the
+    body is cut off at that boundary with a `[truncated]` footer
+    note pointing at `--max-json-chars` as the operator's lever.
+    Default cap = 200_000 chars (~200 KB pretty-printed body) —
+    enough for typical voicescribe traces / explorer payloads;
+    big enough that operators won't hit it by accident, small enough
+    that a 50MB minified json doesn't expand to a 500MB md file.
+
+    Stdlib `json` only. Honors UTF-8 by default; on UnicodeDecodeError
+    falls back to latin-1 (matches csv/tsv contract). On JSON parse
+    failure, raises ConversionFailed (not a "graceful degradation"
+    case — a malformed json file SHOULD surface as a failed staging
+    so the operator fixes it before the pipeline ingests garbage).
+    """
+    import json as _json
+
+    encoding_used = "utf-8"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        text = path.read_text(encoding="latin-1")
+        encoding_used = "latin-1"
+    except OSError as exc:
+        raise ConversionFailed(f"json read failed on {path.name}: {exc}") from exc
+
+    if not text.strip():
+        return "_[json was empty]_\n"
+
+    try:
+        doc = _json.loads(text)
+    except _json.JSONDecodeError as exc:
+        raise ConversionFailed(
+            f"json parse failed on {path.name}: {exc}"
+        ) from exc
+
+    # Structure summary — operator-grep hint before the body.
+    summary_lines: list[str] = ["## Structure summary", ""]
+    if isinstance(doc, dict):
+        keys = list(doc.keys())
+        summary_lines.append(f"- top-level type: object")
+        # Cap displayed key list at 50 to keep the summary readable;
+        # the count tells the analyst there's more if any.
+        shown = keys[:50]
+        suffix = f" (showing first 50 of {len(keys)})" if len(keys) > 50 else ""
+        summary_lines.append(
+            f"- top-level keys (count: {len(keys)}){suffix}: "
+            + ", ".join(repr(k) for k in shown)
+        )
+    elif isinstance(doc, list):
+        summary_lines.append(f"- top-level type: array")
+        summary_lines.append(f"- top-level items (count: {len(doc)})")
+        # Sample the first item — shape depends on its type.
+        # v1.4.2 R1 fix (Codex MINOR): pre-fix only emitted a sample
+        # when the first item was a dict; arrays of scalars (e.g.
+        # `[1, 2, 3]` event timestamps) and arrays of arrays (e.g.
+        # `[[a, b], [c, d]]` adjacency-matrix style) got count-only
+        # summaries. Operator grepping for "what's in this array"
+        # had to scroll into the body. Now sample EVERY non-empty
+        # array: dict → first 20 keys, list → length, scalar →
+        # type + value preview.
+        if doc:
+            first = doc[0]
+            if isinstance(first, dict):
+                sample_keys = list(first.keys())[:20]
+                summary_lines.append(
+                    f"- first-item keys (sample): "
+                    + ", ".join(repr(k) for k in sample_keys)
+                )
+            elif isinstance(first, list):
+                summary_lines.append(
+                    f"- first-item type: array (length: {len(first)})"
+                )
+            else:
+                summary_lines.append(
+                    f"- first-item type: {type(first).__name__}, "
+                    f"value preview: {repr(first)[:100]}"
+                )
+    else:
+        # Scalar (string, number, bool, null) at the root.
+        summary_lines.append(f"- top-level type: {type(doc).__name__}")
+        summary_lines.append(f"- value preview: {repr(doc)[:200]}")
+
+    summary = "\n".join(summary_lines) + "\n"
+
+    # Pretty-printed body wrapped in a ```json``` fence — STREAMING.
+    # v1.4.2 R1 fix (Codex MAJOR): pre-fix `_json.dumps(...)` built
+    # the FULL pretty-printed string in memory (e.g., a 50 MB minified
+    # json → ~200 MB Python string overhead) BEFORE the truncation
+    # check fired. The advertised --max-json-chars safety guarantee
+    # was false: it bounded the OUTPUT but not the peak ALLOCATION.
+    # Post-fix: iterencode chunks lazily, accumulate until max_chars
+    # is reached, stop. Memory peak now bounded by max_chars + one
+    # chunk's size (typically a few KB). The encoder still walks the
+    # full doc tree, but doesn't allocate the rendered string for
+    # the parts past the cap.
+    encoder = _json.JSONEncoder(indent=2, ensure_ascii=False)
+    body_chunks: list[str] = []
+    total_len = 0
+    truncated = False
+    for chunk in encoder.iterencode(doc):
+        chunk_len = len(chunk)
+        if total_len + chunk_len > max_chars:
+            # Partial chunk: take just enough to hit the cap exactly.
+            remaining = max_chars - total_len
+            if remaining > 0:
+                body_chunks.append(chunk[:remaining])
+            truncated = True
+            break
+        body_chunks.append(chunk)
+        total_len += chunk_len
+    body = "".join(body_chunks)
+    fenced = "```json\n" + body + "\n```\n"
+
+    parts = [summary, fenced]
+    if encoding_used != "utf-8":
+        parts.append(
+            f"\n_[note: read with {encoding_used} fallback — original "
+            f"file is not valid UTF-8]_\n"
+        )
+    if truncated:
+        parts.append(
+            f"\n_[truncated: showing first {max_chars} chars of the "
+            f"pretty-printed body; raise `--max-json-chars` or sample "
+            f"externally to see more]_\n"
         )
     return "\n".join(parts).strip() + "\n"
 
@@ -1064,6 +1253,7 @@ def cmd_materials(args: argparse.Namespace) -> int:
     # 4. Commit phase: convert + write each file. Track failures.
     # v1.4.1: thread --max-rows-per-table into the tabular extractors.
     max_rows_per_table = int(getattr(args, "max_rows_per_table", 5000))
+    max_json_chars = int(getattr(args, "max_json_chars", 200_000))
     inputs_dir.mkdir(parents=True, exist_ok=True)
     written: list[SourcePlan] = []
     failed: list[tuple[SourcePlan, str]] = []
@@ -1072,7 +1262,11 @@ def cmd_materials(args: argparse.Namespace) -> int:
         if p.skipped_reason is not None:
             continue
         try:
-            content = _convert_one(p, max_rows_per_table=max_rows_per_table)
+            content = _convert_one(
+                p,
+                max_rows_per_table=max_rows_per_table,
+                max_json_chars=max_json_chars,
+            )
         except ConversionUnavailable as exc:
             unavailable_seen.add(p.kind)
             failed.append((p, f"unavailable: {exc}"))
@@ -1183,12 +1377,20 @@ def cmd_materials(args: argparse.Namespace) -> int:
     return 0
 
 
-def _convert_one(p: SourcePlan, max_rows_per_table: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str:
+def _convert_one(
+    p: SourcePlan,
+    max_rows_per_table: int = _DEFAULT_MAX_ROWS_PER_TABLE,
+    max_json_chars: int = 200_000,
+) -> str:
     """Dispatch by kind. Pure helper for cmd_materials.
 
-    v1.4.1 adds xlsx + csv routing. The `max_rows_per_table` arg
-    propagates the operator's `--max-rows-per-table` CLI choice into
-    the tabular extractors; non-tabular kinds ignore it."""
+    v1.4.1 adds xlsx + csv routing.
+    v1.4.2 adds tsv + json routing (graphql goes through `text`).
+
+    `max_rows_per_table` propagates the operator's --max-rows-per-table
+    choice into tabular extractors (xlsx, csv, tsv).
+    `max_json_chars` propagates --max-json-chars into the json
+    pretty-printer body cap. Non-applicable kinds ignore the flags."""
     if p.kind == "pdf":
         return _convert_pdf(p.src)
     if p.kind == "docx":
@@ -1199,12 +1401,17 @@ def _convert_one(p: SourcePlan, max_rows_per_table: int = _DEFAULT_MAX_ROWS_PER_
         return _convert_xlsx(p.src, max_rows_per_table=max_rows_per_table)
     if p.kind == "csv":
         return _convert_csv(p.src, max_rows=max_rows_per_table)
+    if p.kind == "tsv":
+        return _convert_tsv(p.src, max_rows=max_rows_per_table)
+    if p.kind == "json":
+        return _convert_json(p.src, max_chars=max_json_chars)
     raise ConversionFailed(f"unknown kind {p.kind!r} for {p.src.name}")
 
 
 def _count_kinds(plans: list[SourcePlan]) -> str:
-    """Render 'PDF: 3, DOCX: 1, TXT/MD: 2, XLSX: 4, CSV: 7' for the
-    preview header (v1.4.1: xlsx + csv added)."""
+    """Render 'PDF: 3, DOCX: 1, TXT/MD: 2, XLSX: 4, CSV: 7, TSV: 1, JSON: 5'
+    for the preview header (v1.4.1: xlsx + csv added; v1.4.2: tsv +
+    json added; graphql falls under TXT/MD via the text kind)."""
     counts: dict[str, int] = {}
     for p in plans:
         if p.skipped_reason is not None:
@@ -1217,6 +1424,7 @@ def _count_kinds(plans: list[SourcePlan]) -> str:
         for k, label in (
             ("pdf", "PDF"), ("docx", "DOCX"), ("text", "TXT/MD"),
             ("xlsx", "XLSX"), ("csv", "CSV"),
+            ("tsv", "TSV"), ("json", "JSON"),
         )
         if k in counts
     )
