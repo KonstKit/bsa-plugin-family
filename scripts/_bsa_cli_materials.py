@@ -38,6 +38,7 @@ Dependencies:
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import re
 import shutil
@@ -50,19 +51,35 @@ from typing import Optional
 # Extension classification — lower-case ext (with dot) → kind. `kind`
 # decides which converter we route to. Kept narrow on purpose; new
 # formats are an explicit follow-up, not a silent best-effort.
+# v1.4.1 adds xlsx + csv (closes the call-data staging gap — call
+# data tables are typically xlsx/csv, and pre-v1.4.1 they were
+# silently classified as `unsupported`).
 _EXT_TO_KIND: dict[str, str] = {
     ".pdf": "pdf",
     ".docx": "docx",
     ".md": "text",
     ".markdown": "text",
     ".txt": "text",
+    ".xlsx": "xlsx",
+    ".csv": "csv",
 }
 
 # Per-file safety caps. The user is pointing this at arbitrary
 # external content — we want to catch mistakes (a 200 MB scanned PDF,
 # a directory of binary blobs) before they consume tens of seconds
-# of subprocess time. Tunable via flags.
+# of subprocess time. v1.4.1 makes the cap CLI-overridable via
+# `--max-mb=<N>` so an operator with a known-good 50MB call-data
+# table can stage it explicitly without editing the source.
 _DEFAULT_MAX_FILE_BYTES = 25 * 1024 * 1024  # 25 MB
+
+# v1.4.1: row caps for tabular extractors. Without a cap, a 1M-row
+# CSV would expand to a 100MB markdown file — eats LLM context with
+# no analytical value. The cap is high enough that real interview
+# transcripts + scope spreadsheets land in full, low enough that a
+# raw call-event log gets truncated with a clear "[truncated]" note
+# the operator can act on (sample the file, summarize externally,
+# or raise the cap). Tunable via `--max-rows-per-table=<N>`.
+_DEFAULT_MAX_ROWS_PER_TABLE = 5000
 
 
 class ConversionUnavailable(RuntimeError):
@@ -232,13 +249,249 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="latin-1")
 
 
+def _convert_xlsx(path: Path, max_rows_per_table: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str:
+    """Extract every sheet from an XLSX as a markdown table.
+
+    v1.4.1 (closes the call-data staging gap). One H2 per sheet; rows
+    rendered as pipe-delimited markdown with the first row treated as
+    the header. Empty cells become `—` so the column count stays
+    aligned. When a sheet exceeds `max_rows_per_table`, the tail is
+    dropped with a `[truncated: N rows shown of M total]` footer so
+    the operator knows to either raise the cap or sample the source.
+
+    Same error contract as `_convert_pdf` / `_convert_docx`:
+    `ConversionUnavailable` if openpyxl is not installed,
+    `ConversionFailed` for per-file errors (corrupt workbook, etc.).
+
+    Skips:
+      * Hidden sheets (`sheet_state in {hidden, veryHidden}`) —
+        spreadsheet authors typically use these for staging /
+        scratch and the content rarely belongs in the analytical
+        record. Visible flag carries provenance intent.
+      * Empty rows at the END of a sheet (openpyxl reports the
+        full max_row even when most rows are blank — typical
+        artifact of "I clicked row 1000 once" workbooks).
+    """
+    try:
+        from openpyxl import load_workbook  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise ConversionUnavailable(
+            "openpyxl not installed. Install with `pip install openpyxl` "
+            "to convert XLSX (or convert externally to CSV / MD)."
+        ) from exc
+    try:
+        wb = load_workbook(str(path), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ConversionFailed(f"openpyxl failed on {path.name}: {exc}") from exc
+    parts: list[str] = []
+    try:
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            if getattr(ws, "sheet_state", "visible") != "visible":
+                continue  # skip hidden / veryHidden
+            # Materialize rows to find the real last-non-empty row.
+            rows: list[list[str]] = []
+            for raw_row in ws.iter_rows(values_only=True):
+                row = [
+                    "" if cell is None else str(cell).strip()
+                    for cell in raw_row
+                ]
+                rows.append(row)
+            # Trim trailing all-blank rows.
+            while rows and all(not c for c in rows[-1]):
+                rows.pop()
+            if not rows:
+                continue  # empty sheet — skip
+            total_rows = len(rows)
+            truncated = False
+            if total_rows > max_rows_per_table:
+                rows = rows[:max_rows_per_table]
+                truncated = True
+            parts.append(f"## Sheet: {sheet_name}\n")
+            parts.append(_render_markdown_table(rows))
+            if truncated:
+                parts.append(
+                    f"\n_[truncated: showing first {max_rows_per_table} "
+                    f"row(s) of {total_rows} total; raise "
+                    f"`--max-rows-per-table` or sample externally to see more]_\n"
+                )
+            parts.append("")
+    finally:
+        wb.close()
+    if not parts:
+        return "_[xlsx had no visible sheets with content]_\n"
+    return "\n".join(parts).strip() + "\n"
+
+
+def _convert_csv(path: Path, max_rows: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str:
+    """Extract a CSV as a single markdown table — STREAMING.
+
+    v1.4.1 (closes the call-data staging gap). First row is the
+    header; subsequent rows are data. Encoding tolerated via UTF-8
+    → latin-1 fallback. Truncation footer when row count exceeds
+    `max_rows`.
+
+    v1.4.1 R1 fix: STREAMING. Initial v1.4.1 implementation used
+    `path.read_text()` + `list(reader)` which materialized the
+    entire file in RAM before applying `max_rows`. A 30MB call-data
+    CSV would then expand to 100-200MB Python objects (string
+    overhead) and stall the staging step. Post-fix: open the file
+    handle, iterate rows lazily, keep only the header + first
+    `max_rows` data rows in memory, count the rest without
+    storing. Truncation footer reports the EXACT total row count.
+
+    Stdlib `csv` only (no pandas dep). Honors RFC4180 quoting.
+    """
+    import csv as _csv
+
+    # Encoding fallback: try UTF-8 first, fall back to latin-1 on
+    # UnicodeDecodeError ANYWHERE in the stream. v1.4.1 R2 fix
+    # (Codex MAJOR): the previous implementation probed only the
+    # first 4 KB and chose encoding from that probe; CSVs whose
+    # first invalid UTF-8 byte appeared after byte 4096 then
+    # crashed with UnicodeDecodeError mid-iteration — no fallback
+    # because the probe had already passed. Post-fix: streaming
+    # try/retry pattern. UTF-8 attempt fails fast on invalid byte
+    # (mid-stream); on failure we restart the iteration with
+    # latin-1 (which maps every byte 0-255, so it cannot raise
+    # UnicodeDecodeError). The retry costs one extra full file
+    # read in the rare invalid-UTF-8 case; the common UTF-8 case
+    # pays no extra cost.
+    header: list[str] | None = None
+    rows_kept: list[list[str]] = []
+    total_data_rows = 0
+    encoding_used = "utf-8"
+    for encoding in ("utf-8", "latin-1"):
+        # Reset accumulators on retry.
+        header = None
+        rows_kept = []
+        total_data_rows = 0
+        try:
+            with path.open(encoding=encoding, newline="") as fh:
+                reader = _csv.reader(fh)
+                for i, raw_row in enumerate(reader):
+                    row = [
+                        ("" if c is None else str(c).strip())
+                        for c in raw_row
+                    ]
+                    if i == 0:
+                        header = row
+                        continue
+                    total_data_rows += 1
+                    if len(rows_kept) < max_rows:
+                        rows_kept.append(row)
+                    # else: continue counting but don't store (RAM cap).
+            encoding_used = encoding
+            break  # made it through without UnicodeDecodeError
+        except UnicodeDecodeError:
+            if encoding == "latin-1":
+                # Latin-1 maps every byte; this branch should be
+                # unreachable. If we hit it, the file is genuinely
+                # corrupted at the OS level (read returned data
+                # that wasn't a byte stream — extremely unusual).
+                raise ConversionFailed(
+                    f"csv encoding fallback exhausted for {path.name}: "
+                    f"both UTF-8 and latin-1 raised UnicodeDecodeError "
+                    f"(possible filesystem-level corruption)"
+                )
+            # else: try latin-1 next iteration
+            continue
+        except _csv.Error as exc:
+            raise ConversionFailed(
+                f"csv parse failed on {path.name}: {exc}"
+            ) from exc
+        except OSError as exc:
+            raise ConversionFailed(
+                f"csv read failed on {path.name}: {exc}"
+            ) from exc
+
+    if header is None:
+        return "_[csv was empty]_\n"
+
+    # Normalize column count against header (defensive against
+    # ragged rows). Only the rows we KEPT need normalization.
+    header_len = len(header)
+    normalized: list[list[str]] = [header]
+    for row in rows_kept:
+        if len(row) < header_len:
+            row = row + [""] * (header_len - len(row))
+        # else: keep ragged extras; markdown render aligns off but
+        # operator sees the data.
+        normalized.append(row)
+
+    body = _render_markdown_table(normalized)
+    parts = [body]
+    if encoding_used != "utf-8":
+        parts.append(
+            f"\n_[note: read with {encoding_used} fallback — original "
+            f"file is not valid UTF-8]_\n"
+        )
+    truncated = total_data_rows > max_rows
+    if truncated:
+        parts.append(
+            f"\n_[truncated: showing first {max_rows} data row(s) of "
+            f"{total_data_rows} total; raise `--max-rows-per-table` or "
+            f"sample externally to see more]_\n"
+        )
+    return "\n".join(parts).strip() + "\n"
+
+
+def _render_markdown_table(rows: list[list[str]]) -> str:
+    """Render a list-of-rows (first row is header) as a pipe-delimited
+    markdown table. Empty cells become `—` for visual alignment;
+    pipe characters in cells are escaped to `\\|` so they don't break
+    the table parser. Newlines collapsed to `<br>` (markdown tables
+    can't span multiple lines).
+
+    v1.4.1 R1 fix (Codex MINOR): preserve cells that contain LITERAL
+    `<br>` text. Naive `.replace("\\n", "<br>")` would make literal
+    source `<br>` indistinguishable from injected line-break tags
+    after staging — fidelity loss against the operator's intent.
+    Pre-escape `<` and `>` to `&lt;` / `&gt;` BEFORE the newline
+    collapse so source angle-brackets become entity-encoded text
+    (still readable; preserved literally) and our injected `<br>`
+    stays the only literal `<br>` in the output.
+
+    Preserves original column count even on ragged rows by padding /
+    letting overflow.
+    """
+    if not rows:
+        return ""
+
+    def _escape_cell(c: str) -> str:
+        # Order matters: escape angle-brackets BEFORE injecting <br>,
+        # otherwise the injected <br> would itself get escaped.
+        out = (
+            c.replace("|", "\\|")
+             .replace("<", "&lt;")
+             .replace(">", "&gt;")
+             .replace("\n", "<br>")
+        )
+        return out if out else "—"
+
+    header = rows[0]
+    width = len(header)
+    out: list[str] = []
+    out.append("| " + " | ".join(_escape_cell(c) for c in header) + " |")
+    out.append("|" + "|".join(["---"] * width) + "|")
+    for row in rows[1:]:
+        # Truncate or pad to match header width.
+        if len(row) < width:
+            row = row + [""] * (width - len(row))
+        elif len(row) > width:
+            row = row[:width]
+        out.append("| " + " | ".join(_escape_cell(c) for c in row) + " |")
+    return "\n".join(out)
+
+
 def _classify(path: Path) -> Optional[str]:
     """Return kind ('pdf' | 'docx' | 'text') or None if unsupported."""
     return _EXT_TO_KIND.get(path.suffix.lower())
 
 
 def _scan_source_dir(
-    src_dir: Path, recursive: bool
+    src_dir: Path, recursive: bool,
+    max_file_bytes: int = _DEFAULT_MAX_FILE_BYTES,
 ) -> tuple[list[Path], list[Path], list[Path]]:
     """Walk src_dir; return (supported, skipped_unsupported, skipped_too_big).
 
@@ -249,6 +502,10 @@ def _scan_source_dir(
     escape the requested src tree). Symlinked FILES are honored
     because users legitimately drop `ln -s ~/Drive/foo.pdf src/`
     when staging from a synced cloud folder.
+
+    v1.4.1: `max_file_bytes` is now a CLI-overridable parameter
+    (was a hard `_DEFAULT_MAX_FILE_BYTES` constant). Caller threads
+    `args.max_mb * 1024 * 1024` from `cmd_materials`.
     """
     supported: list[Path] = []
     unsupported: list[Path] = []
@@ -268,7 +525,7 @@ def _scan_source_dir(
                 size = entry.stat().st_size
             except OSError:
                 continue
-            if size > _DEFAULT_MAX_FILE_BYTES:
+            if size > max_file_bytes:
                 too_big.append(entry)
                 continue
             kind = _classify(entry)
@@ -672,9 +929,13 @@ def cmd_materials(args: argparse.Namespace) -> int:
         sys.stderr.write(f"[bsa materials] {contain_error}\n")
         return 2
 
-    # 1. Walk source dir.
+    # 1. Walk source dir. v1.4.1: --max-mb CLI override; defaults to
+    # 25.0 MB when arg is absent (back-compat with pre-v1.4.1 callers).
+    max_mb = float(getattr(args, "max_mb", 25.0))
+    max_file_bytes = int(max_mb * 1024 * 1024)
     supported, unsupported, too_big = _scan_source_dir(
-        src_dir, recursive=bool(args.recursive)
+        src_dir, recursive=bool(args.recursive),
+        max_file_bytes=max_file_bytes,
     )
     if not supported and not unsupported and not too_big:
         sys.stderr.write(
@@ -717,7 +978,10 @@ def cmd_materials(args: argparse.Namespace) -> int:
             print(f"  ... and {len(unsupported) - 10} more")
     if too_big:
         print()
-        print(f"Too large (> {_bytes_human(_DEFAULT_MAX_FILE_BYTES)}; not staged):")
+        print(
+            f"Too large (> {_bytes_human(max_file_bytes)}; not staged — "
+            f"raise --max-mb to include):"
+        )
         for f in too_big:
             print(f"  - {f.name}  ({_bytes_human(f.stat().st_size)})")
 
@@ -798,6 +1062,8 @@ def cmd_materials(args: argparse.Namespace) -> int:
             return 2
 
     # 4. Commit phase: convert + write each file. Track failures.
+    # v1.4.1: thread --max-rows-per-table into the tabular extractors.
+    max_rows_per_table = int(getattr(args, "max_rows_per_table", 5000))
     inputs_dir.mkdir(parents=True, exist_ok=True)
     written: list[SourcePlan] = []
     failed: list[tuple[SourcePlan, str]] = []
@@ -806,7 +1072,7 @@ def cmd_materials(args: argparse.Namespace) -> int:
         if p.skipped_reason is not None:
             continue
         try:
-            content = _convert_one(p)
+            content = _convert_one(p, max_rows_per_table=max_rows_per_table)
         except ConversionUnavailable as exc:
             unavailable_seen.add(p.kind)
             failed.append((p, f"unavailable: {exc}"))
@@ -917,19 +1183,28 @@ def cmd_materials(args: argparse.Namespace) -> int:
     return 0
 
 
-def _convert_one(p: SourcePlan) -> str:
-    """Dispatch by kind. Pure helper for cmd_materials."""
+def _convert_one(p: SourcePlan, max_rows_per_table: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str:
+    """Dispatch by kind. Pure helper for cmd_materials.
+
+    v1.4.1 adds xlsx + csv routing. The `max_rows_per_table` arg
+    propagates the operator's `--max-rows-per-table` CLI choice into
+    the tabular extractors; non-tabular kinds ignore it."""
     if p.kind == "pdf":
         return _convert_pdf(p.src)
     if p.kind == "docx":
         return _convert_docx(p.src)
     if p.kind == "text":
         return _read_text(p.src)
+    if p.kind == "xlsx":
+        return _convert_xlsx(p.src, max_rows_per_table=max_rows_per_table)
+    if p.kind == "csv":
+        return _convert_csv(p.src, max_rows=max_rows_per_table)
     raise ConversionFailed(f"unknown kind {p.kind!r} for {p.src.name}")
 
 
 def _count_kinds(plans: list[SourcePlan]) -> str:
-    """Render 'PDF: 3, DOCX: 1, TXT/MD: 2' for the preview header."""
+    """Render 'PDF: 3, DOCX: 1, TXT/MD: 2, XLSX: 4, CSV: 7' for the
+    preview header (v1.4.1: xlsx + csv added)."""
     counts: dict[str, int] = {}
     for p in plans:
         if p.skipped_reason is not None:
@@ -939,7 +1214,10 @@ def _count_kinds(plans: list[SourcePlan]) -> str:
         return "all skipped"
     return ", ".join(
         f"{label}: {counts[k]}"
-        for k, label in (("pdf", "PDF"), ("docx", "DOCX"), ("text", "TXT/MD"))
+        for k, label in (
+            ("pdf", "PDF"), ("docx", "DOCX"), ("text", "TXT/MD"),
+            ("xlsx", "XLSX"), ("csv", "CSV"),
+        )
         if k in counts
     )
 

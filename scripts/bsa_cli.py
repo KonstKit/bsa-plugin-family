@@ -1073,14 +1073,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_mat = subparsers.add_parser(
         "materials",
         help=(
-            "Stage external PDF/DOCX/MD/TXT files into "
+            "Stage external PDF/DOCX/MD/TXT/XLSX/CSV files into "
             "analysis/proposals/stage1/inputs/ + draft source_manifest.csv. "
             "Default is dry-run; pass --commit to write."
         ),
     )
     p_mat.add_argument(
         "src_dir",
-        help="Directory containing source files to stage (PDF/DOCX/MD/TXT).",
+        help=(
+            "Directory containing source files to stage. Supported "
+            "extensions (v1.4.1): .pdf, .docx, .md/.markdown, .txt, "
+            ".xlsx, .csv. Anything else is reported as 'unsupported' "
+            "and skipped."
+        ),
     )
     p_mat.add_argument(
         "--commit",
@@ -1096,6 +1101,28 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--recursive",
         action="store_true",
         help="Walk subdirectories of src_dir (default: top-level only).",
+    )
+    p_mat.add_argument(
+        "--max-mb",
+        type=float,
+        default=25.0,
+        help=(
+            "Per-file size cap in megabytes. Files above this are "
+            "reported as 'too-large' and NOT staged (safety against "
+            "accidentally pulling a 200MB scanned PDF or binary blob). "
+            "v1.4.1: tunable from CLI (was a hard 25MB constant). "
+            "Default: 25.0 MB."
+        ),
+    )
+    p_mat.add_argument(
+        "--max-rows-per-table",
+        type=int,
+        default=5000,
+        help=(
+            "v1.4.1: row cap for tabular extractors (xlsx + csv). "
+            "Sheets / files exceeding this are truncated to the first "
+            "N rows with a clear footer note. Default: 5000."
+        ),
     )
     p_mat.set_defaults(func=cmd_materials)
 

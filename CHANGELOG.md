@@ -4,6 +4,45 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.1] — 2026-04-28
+
+**Feature: `bsa materials` xlsx/csv support + `--max-mb` CLI override.**
+
+Pre-v1.4.1 `bsa materials` classified xlsx/csv files as `unsupported` and operators had to pre-convert call-data tables externally before staging. Per-file size cap was a hard 25 MB constant — operators with known-good 30+ MB call-data CSVs had no in-tool override. v1.4.1 closes both gaps as a single feature batch.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3` (no POLICY_GLOBS edits — `scripts/*.py` isn't in canon-globs).
+
+### Added
+
+- **`_convert_xlsx(path, max_rows_per_table=5000)`** in `scripts/_bsa_cli_materials.py` — uses `openpyxl` (lazy import; `ConversionUnavailable` if missing). Renders one H2 per visible sheet with the first row as the header. Hidden sheets (`sheet_state ∈ {hidden, veryHidden}`) skipped. Trailing all-blank rows trimmed. Sheets exceeding the row cap get a `[truncated: N of M]` footer.
+- **`_convert_csv(path, max_rows=5000)`** — stdlib `csv` only (no pandas). Header row + data rows as a single markdown table. UTF-8 → latin-1 encoding fallback (with footer note). Same truncation footer semantics as xlsx. Honors RFC4180 quoting.
+- **`_render_markdown_table(rows)`** — shared helper. Pipe characters in cells escaped to `\\|`; newlines collapsed to `<br>`; ragged rows padded/clipped to header width; empty cells rendered as `—` for alignment.
+- **`--max-mb=<float>`** CLI flag on `bsa materials` (default 25.0). Was a hard `_DEFAULT_MAX_FILE_BYTES = 25 * 1024 * 1024` constant. Override raises the per-file size cap so operators can stage known-good large files without editing source.
+- **`--max-rows-per-table=<int>`** CLI flag (default 5000). Caps the row count rendered by xlsx/csv extractors; truncation footer surfaces the cap value so the operator knows how to either raise it or sample externally.
+- **18 new tests** in `tests/test_bsa_cli_materials_xlsx_csv.py` covering: extension map, xlsx happy path, multi-sheet, hidden-sheet skip, truncation footer, openpyxl-missing-error, csv happy path, csv truncation, encoding fallback, RFC4180 quoting, empty file, table-render escaping/padding, CLI dry-run with xlsx, CLI commit with csv, `--max-mb` raises cap, `--max-rows-per-table` truncates.
+
+### Changed
+
+- **`_EXT_TO_KIND`** maps `.xlsx → xlsx` and `.csv → csv` (was: both classified as unsupported).
+- **`_count_kinds`** now includes XLSX + CSV in the per-kind preview header.
+- **`_convert_one(p, max_rows_per_table=5000)`** dispatches xlsx/csv to the new converters.
+- **`_scan_source_dir(src_dir, recursive, max_file_bytes=25MB)`** — `max_file_bytes` is now a parameter (was hard-coded constant).
+- **`cmd_materials`** — threads `args.max_mb` → `max_file_bytes` for scan, `args.max_rows_per_table` → tabular extractors. Uses `getattr` with defaults for back-compat with pre-v1.4.1 callers that don't set the attrs.
+- **Too-large preview line** — now reads `Too large (> X MB; not staged — raise --max-mb to include):` (was: just listed without the override hint).
+
+### Tests
+
+Total suite: **2053 passed** (was 2035 in v1.4.0 — +18 net new for xlsx/csv coverage).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 1 MAJOR (CSV reader materialized whole file in RAM via `read_text()` + `list(reader)`; 30MB CSV → 100-200MB Python objects before the row cap kicked in) + 1 MINOR (literal `<br>` text in source cells indistinguishable from injected line-break tags after `\n → <br>` collapse).
+  - MAJOR fixed: rewrote `_convert_csv` as a streaming reader; opens file handle, iterates lazily, keeps only `header` + first `max_rows` data rows in memory, counts the rest without storing. Truncation footer reports the EXACT total row count regardless of cap. New regression `test_convert_csv_streams_does_not_load_full_file` uses tracemalloc to verify peak allocation stays below file size on disk.
+  - MINOR fixed: `_render_markdown_table` pre-escapes `<` / `>` to `&lt;` / `&gt;` BEFORE the `\n → <br>` collapse. Source `<br>` becomes `&lt;br&gt;` (preserved literally as entity-encoded text); injected `<br>` from `\n` stays as the only literal `<br>` in the output. 2 new regression tests.
+- **R2**: REQUEST CHANGES — both R1 fixes verified PASS, but +1 NEW MAJOR finding: encoding probe read only 4 KB; CSVs with the first invalid UTF-8 byte appearing AFTER offset 4096 crashed mid-iteration with `UnicodeDecodeError` because the probe had already passed without seeing the bad byte.
+  - Fixed: replaced probe with streaming try/retry loop over `("utf-8", "latin-1")`. UTF-8 attempt fails fast on any invalid byte mid-stream; on failure, accumulators (header, rows_kept, total_data_rows) are reset and retry runs with latin-1 (which maps every byte 0-255 and cannot raise UnicodeDecodeError). Common UTF-8 case pays no extra cost; rare invalid case costs one extra full file read. New regression `test_convert_csv_late_invalid_utf8_falls_back_to_latin1` writes a fixture with the bad byte at offset 7403 (well past the old 4 KB probe boundary).
+- **R3**: APPROVE — R2 fix verified, accumulator-reset between attempts confirmed, streaming property preserved, regression test triggers the documented case at offset 7403. No new findings.
+
 ## [v1.4.0] — 2026-04-28
 
 **Minor: closes the last 3 v1.3.6 review findings (#3.3 A63 register, #3.4 multi-profile readiness, #3.9 authority-partition out-of-scope clarification).**
