@@ -4,6 +4,33 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.3.9] — 2026-04-28
+
+**Refactor: god-module decomposition (closes review finding #4 partially).**
+
+`governance/schemas/write_validator.py` was 1781 LOC by v1.3.7 — the canonical "god module" smell the review #4 finding flagged. v1.3.9 carves off two clean logical seams into sibling modules without changing any behavior:
+
+  * `_per_row_rules.py` (NEW, 322 LOC) — six `_apply_*_rules` per-row handlers (strict-date, claim-type, measurability, provenance, deferral, INVEST) + the shared `_STRICT_DATE_SHAPE` regex constant.
+  * `_marker_validators.py` (NEW, 313 LOC) — four payload validators (marker JSON, Jira export JSON, live-API response JSON, A48 markdown) + the `_expected_stage_verdict` and `_parse_a48_string` helpers.
+
+`write_validator.py` drops from 1781 → 1235 LOC (−30%, −546 LOC moved out). The remaining responsibilities — `_DISPATCHER` table, `_make_csv_validator`, the cross-artifact handlers (`_SiblingArtifactCache`, `_apply_foreign_key_rules`, `_apply_nfr_coverage_rules`, `_apply_foreign_key_refs`, `_apply_uniqueness_rules`, `_apply_anchor_binding_rules`, `_check_unique_columns`, `_resolve_sibling_dir`), public API (`validate_canonical_write`, `apply_edit`, `EditError`, `list_known_paths`), and CLI — stay in the main module for v1.3.9. Cross-artifact extraction is deferred to v1.3.10 (or v1.4.x) — that section has tighter coupling to `_make_csv_validator` and benefits from a separate Codex round.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.3.3+hash:fd65cecb` (no POLICY_GLOBS edits — `governance/schemas/*.py` are not in canon-globs; only the JSON schema files are).
+
+### Backward compatibility
+
+Every public + private name moved out is re-exported from `write_validator.py` so the 17+ caller files (tests in `tests/test_schemas_*.py` + scripts in `scripts/`) that import via the historical
+`from governance.schemas.write_validator import <name>`
+path continue to work unchanged. Re-exports are explicit (`# noqa: F401`-marked imports) so an attempt to remove a re-export that's still in use surfaces immediately as ImportError, not silent breakage.
+
+### Tests
+
+Total suite: **1996 passed** (unchanged — no test additions, no test modifications). Refactor is behavior-neutral.
+
+### Codex Review
+
+- **R1**: APPROVE — no findings. Verified byte-identical function bodies in both new modules, complete re-export coverage in `write_validator.py:71` and `:80`, no top-level name collisions, `_DISPATCHER` table still binds via re-imports at `:959/:965/:1039/:1076`, and no test files directly import the moved symbols (re-export back-compat is for the dispatcher table itself).
+
 ## [v1.3.8] — 2026-04-28
 
 **Hotfix: digest-based marker invalidation cascade — closes the last remaining v1.3.7 review finding (#3.1).**
