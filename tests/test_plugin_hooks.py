@@ -880,6 +880,164 @@ def test_pre_write_f5_edit_shape_passes_with_relative_path_when_valid(
     )
 
 
+def test_pre_bash_promote_blocks_on_stale_marker(tmp_path: Path) -> None:
+    """v1.3.8 #3.1 regression: pre-v1.3.8 the hook's required-marker
+    presence check was hash-blind. A canonical marker emitted under a
+    PREVIOUS canon hash would still be accepted as long as the file
+    existed. Now the hook also runs validate_marker_freshness and
+    refuses promote on STALE_MARKER (mismatch) or DOWNSTREAM_OF_STALE
+    (cascade)."""
+    ws = _init_workspace(tmp_path, "stage3")
+    # Write the required marker WITH a stale canon hash. The current
+    # plugin canon (read from .claude-plugin/canon_policy.json) is
+    # whatever the live plugin is at — `deadbeef` is guaranteed not
+    # to match (it would require a sha256 collision on a chosen
+    # 8-char prefix).
+    marker_payload = json.dumps({
+        "marker_id": "stage3.citation_audit.pass",
+        "stage": "stage3",
+        "verdict": "PASS",
+        "timestamp": "2026-04-26T10:00:00Z",
+        "canon_policy_version": "1.3.3",
+        "canon_policy_version_hash": "deadbeef",
+    })
+    (ws / "analysis" / "runtime" / "ready" / "stage3.citation_audit.pass.json").write_text(
+        marker_payload, encoding="utf-8"
+    )
+    result = _run(PRE_BASH, cwd=ws)
+    assert result.returncode == 1
+    assert "STALE_MARKER" in result.stderr
+    assert "stage3.citation_audit.pass" in result.stderr
+    # Hook must surface the operator recovery options.
+    assert "Recovery options" in result.stderr or "BSA_SKIP_MARKER_FRESHNESS" in result.stderr
+
+
+def test_pre_bash_promote_freshness_skip_env_unblocks(tmp_path: Path) -> None:
+    """Operator emergency-unblock path: BSA_SKIP_MARKER_FRESHNESS=1 lets
+    promote through even when stale markers exist. Documented as 'use
+    sparingly' in the hook source."""
+    ws = _init_workspace(tmp_path, "stage3")
+    marker_payload = json.dumps({
+        "marker_id": "stage3.citation_audit.pass",
+        "stage": "stage3",
+        "verdict": "PASS",
+        "timestamp": "2026-04-26T10:00:00Z",
+        "canon_policy_version": "1.3.3",
+        "canon_policy_version_hash": "deadbeef",  # stale
+    })
+    (ws / "analysis" / "runtime" / "ready" / "stage3.citation_audit.pass.json").write_text(
+        marker_payload, encoding="utf-8"
+    )
+    # Without the skip env, blocked.
+    blocked = _run(PRE_BASH, cwd=ws)
+    assert blocked.returncode == 1
+    # With the skip env, allowed.
+    allowed = _run(PRE_BASH, cwd=ws, env={"BSA_SKIP_MARKER_FRESHNESS": "1"})
+    assert allowed.returncode == 0, (
+        f"BSA_SKIP_MARKER_FRESHNESS=1 must unblock; got {allowed.returncode}: "
+        f"{allowed.stderr}"
+    )
+
+
+def test_pre_bash_promote_allows_when_marker_fresh(tmp_path: Path) -> None:
+    """Mirror: a marker carrying the current canon hash should pass
+    the freshness gate cleanly."""
+    import json as _json
+    canon_path = REPO_ROOT / ".claude-plugin" / "canon_policy.json"
+    current_hash = _json.loads(canon_path.read_text())["hash_full"][:8]
+
+    ws = _init_workspace(tmp_path, "stage3")
+    marker_payload = json.dumps({
+        "marker_id": "stage3.citation_audit.pass",
+        "stage": "stage3",
+        "verdict": "PASS",
+        "timestamp": "2026-04-26T10:00:00Z",
+        "canon_policy_version": "1.3.3",
+        "canon_policy_version_hash": current_hash,
+    })
+    (ws / "analysis" / "runtime" / "ready" / "stage3.citation_audit.pass.json").write_text(
+        marker_payload, encoding="utf-8"
+    )
+    result = _run(PRE_BASH, cwd=ws)
+    assert result.returncode == 0, (
+        f"fresh marker should pass; got {result.returncode}: {result.stderr}"
+    )
+
+
+def test_pre_bash_promote_freshness_unexpected_rc_fails_closed(tmp_path: Path) -> None:
+    """v1.3.8 R1 (Codex MAJOR): pre-fix the hook only handled freshness
+    exit codes 1 and 2; any other non-zero (3, 99, 137=SIGKILL etc.)
+    fell through to `exit 0`, defeating the gate. Now: anything other
+    than 0/1/2 is treated as a fail-CLOSED block.
+
+    Test injects a fake freshness script that exits 99 by writing a
+    workspace-local override at the SAME path that the hook reads
+    (via PLUGIN_REPO/scripts/validate_marker_freshness.py). Since
+    PLUGIN_REPO is realpath-locked to the actual plugin tree, we can't
+    swap the script in-place. Instead, we use a temporary plugin tree
+    that points at a stub script."""
+    # Build a tmp plugin tree mirroring the real one's structure, then
+    # point CLAUDE_PLUGIN_ROOT at it so the hook picks up our stub.
+    fake_plugin = tmp_path / "fake-plugin"
+    (fake_plugin / "scripts").mkdir(parents=True)
+    (fake_plugin / "governance" / "schemas").mkdir(parents=True)
+    # Copy a minimal canon_policy.json for the hook's PLUGIN_REPO sanity check.
+    real_canon = REPO_ROOT / ".claude-plugin" / "canon_policy.json"
+    fake_canon_dir = fake_plugin / ".claude-plugin"
+    fake_canon_dir.mkdir()
+    (fake_canon_dir / "canon_policy.json").write_text(
+        real_canon.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    # Stub freshness script that always exits 99.
+    stub = fake_plugin / "scripts" / "validate_marker_freshness.py"
+    stub.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "print('FAKE: synthetic exit 99 for hook fail-closed test', file=sys.stderr)\n"
+        "sys.exit(99)\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    # Copy real loader so the hook's loader.py CurrentStage call works.
+    import shutil
+    shutil.copytree(
+        REPO_ROOT / "governance" / "schemas",
+        fake_plugin / "governance" / "schemas",
+        dirs_exist_ok=True,
+    )
+
+    ws = _init_workspace(tmp_path / "ws", "stage3")
+    _touch_marker(ws, "stage3.citation_audit.pass.json")
+
+    # The hook locks PLUGIN_REPO to its own realpath — to override we
+    # need to invoke a copy of the hook script from inside the fake
+    # plugin tree.
+    fake_hook_dir = fake_plugin / "hooks"
+    fake_hook_dir.mkdir()
+    fake_hook = fake_hook_dir / "pre_bash_promote.sh"
+    real_hook = REPO_ROOT / "hooks" / "pre_bash_promote.sh"
+    fake_hook.write_text(real_hook.read_text(encoding="utf-8"), encoding="utf-8")
+    fake_hook.chmod(0o755)
+
+    # v1.3.8 R2 (Codex MINOR): explicitly UN-set BSA_SKIP_MARKER_FRESHNESS
+    # for the non-skip invocation. _run() inherits the parent shell env
+    # via os.environ.copy(); a developer with BSA_SKIP_MARKER_FRESHNESS=1
+    # exported in their shell would otherwise silently bypass the
+    # freshness check and never exercise the stubbed rc=99 branch.
+    # Setting the value to empty-string (which the hook checks against
+    # "1") forces the skip path to evaluate false.
+    result = _run(fake_hook, cwd=ws, env={"BSA_SKIP_MARKER_FRESHNESS": ""})
+    assert result.returncode != 0, (
+        f"unexpected freshness exit code must NOT fall through to 0; "
+        f"got {result.returncode}: {result.stderr}"
+    )
+    assert "unexpected code" in result.stderr.lower() or "99" in result.stderr
+    # And BSA_SKIP_MARKER_FRESHNESS=1 should still unblock even on the
+    # stub-exit-99 case (the env-skip branch precedes the script invocation).
+    skipped = _run(fake_hook, cwd=ws, env={"BSA_SKIP_MARKER_FRESHNESS": "1"})
+    assert skipped.returncode == 0
+
+
 def test_pre_bash_promote_table_a48_with_real_fixture_path(tmp_path: Path) -> None:
     """End-to-end: copy the actual project_0001 fixture A48 and verify
     the hook can read its CurrentStage. This is the file path the

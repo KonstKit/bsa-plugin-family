@@ -239,4 +239,85 @@ EOF
   fi
 fi
 
+# v1.3.8 (output review #3.1): marker-freshness pre-flight. Refuses
+# promote when any existing marker in analysis/runtime/ready/ or
+# analysis/discovery/runtime/ready/ carries a stale canon-policy hash
+# (canon was edited after the marker was emitted). Cascade-flags every
+# downstream marker too. The freshness script exits:
+#   0 = clean (or only PRE_HASH_TOLERATED)
+#   1 = blocking (STALE_MARKER or DOWNSTREAM_OF_STALE)
+#   2 = invocation error (workspace shape, canon_policy.json unreadable)
+#
+# Operator opt-out: BSA_SKIP_MARKER_FRESHNESS=1 disables the check.
+# Use sparingly — typical reason is a manual canon-bump in progress
+# where the operator KNOWS the markers are stale and is about to
+# re-promote the chain end-to-end. Documenting the opt-out in the
+# canon-bump workflow at docs/RELEASING.md is the right answer; the
+# env var exists so an emergency unblock is possible.
+if [ "${BSA_SKIP_MARKER_FRESHNESS:-0}" != "1" ]; then
+  if [ -f "${PLUGIN_REPO}/scripts/validate_marker_freshness.py" ]; then
+    set +e
+    python3 "${PLUGIN_REPO}/scripts/validate_marker_freshness.py" "${CWD}" >&2
+    fresh_rc=$?
+    set -e
+    # v1.3.8 R1 fix: explicit handling for ALL exit codes — fall-through
+    # on unexpected non-zero would fail open and let promote proceed
+    # against a possibly-stale chain. Mirror the strict-preflight
+    # pattern: 0=allow, 1=blocked-with-recovery, anything else=
+    # invocation/script-bug propagated as a block (exit 2 minimum so
+    # the bash caller sees a non-zero result and stops).
+    if [ ${fresh_rc} -eq 0 ]; then
+      : # Clean — continue to the final exit 0 below.
+    elif [ ${fresh_rc} -eq 1 ]; then
+      cat >&2 <<EOF
+
+[bsa-full / pre_bash_promote] BLOCKED: marker-freshness pre-flight
+found stale or downstream-of-stale markers (see findings above).
+
+Recovery options:
+  1. Re-run the affected stages from the earliest STALE_MARKER point
+     forward (typical case after a canon-policy edit that shifted the
+     hash): /bsa-stage <N> followed by /bsa-promote per stage.
+  2. If the canon edit was unintended, revert the canon_policy.json
+     bump + recompute (scripts/compute_canon_hash.py) until the hash
+     matches the existing marker chain.
+  3. Emergency unblock (use rarely + document in your engagement log):
+     BSA_SKIP_MARKER_FRESHNESS=1 /bsa-promote ...
+EOF
+      exit 1
+    elif [ ${fresh_rc} -eq 2 ]; then
+      # Invocation error already logged to stderr by the script.
+      exit 2
+    else
+      # Unexpected non-zero (script bug, OOM, signal, etc.). Fail
+      # CLOSED — silently allowing promote on an unverified-freshness
+      # state would defeat the gate's purpose. v1.3.8 R1 (Codex
+      # MAJOR): pre-fix this branch fell through to exit 0.
+      cat >&2 <<EOF
+
+[bsa-full / pre_bash_promote] BLOCKED: marker-freshness pre-flight
+exited with an unexpected code (${fresh_rc}). This indicates a script
+bug, runtime crash, or environment misconfig — investigate before
+proceeding.
+
+If you've verified the markers are actually fresh and need to
+unblock, set BSA_SKIP_MARKER_FRESHNESS=1 in the environment.
+EOF
+      # Propagate the original exit code if it's a sensible error
+      # range (>= 2); otherwise normalize to 2 so bash callers always
+      # see a recognizable non-zero.
+      if [ ${fresh_rc} -ge 2 ]; then
+        exit ${fresh_rc}
+      else
+        exit 2
+      fi
+    fi
+  fi
+  # If the freshness script is missing entirely, fall through silently.
+  # This preserves backward compatibility with pre-v1.3.8 installs that
+  # might be running this hook against a workspace where the script
+  # hasn't been deployed (extremely rare — script ships in the same
+  # plugin distribution as the hook).
+fi
+
 exit 0

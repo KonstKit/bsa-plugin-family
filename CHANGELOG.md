@@ -4,6 +4,42 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.3.8] — 2026-04-28
+
+**Hotfix: digest-based marker invalidation cascade — closes the last remaining v1.3.7 review finding (#3.1).**
+
+Pre-v1.3.8 the chain validator (`scripts/validate_marker_chain.py`) only checked INTRA-chain hash consistency. It had no notion of "current canon hash" — so a stage-3 marker emitted under canon hash `A`, followed by a canon-policy edit that bumped the hash to `B`, followed by stage-5..8 markers under hash `B`, would fail the chain validator (mixed hashes). But the OPPOSITE drift — every marker carries hash `A` while the live canon is `B` — silently passed. Promote-time the operator's `/bsa-promote` would land canonical writes against the new canon while the markers attesting "stages 1-4 still valid" referenced the old policy state. The output review #3.1 named this "digest-based marker invalidation cascade" — the missing capability.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.3.3+hash:fd65cecb` (no POLICY_GLOBS edits — `validate_marker_freshness.py` is a new script + the hook integration is a shell edit, neither in the canon-glob set).
+
+### Added
+
+- **`scripts/validate_marker_freshness.py`** — new auditor (~280 LOC, stdlib-only) implementing the freshness check + cascade. Two-pass:
+  1. **Per-marker freshness**: every `analysis/{runtime,discovery/runtime}/ready/*.json` has its `canon_policy_version_hash` compared against the current `.claude-plugin/canon_policy.json::hash_full[:8]`. Mismatch → `STALE_MARKER` (blocking, exit 1). Missing field → `PRE_HASH_TOLERATED` (legacy workspace, non-blocking).
+  2. **Cascade**: within each chain (main / discovery), the earliest stale marker by audit-pass sequence index seeds the cascade. Every later-stage marker — even one whose own hash matches current canon — gets `DOWNSTREAM_OF_STALE`. Reasoning: that downstream marker was emitted under a stage-precondition assumption (the upstream marker was valid at the time); once the upstream marker's canon shifts, the downstream marker's preconditions are no longer guaranteed and the chain prefix needs re-promotion. A downstream marker that carries the new hash got there by coincidence, not by design.
+- **CLI**: `--canon-hash <prefix>` overrides the on-disk read (test convenience + explicit-hash workflows). `--plugin-repo <path>` overrides the canon_policy.json source. Default: read from the repo this script lives in.
+- **Exit codes**: 0 = clean (or only PRE_HASH_TOLERATED), 1 = blocking stale/cascade, 2 = invocation error (missing workspace, unreadable canon_policy.json, malformed marker JSON).
+- **`tests/test_validate_marker_freshness.py`** — 13 new tests covering happy path, single-stale, full cascade (stage1 stale → 6 downstream-of-stale findings on stage2..stage8), earliest-stale truncation (don't double-report when stage1 AND stage3 are both stale), pre-hash tolerance (no cascade seed from pre-hash uncertainty — over-blocking legacy workspaces would be a regression), discovery-vs-main chain isolation, discovery internal cascade, malformed-marker-JSON rejection, and CLI invocation paths.
+
+### Changed
+
+- **`hooks/pre_bash_promote.sh`** — added a freshness pre-flight that runs `validate_marker_freshness.py` against the workspace before the `--strict-on-hard-a51` block. Invocation flow: identity → A48 parse → required-marker existence → strict-on-hard-a51 (opt-in) → **freshness gate (NEW)** → exit 0. The freshness exit-1 surfaces a structured operator diagnostic that names three recovery paths: (1) re-promote the affected stages, (2) revert the canon edit, (3) `BSA_SKIP_MARKER_FRESHNESS=1` emergency unblock. The skip env exists for two known scenarios:
+  - Plugin-developer workspace: when the developer just bumped `canon_policy.json` for a release, their own `analysis/` engagement workspace gets stale markers — they're not promoting anything in that workspace.
+  - Mid-canon-bump operator workflow: an operator about to re-promote the chain end-to-end can skip the gate to save time on the last unaffected promote command.
+- **`tests/test_plugin_hooks.py`** — 3 new integration tests: stale-marker blocks, fresh-marker passes, `BSA_SKIP_MARKER_FRESHNESS=1` unblocks.
+
+### Tests
+
+Total suite: **1992 passed** (was 1976 — +16 net new).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 2 MAJOR findings:
+  1. `hooks/pre_bash_promote.sh` fail-open on unexpected freshness exit codes (only handled rc=1/2; anything else fell through to exit 0). Fixed via explicit `if/elif/elif/else` ladder; unexpected non-zero now fail-CLOSED with diagnostic + propagated exit code (rc≥2) or normalized to 2.
+  2. `validate_marker_freshness.py` PRE_HASH_TOLERATED too broad (accepted empty-string / None / non-string as legacy). Fixed by distinguishing field-absent from field-present-but-invalid; invalid is now STALE_MARKER + cascade seed.
+- **R2**: REQUEST CHANGES (1 MINOR) — both R1 fixes verified PASS, but the new fail-closed test inherited parent env via `os.environ.copy()` and could silently take the BSA_SKIP_MARKER_FRESHNESS bypass on a developer shell that had the var exported. Fixed by explicitly setting the env var to `""` for the non-skip invocation in the test.
+- **R3**: deferred (R2 finding is a test-hygiene fix, not a code-behavior change). 1996 tests pass with the env-isolation patch.
+
 ## [v1.3.7] — 2026-04-26
 
 **Hotfix: 8 findings batched (3 P0/P1 code + 5 governance) from the v1.3.6 post-release review.** Two P0 hook bugs that silently bypassed the F5 schema gate in specific shapes, one P1 idempotency-ledger silent-loss bug in the live-API runner, plus 5 governance gaps surfaced by an end-to-end pipeline run on a real engagement (anchor-status markup, EvidenceStatus enum drift, A51Ref stale-ref check on A72, backlog gate PARTIAL verdict, H1-H4 routing into terminal handoff dir).
