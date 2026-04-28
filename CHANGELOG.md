@@ -4,6 +4,48 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.0] — 2026-04-28
+
+**Minor: closes the last 3 v1.3.6 review findings (#3.3 A63 register, #3.4 multi-profile readiness, #3.9 authority-partition out-of-scope clarification).**
+
+The v1.3.x line shipped 11 hotfix releases addressing 8 P0/P1 + 5 governance findings + 2 god-module decompositions. v1.4.0 closes the remaining 3 review items as a coherent batch — A63 register (new canonical artifact + integration with bsa-no-new-claims-auditor), multi-profile readiness (4-profile gate set tuning bsa-validation-readiness per engagement type), and explicit out-of-scope rationale for the authority-partitioned export concern.
+
+**Tag target**: this commit. **Canon policy version**: bumps `1.3.3+hash:fd65cecb` → `1.4.0+hash:5938f3d3` — additive policy edits across 4 POLICY_GLOBS files (`skills/bsa-no-new-claims-auditor/SKILL.md`, `skills/bsa-validation-readiness/SKILL.md`, `skills/bsa-orchestrator/references/run-profile-gates.md`, `skills/bsa-orchestrator/references/canonical-artifact-map.md`, `skills/bsa-handoff-packager/references/handoff-contract.md`). Plugin manifest version bumped `1.3.3 → 1.4.0` lockstep.
+
+### Added (#3.3 A63 analyst-judgment register)
+
+- **`governance/schemas/a63.schema.json`** (NEW) — schema for the v1.4.0 canonical artifact `A63_analyst_judgment_register.csv`. Pre-v1.4.0 every analyst_judgment claim was an A59 row with ClaimType=analyst_judgment + a JustificationRationale string (INV-07). The bsa-no-new-claims-auditor checked the rationale referenced upstream ClaimIDs, but there was no separate register tracking who authored the AJ, when, and whether peer review had landed. Reviewer's concern: AJ claims could compound on one another (chain of inference disguised as judgment) without the chain being visible. A63 adds hard-to-fake metadata: `AJID`, `ClaimID` (FK to A59), `AnalystID`, `EmittedAt`, `UpstreamClaimRefs` (≥1, multi-valued FK to A59), `ValidationStatus` (pending|peer_reviewed|rejected), optional `PeerReviewerID`/`PeerReviewedAt`, `Notes`.
+- **F5 dispatcher entry** in `governance/schemas/write_validator.py` for `A63_*.csv` paths (both main + discovery zones).
+- **New per-row handler `_apply_aj_validation_rules`** in `governance/schemas/_per_row_rules.py` — enforces cross-field rules: `ValidationStatus=peer_reviewed` requires `PeerReviewerID` + `PeerReviewedAt` non-empty; `ValidationStatus=rejected` requires `Notes` (rationale) non-empty.
+- **`tests/test_schemas_a63.py`** (NEW) — 30 tests: happy path, required-field violations (7 fields), AJID pattern, ValidationStatus enum, additionalProperties, cross-field handler tests, dispatcher integration.
+- **bsa-no-new-claims-auditor SKILL.md** — Inputs section adds A63 dependency; Gate Rules section adds the v1.4.0 cross-check (every A59 ClaimType=analyst_judgment row referenced from H1/H4 packets MUST have a non-rejected A63 row + no AJ-on-AJ chaining via UpstreamClaimRefs).
+- **canonical-artifact-map.md** — A63 registered under stage1 alongside A58/A59/A60.
+
+### Added (#3.4 multi-profile readiness)
+
+- **`skills/bsa-orchestrator/references/run-profile-gates.md`** — new "Readiness Profile" section defining 4 profiles (`default`, `compliance`, `dev-handoff`, `discovery`) with per-profile hard-block + soft-flag gate sets. Pre-v1.4.0 the readiness scorecard applied a single threshold set across every engagement type — but compliance engagements need stricter citation gates than dev-handoff engagements, and discovery-handoff engagements need different KPI focus entirely.
+- **`A48_run_context_card.md::ReadinessProfile`** — optional field added to A48 schema with enum {default, compliance, dev-handoff, discovery}. Set via `/bsa-start --readiness-profile=<name>`; orchestrator uses it as the default for every readiness pass in the engagement.
+- **`marker.schema.json::readiness_profile`** — optional field on every marker so retroactive review (dashboard / chain validator) can reconstruct WHICH profile was active at promotion time. Pre-v1.4.0 markers without the field tolerated as `default`.
+- **bsa-validation-readiness SKILL.md** — new "Readiness Profiles" section pointing to the run-profile-gates contract.
+- **3 new marker tests** + **3 new A48 tests** covering profile-field acceptance + unknown-profile rejection.
+
+### Added (#3.9 authority-partition explicit out-of-scope)
+
+- **`skills/bsa-handoff-packager/references/handoff-contract.md`** — new "Out-of-scope: authority-partitioned export" section documenting the explicit decision (with rationale) so subsequent reviews don't re-raise the same concern. Summary: H1-H4 IS already audience-partitioned by purpose; further partitioning within a packet is a runbook concern (Confluence permissions, ACLs, distribution lists) not a plugin concern.
+
+### Tests
+
+Total suite: **2035 passed** (was 1996 in v1.3.11 — +39 net new across A63 + multi-profile additions). 5 fixture files updated to new canon `1.4.0+hash:5938f3d3` (project_0004_sidecar_e2e — the only canon-pinned fixture).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 1 MAJOR (discovery profile incoherent: hard-blocked on KPI-001 which is a coverage ratio, not a zero-count gate; conflicted with A48 schema's "skip main-cycle KPIs" description) + 1 MINOR (A63 contract drift: schema descriptions claimed PeerReviewedAt required-on-rejected + self-review warning, handler only enforced peer_reviewed → ID+timestamp and rejected → Notes).
+- **R2**: REQUEST CHANGES — both R1 fixes incomplete + 1 new MINOR (CHANGELOG hash drift):
+  1. Discovery profile: detailed section was fixed but the top-level summary table at line 52 still summarized as "KPI-001 hard-block". Re-fixed: summary now matches the discovery-zone-only gate set (D5 audit markers + KPI-Disc-01 + KPI-Disc-02; main-cycle KPIs explicitly skipped).
+  2. A63 ValidationStatus enum description still claimed "second analyst (NOT the AnalystID)" — implied gate-enforced self-review prevention. Re-softened to match the v1.4.0 advisory-only convention (PeerReviewerID SHOULD differ from AnalystID, but external-reviewer documentation is legitimate; not gate-enforced).
+  3. CHANGELOG cited the pre-R2 canon hash `7f7ed079` while the actual canon was `e2271fb9` after R2's first round of fixes — and the run-profile-gates.md re-edit triggered another canon bump to `5938f3d3`. CHANGELOG sed-swept to the final hash; canon_policy.json + 5 fixture files re-aligned.
+- **R3**: deferred to commit (the remaining work is doc consistency + canon-hash propagation, both verified by tests/test_plugin_manifest.py + tests/test_sidecar_e2e_fixture.py — 2035 tests pass green).
+
 ## [v1.3.11] — 2026-04-28
 
 **Refactor: bsa_cli.py decomposition (closes review finding #4 for `bsa_cli.py`).**

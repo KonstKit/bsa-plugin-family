@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bsa-plugin-family.local/schemas/a63.schema.json",
+  "title": "A63 Analyst-Judgment Register row",
+  "description": "Schema for one row of analysis/canonical/core_controls/A63_analyst_judgment_register.csv. New in v1.4.0 — closes the v1.3.6 output review #3.3 finding (analyst_judgment misuse). Pre-v1.4.0 every analyst_judgment claim was an A59 row with ClaimType=analyst_judgment + a JustificationRationale string referencing upstream ClaimIDs (INV-07). The bsa-no-new-claims-auditor checked AJ:C-xxx tags in H1/H4 for INV-07 conformance, but there was no separate register tracking which AJ claims had been validated, who authored them, or whether they had passed peer review. The reviewer's concern: AJ claims could compound on one another (chain of inference disguised as judgment) without the chain being visible in any one register. A63 fixes this by recording every analyst_judgment claim with hard-to-fake metadata: AnalystID (who), EmittedAt (when), UpstreamClaimRefs (≥1, parsed from JustificationRationale), ValidationStatus (pending|peer_reviewed|rejected). The bsa-no-new-claims-auditor cross-references A59 ClaimType=analyst_judgment rows against A63 to ensure every AJ claim has a corresponding A63 row + non-rejected ValidationStatus. Validation flow: governance.schemas.loader.iter_csv_rows(path) → list[dict]; each row validated against this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "AJID",
+    "ClaimID",
+    "AnalystID",
+    "EmittedAt",
+    "UpstreamClaimRefs",
+    "ValidationStatus",
+    "Notes"
+  ],
+  "properties": {
+    "AJID": {
+      "type": "string",
+      "pattern": "^AJ-[0-9]{3,4}$",
+      "description": "Stable identifier for the analyst-judgment row. Format `AJ-NNN` (3-4 digit numeric, leading zeros allowed). Distinct from ClaimID — an AJ claim's ClaimID lives in A59, the AJ register entry has its own AJID for cross-row uniqueness + downstream traceability. The bsa-no-new-claims-auditor uses (AJID, ClaimID) pairs to detect drift between A59 and A63."
+    },
+    "ClaimID": {
+      "type": "string",
+      "pattern": "^C-[A-Z0-9_-]+$",
+      "description": "Foreign key to the A59 row whose ClaimType=analyst_judgment. MUST resolve in A59_claim_register.csv (enforced by x-bsa-foreign-key-refs). The A59 row's ClaimType field MUST be exactly 'analyst_judgment' (cross-checked by the bsa-no-new-claims-auditor at audit time, not at F5 hook time — F5 doesn't have the cross-row visibility to enforce A59.ClaimType lookups against this row's ClaimID)."
+    },
+    "AnalystID": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the analyst (or worker skill) that emitted the AJ claim. Free-form short string (operator initials, skill name, or analyst handle). Required so the audit trail records WHO is staking their epistemic credit on this claim. Empty values are rejected — anonymous analyst_judgment defeats the accountability the register exists for."
+    },
+    "EmittedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "ISO-8601 UTC timestamp when the AJ claim was first authored. Pattern enforcement mirrors the format hint because jsonschema's FormatChecker is advisory unless format-nongpl extras are installed. Used by downstream tools to filter recent AJ activity + by the auditor to detect 'AJ chains emitted within minutes of each other' (a pattern often indicative of compound inference rather than independent judgment)."
+    },
+    "UpstreamClaimRefs": {
+      "type": "string",
+      "pattern": "^C-[A-Za-z0-9_-]+(?:[;/\\s]+C-[A-Za-z0-9_-]+)*$",
+      "minLength": 1,
+      "description": "Multi-valued FK to A59 ClaimIDs. ≥1 ClaimID required (per INV-07). Tokens delimited by `;` / `/` / whitespace, mirroring A59.SourceID convention. Each token MUST resolve in A59_claim_register.csv (enforced by x-bsa-foreign-key-refs with multi=true). The auditor additionally checks that NONE of the upstream ClaimIDs are themselves ClaimType=analyst_judgment (would create an AJ chain). If chaining is the analyst's deliberate intent, route via A51 with IssueType=decision_needed instead — A63 is for first-order judgments only."
+    },
+    "ValidationStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "peer_reviewed",
+        "rejected"
+      ],
+      "description": "Lifecycle state: 'pending' = freshly authored, awaiting peer review; 'peer_reviewed' = a peer reviewer (recorded in PeerReviewerID) has reviewed + accepted (convention: SHOULD be a different analyst from AnalystID, but v1.4.0 does NOT gate-enforce this — single-analyst engagements with external reviewers documented as `PeerReviewerID=external-reviewer-XYZ` are legitimate); 'rejected' = peer review found the AJ unjustified, claim should be retracted from A59 or routed via A51. Promote-time gate (in bsa-no-new-claims-auditor): every A59 ClaimType=analyst_judgment row used in H1/H4 packets MUST have a corresponding A63 row with ValidationStatus != 'rejected'. Pending is allowed (the audit doesn't block pre-promote on pending review — it surfaces the count for the operator to decide), but rejected is hard-block."
+    },
+    "PeerReviewerID": {
+      "type": "string",
+      "description": "Optional: identifier of the peer reviewer. REQUIRED (non-empty) when ValidationStatus=peer_reviewed (enforced by x-bsa-aj-validation-rules). Optional / typically empty for ValidationStatus=pending (no reviewer yet). Optional when ValidationStatus=rejected (the rejection rationale lives in Notes; recording the reviewer ID is recommended but not gate-enforced). Convention: SHOULD differ from AnalystID — self-review defeats the validation purpose, but v1.4.0 doesn't gate-enforce this (single-analyst engagements with external reviewers documented as `PeerReviewerID=external-reviewer-XYZ` are legitimate)."
+    },
+    "PeerReviewedAt": {
+      "type": "string",
+      "pattern": "^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2}))?$",
+      "description": "Optional: ISO-8601 UTC timestamp of peer review. REQUIRED (non-empty) when ValidationStatus=peer_reviewed (enforced by x-bsa-aj-validation-rules). Optional / typically empty for ValidationStatus=pending (no reviewer yet). Optional when ValidationStatus=rejected (rejection timestamp may be derived from EmittedAt or recorded in Notes; not gate-enforced separately in v1.4.0)."
+    },
+    "Notes": {
+      "type": "string",
+      "description": "Free-form analyst notes. For pending: optional context on what the AJ adds beyond the upstream claims. For peer_reviewed: optional reviewer comments. For rejected: REQUIRED non-empty rejection rationale (enforced by x-bsa-aj-validation-rules). Empty string is allowed for pending/peer_reviewed; the schema-level required-field check fires for absence, but minLength is not enforced for those statuses."
+    }
+  },
+  "x-bsa-csv-columns-order": {
+    "_comment": "Canonical column order for the A63 register CSV. Mirrors A51's pattern: ID first, then FK to A59, then audit-trail metadata, then optional review fields, then Notes last. F5 hook checks the header line against this order; mismatch is a hard-block.",
+    "order": [
+      "AJID",
+      "ClaimID",
+      "AnalystID",
+      "EmittedAt",
+      "UpstreamClaimRefs",
+      "ValidationStatus",
+      "PeerReviewerID",
+      "PeerReviewedAt",
+      "Notes"
+    ]
+  },
+  "x-bsa-uniqueness-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer (v1.2.10 generic extension). AJID is the row-identifier; duplicate AJIDs would let two distinct rows collapse into one downstream and silently lose the audit trail.",
+    "applies_to_all_rows": true,
+    "unique_columns": [
+      "AJID"
+    ]
+  },
+  "x-bsa-foreign-key-refs": {
+    "_comment": "EXECUTABLE at the F5 hook layer (v1.2.13 generic extension). Both ClaimID + UpstreamClaimRefs MUST resolve in A59_claim_register.csv. The auditor additionally cross-checks A59[ClaimID].ClaimType=='analyst_judgment' (cannot express in F5 hook — needs cross-row sibling read, deferred to bsa-no-new-claims-auditor).",
+    "applies_to_all_rows": true,
+    "foreign_keys": [
+      {
+        "column": "ClaimID",
+        "table": "A59_claim_register.csv",
+        "target_column": "ClaimID",
+        "multi": false,
+        "rationale": "Every A63 row binds to exactly one A59 row whose ClaimType=analyst_judgment."
+      },
+      {
+        "column": "UpstreamClaimRefs",
+        "table": "A59_claim_register.csv",
+        "target_column": "ClaimID",
+        "multi": true,
+        "rationale": "Each upstream ClaimID MUST exist in A59. Multi-valued (≥1; tokens delimited by ; / whitespace). The auditor additionally checks that none of the upstream rows are themselves ClaimType=analyst_judgment (anti-chaining)."
+      }
+    ]
+  },
+  "x-bsa-aj-validation-rules": {
+    "_comment": "EXECUTABLE at the F5 hook layer (v1.4.0 NEW). Cross-field rules the JSON Schema layer can't express directly. v1.4.0 ships TWO gate-enforced rules: (1) ValidationStatus=peer_reviewed → PeerReviewerID + PeerReviewedAt MUST be non-empty (otherwise the peer-review record is hollow). (2) ValidationStatus=rejected → Notes MUST be non-empty (rejection rationale required so the next analyst knows WHY the AJ was rejected). Self-review prevention (PeerReviewerID != AnalystID) and rejection-timestamp enforcement are intentionally NOT in this rules block — both are advisory / convention-only in v1.4.0; if pilot engagements show they're commonly violated, add as additional rules in a v1.4.x hotfix.",
+    "applies_to_all_rows": true,
+    "rules": [
+      {
+        "name": "peer_review_required_fields",
+        "when_status": "peer_reviewed",
+        "requires_non_empty": ["PeerReviewerID", "PeerReviewedAt"]
+      },
+      {
+        "name": "rejection_rationale_required",
+        "when_status": "rejected",
+        "requires_non_empty": ["Notes"]
+      }
+    ]
+  }
+}

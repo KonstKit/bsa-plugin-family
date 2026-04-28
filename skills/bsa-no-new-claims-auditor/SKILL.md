@@ -32,6 +32,7 @@ Use this skill before Stage 8 readiness promotion, before handoff promotion, and
 - Active mode proposal artifacts (Stage 8/handoff or discovery D5).
 - Upstream canonical artifacts for the same scope.
 - Claim-layer controls `A58/A59/A60` and shared `A51` routes.
+- **`A63_analyst_judgment_register.csv`** (NEW v1.4.0, closes review #3.3) — every A59 ClaimType=analyst_judgment row MUST have a corresponding A63 row with hard-to-fake metadata (AnalystID, EmittedAt, UpstreamClaimRefs, ValidationStatus). The auditor cross-references A59 vs A63 to enforce the AJ contract; pre-v1.4.0 the only check was JustificationRationale string content. See `governance/schemas/a63.schema.json` + `references/no-new-claims-contract.md` for the full contract.
 
 ## Outputs
 - `analysis/proposals/stage7_8/stage8/no_new_claims_report.md`
@@ -42,6 +43,11 @@ Use this skill before Stage 8 readiness promotion, before handoff promotion, and
 - `stage8.no_new_claims.pass.json` requires leakage count = `0` for Stage 8/handoff promotion.
 - Optional discovery pass marker (if profile enables it) requires leakage count = `0`.
 - `ClaimType=analyst_judgment` rows with valid JustificationRationale do NOT count as leakage (INV-07); rows with missing or self-only rationale DO count.
+- **A63 cross-check (v1.4.0)**: every A59 ClaimType=analyst_judgment row referenced from H1/H4 packets (via `[AJ:C-xxx]` tags) MUST satisfy ALL of:
+  1. A row exists in `A63_analyst_judgment_register.csv` with `ClaimID` matching the A59 claim.
+  2. That A63 row's `ValidationStatus` is NOT `rejected` (rejected AJ claims are hard-blocks — H1/H4 packets MUST NOT carry their tags through promotion).
+  3. None of the A63 row's `UpstreamClaimRefs` are themselves A59 ClaimType=analyst_judgment rows (anti-chaining: AJ on AJ creates a chain of inference disguised as judgment; route via A51 with IssueType=decision_needed instead).
+  Pending validation status (operator hasn't peer-reviewed yet) is allowed but the audit report SHOULD surface the count so the operator can decide whether to delay promotion until the review lands.
 
 ## On Audit Failure
 1. Emit leakage findings with statement-level trace.

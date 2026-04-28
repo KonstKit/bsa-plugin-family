@@ -291,6 +291,61 @@ def _apply_deferral_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     ]
 
 
+def _apply_aj_validation_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
+    """Apply A63-style ``x-bsa-aj-validation-rules`` extension (v1.4.0).
+
+    Cross-field rules JSON Schema can't express directly:
+
+    * Rule ``peer_review_required_fields`` — when ValidationStatus ==
+      'peer_reviewed', PeerReviewerID + PeerReviewedAt MUST both be
+      non-empty. Without this, a row could claim peer review with no
+      record of WHO reviewed and WHEN — defeating the audit trail
+      A63 exists for.
+    * Rule ``rejection_rationale_required`` — when ValidationStatus ==
+      'rejected', Notes MUST be non-empty (rejection rationale).
+      Without this, a rejected AJ claim leaves no record of WHY the
+      reviewer rejected it; the next analyst can't tell if the
+      rejection was substantive or procedural.
+
+    Generic over schemas: any future schema that declares
+    ``x-bsa-aj-validation-rules`` with the same shape gets the same
+    treatment. Today only A63 uses it.
+
+    Defensive isinstance guard (v1.0.4+1 polish pattern): malformed
+    extension shape no-ops silently.
+    """
+    ext = schema.get("x-bsa-aj-validation-rules", {})
+    if not isinstance(ext, dict) or not ext.get("applies_to_all_rows"):
+        return []
+    rules = ext.get("rules", [])
+    if not isinstance(rules, list) or not rules:
+        return []
+    status = (row.get("ValidationStatus") or "").strip()
+    violations: list[str] = []
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        when_status = rule.get("when_status")
+        if not when_status or status != when_status:
+            continue
+        requires = rule.get("requires_non_empty", [])
+        if not isinstance(requires, list):
+            continue
+        rule_name = rule.get("name", "<unnamed>")
+        for field in requires:
+            if not isinstance(field, str):
+                continue
+            value = (row.get(field) or "").strip()
+            if not value:
+                violations.append(
+                    f"line {row_idx} ValidationStatus={status!r}: "
+                    f"{field!r} is empty — rule {rule_name!r} requires "
+                    f"non-empty {requires} when ValidationStatus={when_status!r} "
+                    f"(x-bsa-aj-validation-rules)"
+                )
+    return violations
+
+
 def _apply_invest_rules(row: dict, schema: dict, row_idx: int) -> list[str]:
     """Apply A70-style ``x-bsa-invest-rules`` extension against a row.
 

@@ -55,6 +55,11 @@
       "pattern": "^[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:-[A-Za-z0-9.-]+)?(?:\\+[A-Za-z0-9.:-]+)?$",
       "description": "Same shape as marker.canon_policy_version: bare semver or semver+hash."
     },
+    "ReadinessProfile": {
+      "type": "string",
+      "enum": ["default", "compliance", "dev-handoff", "discovery"],
+      "description": "v1.4.0+ (closes review #3.4): readiness scorecard profile selection. Default = `default` profile (current behavior, balanced KPI-001..005). `compliance` tightens for regulated-domain engagements (zero rejected A63 + zero open hard A51). `dev-handoff` focuses on Phase-3 readiness (KPI-006 ≥ 0.9, A72 orphan-trace = 0). `discovery` skips main-cycle KPIs entirely (engagement terminates at D5). Optional field — orchestrator defaults to `default` when absent. See `skills/bsa-orchestrator/references/run-profile-gates.md` §'Readiness Profile' for per-profile gate definitions."
+    },
     "ProblemStatement": {
       "type": "string",
       "description": "Free-form one-paragraph problem framing."

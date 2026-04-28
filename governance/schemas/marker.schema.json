@@ -104,6 +104,11 @@
         "PARTIAL"
       ]
     },
+    "readiness_profile": {
+      "type": "string",
+      "enum": ["default", "compliance", "dev-handoff", "discovery"],
+      "description": "v1.4.0+ (closes review #3.4): readiness scorecard profile that was active when this marker was emitted. Recorded so retroactive review (dashboard / chain validator) can reconstruct WHICH profile gates were applied. Optional — pre-v1.4.0 markers without the field are tolerated as `default`. Most relevant on stage7.skeptical_review.pass / stage8.no_new_claims.pass / handoff.ready / pipeline.complete markers (the gates that actually consume the profile); allowed on any marker so the field can flow through chain-validator passes uniformly."
+    },
     "by_platform": {
       "type": "array",
       "description": "v1.3.7+: per-target verdict breakdown for multi-target markers (today: phase3.backlog_exported emitted by bsa-backlog-bridge under --platform=all). REQUIRED when the marker's top-level verdict is PARTIAL — gives the operator a per-platform PASS/FAIL list so they know which targets to retry. Optional when verdict is PASS or FAIL (the operator can infer from CWD inspection of analysis/handoff/backlog_export_*). Out-of-scope for single-target markers (stage*.audit.pass etc.) — those markers MUST NOT carry this field.",

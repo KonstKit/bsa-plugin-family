@@ -233,6 +233,52 @@ def test_schema_rejects_bad_canon_version(
     assert errors
 
 
+def test_schema_accepts_optional_readiness_profile(
+    a48_validator: "jsonschema.Draft202012Validator",
+) -> None:
+    """v1.4.0 #3.4: optional ReadinessProfile field with enum
+    {default, compliance, dev-handoff, discovery}."""
+    fields = {
+        "RunID": "x",
+        "Mode": "direct",
+        "CurrentStage": "stage1",
+        "CanonPolicyVersion": "1.4.0",
+        "ReadinessProfile": "compliance",
+    }
+    errors = list(a48_validator.iter_errors(fields))
+    assert not errors
+
+
+def test_schema_accepts_a48_without_readiness_profile(
+    a48_validator: "jsonschema.Draft202012Validator",
+) -> None:
+    """ReadinessProfile is OPTIONAL — pre-v1.4.0 A48 cards must
+    still validate (legacy workspaces)."""
+    fields = {
+        "RunID": "x",
+        "Mode": "direct",
+        "CurrentStage": "stage1",
+        "CanonPolicyVersion": "1.4.0",
+        # ReadinessProfile deliberately absent
+    }
+    errors = list(a48_validator.iter_errors(fields))
+    assert not errors
+
+
+def test_schema_rejects_unknown_readiness_profile(
+    a48_validator: "jsonschema.Draft202012Validator",
+) -> None:
+    fields = {
+        "RunID": "x",
+        "Mode": "direct",
+        "CurrentStage": "stage1",
+        "CanonPolicyVersion": "1.4.0",
+        "ReadinessProfile": "compliance-strict",  # not in enum
+    }
+    errors = list(a48_validator.iter_errors(fields))
+    assert errors
+
+
 # ---- CLI tests (used by hooks/pre_bash_promote.sh after F2) ----------
 
 

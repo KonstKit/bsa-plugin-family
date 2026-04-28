@@ -10,6 +10,7 @@
   - `A58_evidence_excerpts.csv`
   - `A59_claim_register.csv`
   - `A60_negative_evidence_register.csv`
+  - `A63_analyst_judgment_register.csv` (v1.4.0+) — one row per A59 ClaimType=analyst_judgment claim, with hard-to-fake metadata (AnalystID, EmittedAt, UpstreamClaimRefs, ValidationStatus). Cross-checked by `bsa-no-new-claims-auditor` at promote time.
 - `stage2/`
   - `context_state_frame.md`
   - `stakeholder_authority_map.md`

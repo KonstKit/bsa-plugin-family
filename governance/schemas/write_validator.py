@@ -70,6 +70,7 @@ from . import loader as _loader
 # below also references these via the re-imports.
 from ._per_row_rules import (  # noqa: F401 (re-exports)
     _STRICT_DATE_SHAPE,
+    _apply_aj_validation_rules,
     _apply_claim_type_rules,
     _apply_deferral_rules,
     _apply_invest_rules,
@@ -227,6 +228,11 @@ def _make_csv_validator(schema_name: str) -> Callable[[str, str], list[str]]:
                 #     must parse as real calendar dates (closes the
                 #     shape-vs-calendar gap on EffectiveDate).
                 violations.extend(_apply_strict_date_rules(row, schema, row_idx))
+                #   x-bsa-aj-validation-rules (A63, v1.4.0):
+                #     ValidationStatus=peer_reviewed → PeerReviewerID +
+                #     PeerReviewedAt non-empty; ValidationStatus=rejected
+                #     → Notes (rationale) non-empty.
+                violations.extend(_apply_aj_validation_rules(row, schema, row_idx))
                 # Cross-artifact extension rules (v1.1.3, sibling reads).
                 # Same C2 pattern but with path + sibling_cache so the
                 # handler can resolve A50/A59/A62/A70 entries at hook time.
@@ -348,6 +354,18 @@ _DISPATCHER: list[_DispatcherEntry] = [
         re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A72_[a-z_]+\.csv$"),
         "a72",
         _make_csv_validator("a72"),
+    ),
+    # v1.4.0: A63 analyst-judgment register (closes review #3.3).
+    # Tracks every A59 ClaimType=analyst_judgment row with hard-to-fake
+    # metadata (AnalystID + EmittedAt + UpstreamClaimRefs +
+    # ValidationStatus). The bsa-no-new-claims-auditor cross-references
+    # A59 vs A63 to ensure every AJ claim has a corresponding A63 row
+    # with ValidationStatus != 'rejected' before letting H1/H4 packets
+    # carry the [AJ:C-xxx] tag through.
+    (
+        re.compile(r"(?:^|/)analysis/(?:discovery/)?canonical/core_controls/A63_[a-z_]+\.csv$"),
+        "a63",
+        _make_csv_validator("a63"),
     ),
     # Phase 3 (Sprint 9 US-S9-01..03): bsa-backlog-bridge exports.
     # First F5 dispatcher entries under analysis/handoff/ rather than

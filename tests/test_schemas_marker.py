@@ -494,6 +494,51 @@ def test_marker_schema_rejects_by_platform_inner_unknown_verdict(marker_validato
     assert errors, "by_platform[].verdict=PARTIAL must be rejected"
 
 
+def test_marker_schema_accepts_readiness_profile_field(marker_validator) -> None:
+    """v1.4.0 #3.4: marker may carry an optional `readiness_profile`
+    field on Stage-7 / Stage-8 / handoff / pipeline.complete markers
+    so retroactive review can reconstruct WHICH profile was active."""
+    marker = {
+        "marker_id": "stage8.no_new_claims.pass",
+        "stage": "stage8",
+        "verdict": "PASS",
+        "timestamp": "2026-04-28T12:00:00Z",
+        "canon_policy_version": "1.4.0",
+        "readiness_profile": "compliance",
+    }
+    errors = sorted(marker_validator.iter_errors(marker), key=lambda e: e.path)
+    assert not errors, (
+        f"valid readiness_profile rejected: {[e.message for e in errors]}"
+    )
+
+
+@pytest.mark.parametrize("profile", ["default", "compliance", "dev-handoff", "discovery"])
+def test_marker_schema_accepts_all_readiness_profile_values(marker_validator, profile) -> None:
+    marker = {
+        "marker_id": "stage7.skeptical_review.pass",
+        "stage": "stage7",
+        "verdict": "PASS",
+        "timestamp": "2026-04-28T12:00:00Z",
+        "canon_policy_version": "1.4.0",
+        "readiness_profile": profile,
+    }
+    errors = list(marker_validator.iter_errors(marker))
+    assert not errors
+
+
+def test_marker_schema_rejects_unknown_readiness_profile(marker_validator) -> None:
+    marker = {
+        "marker_id": "stage8.no_new_claims.pass",
+        "stage": "stage8",
+        "verdict": "PASS",
+        "timestamp": "2026-04-28T12:00:00Z",
+        "canon_policy_version": "1.4.0",
+        "readiness_profile": "custom-profile",  # not in enum
+    }
+    errors = list(marker_validator.iter_errors(marker))
+    assert errors, "unknown readiness_profile must be rejected"
+
+
 def test_audit_pass_sequences_are_subset_of_alphabet() -> None:
     """Gating sequences must be drawn from the marker_id alphabet."""
     from governance.schemas import loader

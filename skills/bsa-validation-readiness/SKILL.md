@@ -31,6 +31,10 @@ Run this skill for Stage 7/8 control flow.
 - Readiness decision requires the active run profile marker set, including `stage7.skeptical_review.pass` and `stage8.no_new_claims.pass` in runtime contract.
 - Run-profile gate sets are defined by orchestrator reference `bsa-orchestrator/references/run-profile-gates.md`.
 
+## Readiness Profiles (v1.4.0+ — closes review #3.4)
+
+The scorecard above describes the `default` readiness profile. Three additional profiles tune the gate set per engagement type — `compliance` (regulated-domain, stricter than default), `dev-handoff` (Phase-3-focused), `discovery` (terminates at D5). Profile selection lives in `A48_run_context_card.md::ReadinessProfile` (canonical state) or via `--readiness-profile=<name>` CLI override; full per-profile gate definitions in `skills/bsa-orchestrator/references/run-profile-gates.md` §"Readiness Profile". Stage-7 / Stage-8 promotion markers record the active profile in their payload (`readiness_profile` field) so retroactive review can reconstruct which profile was applied.
+
 ## On Audit Failure
 1. Mark readiness as failed and keep outputs proposal-layer.
 2. Emit explicit blocker list mapped to upstream artifacts.
