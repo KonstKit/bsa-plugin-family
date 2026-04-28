@@ -436,8 +436,16 @@ def test_anchor_binding_delegates_to_check_unique_columns(monkeypatch) -> None:
     """Spy on `_check_unique_columns`; confirm
     `_apply_anchor_binding_rules` calls it with the A61-specific
     ext_name. If a future refactor inlines the uniqueness logic
-    again, the call-count assertion fails."""
-    from governance.schemas import write_validator
+    again, the call-count assertion fails.
+
+    v1.3.10 split note: `_apply_anchor_binding_rules` lives in
+    `_cross_artifact.py` now and calls `_check_unique_columns` from
+    its own module namespace. The historical
+    `monkeypatch.setattr(write_validator, "_check_unique_columns", ...)`
+    no longer intercepts (the re-export in write_validator.py is a
+    separate name binding). Patch the actual implementation module
+    instead."""
+    from governance.schemas import _cross_artifact, write_validator
 
     calls: list[tuple[object, object, str]] = []
     original = write_validator._check_unique_columns
@@ -446,7 +454,7 @@ def test_anchor_binding_delegates_to_check_unique_columns(monkeypatch) -> None:
         calls.append((rows, unique_columns, ext_name))
         return original(rows, unique_columns, ext_name)
 
-    monkeypatch.setattr(write_validator, "_check_unique_columns", spy)
+    monkeypatch.setattr(_cross_artifact, "_check_unique_columns", spy)
 
     schema = {
         "x-bsa-anchor-binding-rules": {
@@ -474,8 +482,12 @@ def test_anchor_binding_delegates_to_check_unique_columns(monkeypatch) -> None:
 
 def test_uniqueness_handler_delegates_to_check_unique_columns(monkeypatch) -> None:
     """Same delegation pin for the generic handler — MUST route
-    through `_check_unique_columns` with the generic ext_name."""
-    from governance.schemas import write_validator
+    through `_check_unique_columns` with the generic ext_name.
+
+    v1.3.10 split note: see the sibling test above for why we patch
+    `_cross_artifact._check_unique_columns` rather than
+    `write_validator._check_unique_columns`."""
+    from governance.schemas import _cross_artifact, write_validator
 
     calls: list[tuple[object, object, str]] = []
     original = write_validator._check_unique_columns
@@ -484,7 +496,7 @@ def test_uniqueness_handler_delegates_to_check_unique_columns(monkeypatch) -> No
         calls.append((rows, unique_columns, ext_name))
         return original(rows, unique_columns, ext_name)
 
-    monkeypatch.setattr(write_validator, "_check_unique_columns", spy)
+    monkeypatch.setattr(_cross_artifact, "_check_unique_columns", spy)
 
     schema = {
         "x-bsa-uniqueness-rules": {

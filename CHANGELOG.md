@@ -4,6 +4,43 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.3.10] — 2026-04-28
+
+**Refactor: god-module decomposition completion (closes review finding #4 for `write_validator.py`).**
+
+v1.3.9 carved off two seams (per-row rules + marker validators) leaving `write_validator.py` at 1235 LOC. v1.3.10 extracts the third + final major seam — the cross-artifact section — into `_cross_artifact.py` (751 LOC). `write_validator.py` drops from 1235 → 558 LOC (−55%, −677 LOC). Cumulative across v1.3.9 + v1.3.10: 1781 → 558 LOC (−69%, −1223 LOC moved out).
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.3.3+hash:fd65cecb` (no POLICY_GLOBS edits).
+
+### Added
+
+- **`governance/schemas/_cross_artifact.py`** (751 LOC, NEW) — sibling cache + 6 cross-row handlers + `_resolve_sibling_dir`:
+  * `_SiblingArtifactCache` class — per-validation-run cache for sibling reads.
+  * `_resolve_sibling_dir(path)` — extract sibling dir from canonical-artifact path; honors `BSA_WORKSPACE_CWD` env var.
+  * `_apply_foreign_key_rules` — A72-specific Story/Claim/Source resolution + `claim_source_consistency`.
+  * `_apply_nfr_coverage_rules` — A71-specific Then-clause Metric+Target embedding.
+  * `_check_unique_columns` — shared cross-row uniqueness helper.
+  * `_apply_foreign_key_refs` — generic schema-agnostic FK resolution (used by A58/A59/A60/A62/A70/A71/A72).
+  * `_apply_uniqueness_rules` — generic cross-row uniqueness extension.
+  * `_apply_anchor_binding_rules` — A61-specific FK + uniqueness bundled.
+
+### Changed
+
+- **`governance/schemas/write_validator.py`** — now 558 LOC. Contains: module docstring, re-export imports for the 3 sibling modules, `_DISPATCHER` table, `_make_csv_validator` (the orchestrator that invokes all extracted handlers via the re-imports), `_normalize_path`, `_dispatch`, public API (`validate_canonical_write`, `list_known_paths`), Edit-tool support (`EditError`, `apply_edit`), CLI (`_main`).
+- **`tests/test_schemas_uniqueness_rules.py`** — 2 monkeypatch-spy tests updated to patch `_cross_artifact._check_unique_columns` instead of `write_validator._check_unique_columns`. Pre-v1.3.10 the spy worked because both reference and implementation lived in the same module; post-extraction the implementation lives in `_cross_artifact` and the call-site uses its own module's name binding (the re-export in `write_validator.py` is a separate name binding that the actual handlers don't see). Tests document the rationale inline.
+
+### Implementation note: avoiding circular import
+
+`_cross_artifact._resolve_sibling_dir` needs `_normalize_path` (which stays in `write_validator.py` because `_dispatch` also uses it). To avoid a module-load-time circular import, `_resolve_sibling_dir` lazy-imports `_normalize_path` inside its body. Safe because `_resolve_sibling_dir` is only invoked from `_make_csv_validator` (in `write_validator.py`), which itself runs after both modules are fully loaded.
+
+### Tests
+
+Total suite: **1996 passed** (unchanged — refactor is behavior-neutral; the 2 monkeypatch-spy tests above were updated to patch the actual implementation module, but their semantics are identical).
+
+### Codex Review
+
+- **R1**: APPROVE — no findings. Verified all 8 moved symbols are byte-identical (the only intentional delta is the lazy `_normalize_path` import inside `_resolve_sibling_dir` + explanatory doc text), `_make_csv_validator` resolves extracted handlers via re-imports at lines 176/239/242/254/257/264, the 2 spy tests now patch `_cross_artifact._check_unique_columns` correctly, repo-grep found no other tests monkeypatching `write_validator.<moved symbol>` that would silently break.
+
 ## [v1.3.9] — 2026-04-28
 
 **Refactor: god-module decomposition (closes review finding #4 partially).**
