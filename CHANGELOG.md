@@ -4,6 +4,34 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.3.11] — 2026-04-28
+
+**Refactor: bsa_cli.py decomposition (closes review finding #4 for `bsa_cli.py`).**
+
+`scripts/bsa_cli.py` was 2088 LOC by v1.3.10 — the second of the two god-modules the review #4 finding flagged (write_validator.py was the first; v1.3.9 + v1.3.10 carved it). v1.3.11 extracts the largest seam: the `materials` subcommand (~1000 LOC) into `_bsa_cli_materials.py`. `bsa_cli.py` drops from 2088 → 1107 LOC (−47%, −981 LOC moved out).
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.3.3+hash:fd65cecb` (no POLICY_GLOBS edits — `scripts/*.py` are not in canon-globs).
+
+### Added
+
+- **`scripts/_bsa_cli_materials.py`** (1065 LOC, NEW) — full materials subcommand: `cmd_materials` + ~20 helpers + 4 classes (`SourcePlan`, `ConversionUnavailable`, `ConversionFailed`, `ManifestHeaderDrift`) + canonical-A50 column-order constants (`_A50_HEADER`, `_A50_HEADER_WITH_EFFECTIVE_DATE`).
+
+### Changed
+
+- **`scripts/bsa_cli.py`** — now 1107 LOC. Contains: imports + re-export block (covers all 28 moved symbols so the dispatcher in `main()` + 3 test imports continue resolving), `WorkspaceState` class, `cmd_status` formatter, next-step suggester (`suggest_next` + `cmd_next` + helpers), `cmd_doctor` + helpers, `main()` dispatcher.
+
+### Implementation note: avoiding circular import
+
+`cmd_materials` instantiates `WorkspaceState` (which lives in `bsa_cli.py`). To avoid a module-load-time circular import, `cmd_materials` lazy-imports `WorkspaceState` inside its body. Safe because `cmd_materials` is only invoked from `main()` (in `bsa_cli.py`), which itself runs after both modules are fully loaded.
+
+### Tests
+
+Total suite: **1996 passed** (unchanged — refactor is behavior-neutral; 71 bsa_cli tests + 1925 elsewhere all pass).
+
+### Codex Review
+
+- **R1**: APPROVE — no findings. Verified all moved symbols byte-identical to v1.3.10 except cmd_materials (which differs only by the lazy WorkspaceState import block), re-export coverage complete, main() dispatches correctly via re-import, both call paths (CLI + direct module call) resolve the lazy import without circular-failure.
+
 ## [v1.3.10] — 2026-04-28
 
 **Refactor: god-module decomposition completion (closes review finding #4 for `write_validator.py`).**
