@@ -38,6 +38,7 @@ Dependencies:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import io
 import os
 import re
@@ -45,7 +46,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 
 # Extension classification — lower-case ext (with dot) → kind. `kind`
@@ -155,8 +156,10 @@ def _next_source_id(inputs_dir: Path, manifest_path: Path) -> int:
       - existing rows in source_manifest.csv (if any)
     and returns max(existing) + 1, or 1 if none.
     """
+    # v1.4.3 R2 fix: \d{3,} (was \d{3,4}) so 5+ digit SourceIDs are
+    # consistently handled by both staging and recovery paths.
     used: set[int] = set()
-    src_pat = re.compile(r"^source_(\d{3,4})_")
+    src_pat = re.compile(r"^source_(\d{3,})_")
     if inputs_dir.is_dir():
         for f in inputs_dir.iterdir():
             m = src_pat.match(f.name)
@@ -168,7 +171,7 @@ def _next_source_id(inputs_dir: Path, manifest_path: Path) -> int:
             text = manifest_path.read_text(encoding="utf-8")
         except OSError:
             text = ""
-        sid_pat = re.compile(r"^S-(\d{3,4})\b")
+        sid_pat = re.compile(r"^S-(\d{3,})\b")
         for line in text.splitlines():
             m = sid_pat.match(line.strip())
             if m:
@@ -869,7 +872,8 @@ def _plan_conversions(
     # heavy non-ASCII normalization can produce collisions).
     existing_by_slug: dict[str, Path] = {}
     if inputs_dir.is_dir():
-        slug_pat = re.compile(r"^source_\d{3,4}_(.+)\.md$")
+        # v1.4.3 R2 fix: \d{3,} for consistency with staging/recovery.
+        slug_pat = re.compile(r"^source_\d{3,}_(.+)\.md$")
         for f in inputs_dir.iterdir():
             m = slug_pat.match(f.name)
             if m:
@@ -1061,25 +1065,554 @@ def _bytes_human(n: int) -> str:
     return f"{n / 1024 ** 2:.1f} MB"
 
 
-def cmd_materials(args: argparse.Namespace) -> int:
-    """Stage PDF/DOCX/MD/TXT inputs into analysis/proposals/stage1/inputs/.
+@contextlib.contextmanager
+def _materials_lock(workspace: Path) -> Iterator[None]:
+    """Process-level advisory lock for destructive `bsa materials`
+    operations (recreate, prune).
 
-    Default is dry-run — prints what would be done. --commit performs
-    writes. --force overwrites existing target files. --recursive
-    walks subdirectories.
+    v1.4.3 (Codex R1 MAJOR #2 + #3 fix). Two concurrent
+    `--recreate-manifest` calls would otherwise:
+      (a) both back up the SAME prior manifest into different backup
+          files, then race on the final replace — overwritten content
+          may not be in EITHER backup.
+      (b) `--prune-orphans` could verify (no drift), then a parallel
+          `--recreate-manifest` lands a fresh row right BEFORE the
+          unlink loop, deleting an input that's no longer an orphan.
+
+    Implementation: `fcntl.flock(LOCK_EX | LOCK_NB)` on
+    `<workspace>/analysis/.bsa_materials.lock`. POSIX-only — Windows
+    is not a supported platform for this plugin (hooks layer assumes
+    bash). Lock is non-blocking: if held by another process, raises
+    `ConversionFailed` with a clear message instead of hanging.
+
+    v1.4.3 R2 fix: lock lives under `analysis/` (guaranteed to exist
+    by `WorkspaceState.is_initialized()` check upstream) rather than
+    auto-creating `stage1/` for a sentinel file. Avoids leaving
+    half-bootstrapped workspaces behind on a failed maintenance call.
+
+    Lock file is created on first use and never deleted (low-cost
+    sentinel; deleting it would race with concurrent flock acquisition
+    on the deleted inode)."""
+    import fcntl as _fcntl  # POSIX-only; lazy import for clarity
+    analysis_dir = workspace / "analysis"
+    if not analysis_dir.is_dir():
+        raise ConversionFailed(
+            f"cannot acquire materials lock: workspace not initialized "
+            f"({analysis_dir} missing). Run /bsa-start first."
+        )
+    lock_path = analysis_dir / ".bsa_materials.lock"
+    fd = os.open(str(lock_path), os.O_WRONLY | os.O_CREAT, 0o644)
+    try:
+        try:
+            _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+        except (BlockingIOError, OSError) as exc:
+            raise ConversionFailed(
+                f"another `bsa materials` operation is in progress "
+                f"(lock held on {lock_path}). Wait for it to finish "
+                f"or remove the lock file if you're sure no other "
+                f"process is running."
+            ) from exc
+        try:
+            yield
+        finally:
+            try:
+                _fcntl.flock(fd, _fcntl.LOCK_UN)
+            except OSError:
+                pass  # best-effort unlock
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def _verify_manifest(workspace: Path) -> tuple[list[str], list[str], list[str]]:
+    """Cross-check source_manifest.csv against actual files in inputs/.
+
+    v1.4.3 (closes lifecycle review rec #1: recovery for partial-write
+    states). Returns (orphan_manifest_rows, orphan_input_files,
+    other_findings):
+
+      * `orphan_manifest_rows` — list of `SourceID:Origin` strings for
+        manifest rows whose corresponding `source_NNN_<slug>.md` file
+        does NOT exist in inputs/. Common cause: input file was
+        manually deleted but the manifest row stayed.
+      * `orphan_input_files` — list of input filenames present in
+        inputs/ but with no corresponding manifest row. Common cause:
+        prior `--commit` failed AT the manifest write, leaving input
+        files orphaned (the v1.0.4 partial-failure case the historical
+        UX-pass retro flagged).
+      * `other_findings` — schema-level drift (missing manifest,
+        manifest-not-a-file, header drift from canonical A50 shape).
+        Operator must address these before --recreate / --prune can
+        be safely invoked.
+
+    Pure read-only: never mutates workspace state."""
+    findings_other: list[str] = []
+    orphan_rows: list[str] = []
+    orphan_files: list[str] = []
+    stage1 = workspace / "analysis" / "proposals" / "stage1"
+    inputs_dir = stage1 / "inputs"
+    manifest = stage1 / "source_manifest.csv"
+
+    if not inputs_dir.is_dir():
+        findings_other.append(
+            f"inputs directory missing: {inputs_dir} — workspace not "
+            f"initialized OR `bsa materials --commit` has never run"
+        )
+        return orphan_rows, orphan_files, findings_other
+
+    # Walk inputs/ — collect every source_NNN_*.md file present.
+    # v1.4.3 Codex R1 MINOR #2 fix: \d{3,} (was \d{3,4}) so 5+ digit
+    # SourceIDs (a hypothetical 10000+ source engagement) are still
+    # detected. Staging path uses :03d minimum width with no upper cap.
+    on_disk: dict[str, Path] = {}  # filename → Path
+    src_pat = re.compile(r"^source_\d{3,}_.+\.md$")
+    for entry in inputs_dir.iterdir():
+        if entry.is_file() and src_pat.match(entry.name):
+            on_disk[entry.name] = entry
+
+    if not manifest.exists():
+        # No manifest at all — every input file is an orphan.
+        orphan_files.extend(sorted(on_disk.keys()))
+        findings_other.append(
+            f"manifest missing: {manifest} — every input file is "
+            f"orphaned (use --recreate-manifest to rebuild from "
+            f"provenance comments)"
+        )
+        return orphan_rows, orphan_files, findings_other
+
+    if not manifest.is_file():
+        findings_other.append(
+            f"manifest path exists but is not a regular file: "
+            f"{manifest} (directory? device?). Operator must clean "
+            f"up the path manually before --verify can give a verdict"
+        )
+        return orphan_rows, orphan_files, findings_other
+
+    # Read manifest rows. Use stdlib csv to honor RFC4180 quoting
+    # (some Origin values contain commas/quotes from path names).
+    # v1.4.3 Codex R1 MINOR #1 fix: utf-8-sig swallows a leading BOM
+    # silently. A spreadsheet-tool round-trip can re-save the manifest
+    # with `﻿` prefix; without -sig, the first column name was
+    # `﻿SourceID` and the entire manifest looked like header drift.
+    import csv as _csv
+    try:
+        with manifest.open("r", encoding="utf-8-sig", newline="") as fh:
+            reader = _csv.DictReader(fh)
+            header_fields = reader.fieldnames or []
+            if not header_fields:
+                findings_other.append(
+                    f"manifest is empty (no header row): {manifest}"
+                )
+                return orphan_rows, orphan_files, findings_other
+            # Header drift check — must match A50 shape (one of two
+            # accepted variants per v1.2.16 EffectiveDate addition).
+            header_str = ",".join(header_fields).strip()
+            if header_str not in (_A50_HEADER, _A50_HEADER_WITH_EFFECTIVE_DATE):
+                findings_other.append(
+                    f"manifest header drifts from canonical A50 shape "
+                    f"(expected {_A50_HEADER} OR "
+                    f"{_A50_HEADER_WITH_EFFECTIVE_DATE}; "
+                    f"found {header_str!r})"
+                )
+                return orphan_rows, orphan_files, findings_other
+            # Build the SourceID → expected-filename-prefix map.
+            # Manifest row's SourceID is `S-NNN`; the staged file is
+            # `source_NNN_<slug>.md`. We can't reconstruct the slug
+            # without the manifest's Title-derived stem, so we look
+            # for ANY file matching `source_NNN_*.md`.
+            # v1.4.3 Codex R1 MINOR #2 fix: \d{3,} matches 5+ digit
+            # SourceIDs.
+            sid_pat = re.compile(r"^S-(\d{3,})$")
+            seen_sids_on_disk: set[str] = set()
+            for fname in on_disk:
+                m = re.match(r"^source_(\d{3,})_.+\.md$", fname)
+                if m:
+                    seen_sids_on_disk.add(f"S-{m.group(1)}")
+            sids_in_manifest: set[str] = set()
+            for row in reader:
+                sid = (row.get("SourceID") or "").strip()
+                origin = (row.get("Origin") or "").strip()
+                if not sid:
+                    continue  # malformed row; ignore
+                m = sid_pat.match(sid)
+                if not m:
+                    findings_other.append(
+                        f"manifest row has malformed SourceID {sid!r} "
+                        f"(expected `S-NNN` pattern)"
+                    )
+                    continue
+                sids_in_manifest.add(sid)
+                if sid not in seen_sids_on_disk:
+                    orphan_rows.append(f"{sid}:{origin}")
+            # Reverse-direction check: every on-disk file must have
+            # a row in the manifest. We collected sids_in_manifest in
+            # the same pass above to avoid a second file read.
+            file_pat = re.compile(r"^source_(\d{3,})_.+\.md$")
+            for fname in sorted(on_disk):
+                m = file_pat.match(fname)
+                if not m:
+                    continue
+                sid = f"S-{m.group(1)}"
+                if sid not in sids_in_manifest:
+                    orphan_files.append(fname)
+    except (OSError, _csv.Error) as exc:
+        findings_other.append(
+            f"manifest read failed: {manifest} — {exc}"
+        )
+
+    return orphan_rows, orphan_files, findings_other
+
+
+def _recreate_manifest(workspace: Path) -> str:
+    """Rebuild `source_manifest.csv` from provenance comments in
+    staged input files.
+
+    v1.4.3 (closes lifecycle review rec #1). Walks
+    `analysis/proposals/stage1/inputs/`, reads the
+    `<!-- bsa materials: staged from <Origin> (kind=<k>); SourceID=<sid> -->`
+    provenance comment from each `source_NNN_<slug>.md`, and
+    reconstructs a manifest row with reasonable T5 ReliabilityTier
+    + today's DateOrVersion. Files without a provenance comment are
+    skipped with a stderr warning (operator can re-stage them via
+    `bsa materials <src> --commit --force`).
+
+    Existing manifest is BACKED UP to
+    `source_manifest.csv.bak.<UTC-timestamp>` before overwrite —
+    operators always have a recoverable prior state. Backup is
+    atomic (tempfile + os.replace per `_atomic_write_text`).
+
+    Returns a one-line status string. Raises ConversionFailed on
+    catastrophic write failure (orphan-input safety: if write fails,
+    the prior backup is intact)."""
+    stage1 = workspace / "analysis" / "proposals" / "stage1"
+    inputs_dir = stage1 / "inputs"
+    manifest = stage1 / "source_manifest.csv"
+
+    if not inputs_dir.is_dir():
+        raise ConversionFailed(
+            f"inputs directory missing: {inputs_dir} — cannot recreate"
+        )
+
+    # Walk inputs/ in deterministic order.
+    # v1.4.3 Codex R1 MINOR #2 fix: \d{3,} (5+ digit SourceIDs).
+    src_pat = re.compile(r"^source_(\d{3,})_.+\.md$")
+    rows_to_emit: list[dict[str, str]] = []
+    skipped_no_provenance: list[str] = []
+    skipped_sid_mismatch: list[str] = []
+    today = _today_iso()
+    # Known kinds the staging path emits today. v1.4.3 Codex R1 MAJOR
+    # #4 fix: validate kind so a corrupted/renamed file doesn't slip
+    # in with `kind=evil` and confuse downstream type heuristics.
+    _known_kinds = {"pdf", "docx", "text", "xlsx", "csv", "tsv", "json"}
+
+    for entry in sorted(inputs_dir.iterdir(), key=lambda p: p.name):
+        if not entry.is_file():
+            continue
+        m = src_pat.match(entry.name)
+        if not m:
+            continue
+        sid = f"S-{m.group(1)}"
+        # Read provenance to recover Origin + kind.
+        # v1.4.3 R2 fix: read BYTES first, strip only the explicit
+        # UTF-8 BOM at the byte level, THEN decode strictly. The
+        # earlier `errors="ignore"` would silently drop invalid bytes,
+        # letting a corrupt-prefix file's later text fool the anchored
+        # `.match`. Strict decode + explicit BOM strip = no foot-gun.
+        # v1.4.3 R3 fix: a flat `bytes[:512].decode("utf-8")` could
+        # split a valid multibyte UTF-8 sequence at the boundary,
+        # causing legitimate staged files to fail strict decode.
+        # Use `codecs.IncrementalDecoder` with `final=False` so an
+        # incomplete trailing sequence at the artificial head boundary
+        # is buffered (and effectively dropped) rather than raised.
+        # Invalid mid-stream bytes still raise UnicodeDecodeError →
+        # skip, preserving the R2 foot-gun fix.
+        import codecs as _codecs
+        try:
+            raw_head = entry.read_bytes()[:512]
+        except OSError:
+            skipped_no_provenance.append(entry.name)
+            continue
+        if raw_head.startswith(b"\xef\xbb\xbf"):
+            raw_head = raw_head[3:]
+        decoder = _codecs.getincrementaldecoder("utf-8")(errors="strict")
+        try:
+            head = decoder.decode(raw_head, final=False)
+        except UnicodeDecodeError:
+            skipped_no_provenance.append(entry.name)
+            continue
+        # v1.4.3 Codex R1 MAJOR #4 fix: anchor at start of file (use
+        # `match`, not `search`). Allow only ASCII whitespace before
+        # the comment (BOM was already stripped at byte level above).
+        # A binary blob whose middle bytes happened to match the
+        # regex would otherwise be accepted; that's the "renamed
+        # file kept its old comment" foot-gun the reviewer flagged.
+        prov_match = _PROVENANCE_COMMENT_RE.match(head.lstrip(" \t\r\n"))
+        if not prov_match:
+            skipped_no_provenance.append(entry.name)
+            continue
+        # v1.4.3 Codex R1 MAJOR #4 fix: validate the parsed SID
+        # matches the filename-derived SID. Without this, a renamed
+        # file (e.g., source_042_rename.md whose body still has
+        # SourceID=S-007) would emit a row with the WRONG SourceID
+        # for downstream evidence binding.
+        prov_sid = prov_match.group("sid")
+        if prov_sid != sid:
+            skipped_sid_mismatch.append(
+                f"{entry.name} (filename SID={sid}, "
+                f"provenance SID={prov_sid})"
+            )
+            continue
+        origin = prov_match.group("orig")
+        kind = prov_match.group("kind")
+        # Validate kind. Unknown kind = treat as no-provenance and
+        # let the operator re-stage explicitly.
+        if kind not in _known_kinds:
+            skipped_no_provenance.append(
+                f"{entry.name} (unknown kind={kind!r})"
+            )
+            continue
+        # SourceType heuristic mirrors _render_draft_manifest.
+        slug_lower = entry.stem.lower()
+        if "interview" in slug_lower or "transcript" in slug_lower:
+            stype = "interview_transcript"
+        elif kind in ("pdf", "docx"):
+            stype = "document"
+        elif kind in ("xlsx", "csv", "tsv", "json"):
+            stype = "process_note"  # tabular / structured data
+        else:
+            stype = "process_note"
+        title = entry.stem.split("_", 2)[-1] if "_" in entry.stem else entry.stem
+        rows_to_emit.append({
+            "SourceID": sid,
+            "SourceType": stype,
+            "Title": _csv_escape(title),
+            "Origin": _csv_escape(origin),
+            "AccessStatus": "readable",
+            "ReliabilityTier": "T5",
+            "Priority": "medium",
+            "Language": "en",
+            "DateOrVersion": today,
+            "Notes": _csv_escape(
+                "auto-recreated by `bsa materials --recreate-manifest`; "
+                "ReliabilityTier defaulted to T5 — re-tag based on epistemic "
+                "proximity per skills/bsa-evidence-intake/references/"
+                "reliability_tier_spec.md before /bsa-promote"
+            ),
+        })
+
+    # Backup existing manifest before overwrite.
+    # v1.4.3 Codex R1 MAJOR #1 fix: include microseconds AND use
+    # O_EXCL with collision-retry. Without this, two recreate calls
+    # within the same UTC second would clobber each other's backup,
+    # losing the prior manifest state the feature promises to preserve.
+    backup_msg = ""
+    if manifest.is_file():
+        from datetime import datetime as _dt
+        base_ts = _dt.utcnow().strftime("%Y%m%dT%H%M%S_%fZ")
+        manifest_bytes = manifest.read_bytes()
+        backup_path: Optional[Path] = None
+        # Try the base name first; if it exists (extreme race), append
+        # a counter suffix until we find a free name. O_EXCL ensures
+        # we never silently overwrite. Bound the retry loop so a
+        # filesystem permission misconfig doesn't hang us forever.
+        for attempt in range(64):
+            candidate_name = (
+                f"source_manifest.csv.bak.{base_ts}"
+                if attempt == 0
+                else f"source_manifest.csv.bak.{base_ts}_{attempt}"
+            )
+            candidate = manifest.parent / candidate_name
+            try:
+                fd = os.open(
+                    str(candidate),
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o644,
+                )
+            except FileExistsError:
+                continue  # bump counter
+            except OSError as exc:
+                raise ConversionFailed(
+                    f"cannot back up existing manifest before recreate "
+                    f"({manifest} → {candidate}): {exc}. Refusing to "
+                    f"overwrite without a recoverable backup"
+                ) from exc
+            try:
+                with os.fdopen(fd, "wb") as bh:
+                    bh.write(manifest_bytes)
+            except OSError as exc:
+                # Cleanup partially-written backup so the next attempt
+                # gets a clean slate.
+                with contextlib.suppress(OSError):
+                    candidate.unlink()
+                raise ConversionFailed(
+                    f"cannot write backup body ({candidate}): {exc}. "
+                    f"Refusing to overwrite manifest without a "
+                    f"recoverable backup"
+                ) from exc
+            backup_path = candidate
+            break
+        if backup_path is None:
+            raise ConversionFailed(
+                f"could not allocate a unique backup name for "
+                f"{manifest} after 64 attempts (filesystem clock or "
+                f"permission anomaly)"
+            )
+        backup_msg = f" (prior manifest backed up to {backup_path.name})"
+
+    # Render new manifest body.
+    cols = [
+        "SourceID", "SourceType", "Title", "Origin", "AccessStatus",
+        "ReliabilityTier", "Priority", "Language", "DateOrVersion", "Notes",
+    ]
+    out_lines = [",".join(cols)]
+    for row in rows_to_emit:
+        out_lines.append(",".join(row[c] for c in cols))
+    new_body = "\n".join(out_lines) + "\n"
+    _atomic_write_text(manifest, new_body)
+
+    skipped_note = ""
+    if skipped_no_provenance:
+        skipped_note = (
+            f"; SKIPPED {len(skipped_no_provenance)} file(s) with no "
+            f"provenance comment (re-stage via `bsa materials <src> "
+            f"--commit --force` to add them): "
+            f"{', '.join(skipped_no_provenance[:5])}"
+            f"{' ...' if len(skipped_no_provenance) > 5 else ''}"
+        )
+    sid_mismatch_note = ""
+    if skipped_sid_mismatch:
+        # v1.4.3 Codex R1 MAJOR #4 fix: surface SID-mismatch
+        # explicitly so the operator knows the file was renamed and
+        # needs manual review (re-stage OR rename back).
+        sid_mismatch_note = (
+            f"; SKIPPED {len(skipped_sid_mismatch)} file(s) with SID "
+            f"mismatch between filename and provenance (likely "
+            f"renamed; restore original name OR re-stage explicitly): "
+            f"{'; '.join(skipped_sid_mismatch[:5])}"
+            f"{' ...' if len(skipped_sid_mismatch) > 5 else ''}"
+        )
+    return (
+        f"recreated manifest with {len(rows_to_emit)} row(s){backup_msg}"
+        f"{skipped_note}{sid_mismatch_note}"
+    )
+
+
+def _prune_orphans(workspace: Path, *, confirmed: bool) -> tuple[list[str], list[str]]:
+    """Delete input files that have no corresponding manifest row.
+
+    v1.4.3 (closes lifecycle review rec #1). Refuses to delete unless
+    `confirmed=True` (caller passes via `--yes` CLI flag). Pure
+    deletion — does NOT touch the manifest. Pair with
+    `--recreate-manifest` if the orphan set is large enough that
+    re-staging is the cleaner recovery path.
+
+    Returns (deleted_filenames, would_delete_filenames):
+      * `deleted_filenames` is non-empty only when confirmed=True
+        AND the deletion succeeded.
+      * `would_delete_filenames` is the dry-run list (always
+        populated; matches the orphan-input set from
+        `_verify_manifest`).
+
+    Raises ConversionFailed on workspace-shape errors or on
+    catastrophic per-file deletion failure."""
+    _, orphan_files, other_findings = _verify_manifest(workspace)
+    if other_findings:
+        # Don't prune in the presence of structural drift — operator
+        # must address those first via --recreate-manifest or manual
+        # repair. Refuse safely.
+        raise ConversionFailed(
+            f"refusing to prune in the presence of structural manifest "
+            f"drift: {'; '.join(other_findings)}"
+        )
+
+    would_delete = list(orphan_files)
+    deleted: list[str] = []
+    if not confirmed:
+        return deleted, would_delete
+
+    # v1.4.3 Codex R1 CRITICAL fix: defense-in-depth path validation.
+    # Even though the caller (cmd_materials) runs _check_write_containment
+    # first, we re-validate inside the destructive function so a future
+    # caller that forgets the containment check can't make us unlink
+    # outside the workspace. Resolve the inputs dir ONCE, then verify
+    # each target's resolved path stays under it AND is not itself a
+    # symlink (a same-name symlink could redirect outside between
+    # verify and unlink).
+    inputs_dir = workspace / "analysis" / "proposals" / "stage1" / "inputs"
+    try:
+        inputs_resolved = inputs_dir.resolve(strict=True)
+    except OSError as exc:
+        raise ConversionFailed(
+            f"refusing to prune: cannot resolve inputs dir "
+            f"{inputs_dir} ({exc})"
+        ) from exc
+    for fname in would_delete:
+        target = inputs_dir / fname
+        # Reject symlink targets (a malicious or accidental symlink
+        # named source_NNN_*.md could point at /etc/passwd).
+        if target.is_symlink():
+            raise ConversionFailed(
+                f"refusing to prune {fname}: target is a symlink "
+                f"({target.readlink()}). Manual cleanup required."
+            )
+        # Re-resolve the parent only (we just rejected the leaf as a
+        # symlink) to ensure the full resolved path stays under the
+        # resolved inputs dir.
+        try:
+            resolved_parent = target.parent.resolve(strict=True)
+        except OSError as exc:
+            raise ConversionFailed(
+                f"refusing to prune {fname}: cannot resolve parent "
+                f"({exc})"
+            ) from exc
+        if resolved_parent != inputs_resolved:
+            raise ConversionFailed(
+                f"refusing to prune {fname}: resolved parent "
+                f"{resolved_parent} escapes inputs dir "
+                f"{inputs_resolved}"
+            )
+        try:
+            target.unlink()
+            deleted.append(fname)
+        except OSError as exc:
+            raise ConversionFailed(
+                f"prune failed at {fname}: {exc} ({len(deleted)} file(s) "
+                f"already deleted before this point — partial state)"
+            ) from exc
+    return deleted, would_delete
+
+
+def cmd_materials(args: argparse.Namespace) -> int:
+    """Stage PDF/DOCX/MD/TXT/XLSX/CSV/TSV/JSON/GraphQL inputs into
+    analysis/proposals/stage1/inputs/, OR run a manifest-maintenance
+    operation against the workspace.
+
+    Two operating modes:
+
+    1. **Staging mode** (default) — requires `src_dir` positional:
+       Default is dry-run — prints what would be done. --commit performs
+       writes. --force overwrites existing target files. --recursive
+       walks subdirectories.
+
+    2. **Manifest-maintenance mode** (v1.4.3+) — `src_dir` is OPTIONAL,
+       triggered by one of:
+       * `--verify-manifest` — cross-check manifest vs inputs/, report
+         drift (orphan rows, orphan files, header drift). Read-only.
+       * `--recreate-manifest` — rebuild manifest from provenance
+         comments in staged files. Backs up prior manifest to
+         `source_manifest.csv.bak.<timestamp>`.
+       * `--prune-orphans` — delete input files with no manifest row.
+         Requires `--yes` to confirm (destructive).
 
     Exit codes:
-        0 = preview rendered (dry-run) OR all writes succeeded.
-        1 = at least one file failed to convert (per-file
-            ConversionFailed — corrupt PDF, encrypted DOCX, etc.) OR
-            optional library missing for at least one file
-            (ConversionUnavailable). Both surface in the summary
-            with per-file detail; ConversionUnavailable additionally
-            prints a `pip install ...` hint.
+        0 = staging preview / staging success / verify-clean / recreate
+            success / prune success.
+        1 = staging per-file failure (ConversionFailed /
+            ConversionUnavailable) OR verify-manifest found drift.
         2 = invocation / structural error: bad src dir, uninitialized
-            workspace, EMPTY src dir, OR an existing source_manifest.csv
-            whose header has drifted away from the canonical A50
-            column order (we refuse to append unsafe rows).
+            workspace, EMPTY src dir, header drift, prune-without-yes.
     """
     # v1.3.11 split: WorkspaceState lives in bsa_cli.py; lazy import
     # avoids module-load-time circular dep.
@@ -1087,13 +1620,7 @@ def cmd_materials(args: argparse.Namespace) -> int:
 
     root = Path(args.workspace).resolve()
     ws = WorkspaceState(root)
-    src_dir = Path(args.src_dir).resolve()
 
-    if not src_dir.is_dir():
-        sys.stderr.write(
-            f"[bsa materials] source directory not found: {src_dir}\n"
-        )
-        return 2
     if not ws.is_initialized():
         sys.stderr.write(
             f"[bsa materials] {root} is not a BSA workspace "
@@ -1101,6 +1628,160 @@ def cmd_materials(args: argparse.Namespace) -> int:
             "Code first.\n"
         )
         return 2
+
+    # ---- v1.4.3: manifest-maintenance modes -------------------------
+    # These run BEFORE the src_dir check because they don't need one.
+    # Mutual exclusion enforced at argparse layer.
+    verify_mode = bool(getattr(args, "verify_manifest", False))
+    recreate_mode = bool(getattr(args, "recreate_manifest", False))
+    prune_mode = bool(getattr(args, "prune_orphans", False))
+    yes_flag = bool(getattr(args, "yes", False))
+
+    # v1.4.3 Codex R1 MINOR #3 fix: warn loudly when --yes is set
+    # without --prune-orphans (the only flag that currently consults
+    # it). Otherwise typos like `--verify-manifest --yes` would
+    # silently succeed, masking operator intent.
+    if yes_flag and not prune_mode:
+        sys.stderr.write(
+            "[bsa materials] --yes is currently only consulted by "
+            "--prune-orphans; ignoring (no destructive op selected).\n"
+        )
+
+    # v1.4.3 Codex R1 CRITICAL fix: maintenance modes that read OR
+    # mutate the workspace must run the same containment check as
+    # staging mode. Without this, a symlinked analysis/proposals/
+    # stage1/inputs/ would let `--prune-orphans --yes` follow the
+    # symlink and unlink files outside the workspace.
+    if verify_mode or recreate_mode or prune_mode:
+        stage1_dir = ws.analysis / "proposals" / "stage1"
+        inputs_dir = stage1_dir / "inputs"
+        manifest_path = stage1_dir / "source_manifest.csv"
+        contain_error = _check_write_containment(
+            stage1_dir, inputs_dir, manifest_path
+        )
+        if contain_error is not None:
+            sys.stderr.write(f"[bsa materials] {contain_error}\n")
+            return 2
+
+    if verify_mode:
+        orphan_rows, orphan_files, other_findings = _verify_manifest(root)
+        print(f"BSA materials --verify-manifest: {root}")
+        print()
+        if other_findings:
+            print(f"Structural findings ({len(other_findings)}):")
+            for f in other_findings:
+                print(f"  - {f}")
+            print()
+        if orphan_rows:
+            print(f"Orphan manifest rows ({len(orphan_rows)} — manifest "
+                  f"references file that doesn't exist):")
+            for r in orphan_rows[:20]:
+                print(f"  - {r}")
+            if len(orphan_rows) > 20:
+                print(f"  ... and {len(orphan_rows) - 20} more")
+            print()
+        if orphan_files:
+            print(f"Orphan input files ({len(orphan_files)} — file in "
+                  f"inputs/ has no manifest row):")
+            for f in orphan_files[:20]:
+                print(f"  - {f}")
+            if len(orphan_files) > 20:
+                print(f"  ... and {len(orphan_files) - 20} more")
+            print()
+        if not (orphan_rows or orphan_files or other_findings):
+            print("CLEAN: every manifest row has a corresponding "
+                  "input file, every input file has a manifest row, "
+                  "header matches canonical A50 shape.")
+            return 0
+        # Drift detected — operator's call whether to recreate / prune.
+        print("Recovery options:")
+        if other_findings:
+            print(
+                "  - Resolve structural findings first (manual repair "
+                "OR --recreate-manifest if header drift)."
+            )
+        if orphan_rows:
+            print(
+                "  - For orphan manifest rows: re-stage the missing "
+                "source files (`bsa materials <src> --commit --force`) "
+                "OR remove the rows manually."
+            )
+        if orphan_files:
+            print(
+                "  - For orphan input files: `bsa materials "
+                "--prune-orphans --yes` to delete them, OR "
+                "`bsa materials --recreate-manifest` to rebuild the "
+                "manifest from their provenance comments."
+            )
+        return 1
+
+    if recreate_mode:
+        # v1.4.3 Codex R1 MAJOR #2 fix: serialize destructive ops via
+        # an advisory file lock so two parallel `--recreate-manifest`
+        # calls don't race on the backup-then-replace dance.
+        try:
+            with _materials_lock(root):
+                msg = _recreate_manifest(root)
+        except ConversionFailed as exc:
+            sys.stderr.write(f"[bsa materials --recreate-manifest] {exc}\n")
+            return 2
+        print(f"BSA materials --recreate-manifest: {root}")
+        print(f"  {msg}")
+        return 0
+
+    if prune_mode:
+        # v1.4.3 Codex R1 MAJOR #3 fix: hold the materials lock for
+        # the entire verify+delete window so a concurrent recreate
+        # can't make a file non-orphan between our verify and our
+        # unlink.
+        try:
+            with _materials_lock(root):
+                deleted, would_delete = _prune_orphans(
+                    root, confirmed=yes_flag
+                )
+        except ConversionFailed as exc:
+            sys.stderr.write(f"[bsa materials --prune-orphans] {exc}\n")
+            return 2
+        print(f"BSA materials --prune-orphans: {root}")
+        print()
+        if not would_delete:
+            print("CLEAN: no orphan input files to prune.")
+            return 0
+        if not yes_flag:
+            print(f"DRY RUN — would delete {len(would_delete)} orphan "
+                  f"file(s) (re-run with --yes to actually delete):")
+            for f in would_delete[:20]:
+                print(f"  - {f}")
+            if len(would_delete) > 20:
+                print(f"  ... and {len(would_delete) - 20} more")
+            return 0
+        print(f"Deleted {len(deleted)} orphan input file(s):")
+        for f in deleted[:20]:
+            print(f"  - {f}")
+        if len(deleted) > 20:
+            print(f"  ... and {len(deleted) - 20} more")
+        return 0
+
+    # ---- Staging mode (existing behavior) ---------------------------
+    if not getattr(args, "src_dir", None):
+        sys.stderr.write(
+            "[bsa materials] src_dir is required for staging mode. "
+            "Pass a directory path, OR use one of the manifest-"
+            "maintenance modes: --verify-manifest, --recreate-"
+            "manifest, --prune-orphans.\n"
+        )
+        return 2
+
+    src_dir = Path(args.src_dir).resolve()
+
+    if not src_dir.is_dir():
+        sys.stderr.write(
+            f"[bsa materials] source directory not found: {src_dir}\n"
+        )
+        return 2
+    # workspace-initialization check moved to top of cmd_materials in
+    # v1.4.3 (so manifest-maintenance modes also benefit from the
+    # check). Removing the duplicate here.
 
     # Write containment (Codex round-1 HIGH): RESOLVE the staging dir
     # and refuse to proceed if any of inputs/, source_manifest.csv,

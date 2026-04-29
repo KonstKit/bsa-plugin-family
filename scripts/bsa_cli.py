@@ -1080,11 +1080,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     p_mat.add_argument(
         "src_dir",
+        nargs="?",
+        default=None,
         help=(
             "Directory containing source files to stage. Supported "
             "extensions (v1.4.2): .pdf, .docx, .md/.markdown, .txt, "
             ".xlsx, .csv, .tsv, .json, .graphql. Anything else is "
-            "reported as 'unsupported' and skipped."
+            "reported as 'unsupported' and skipped. v1.4.3+: optional "
+            "when a manifest-maintenance flag is set "
+            "(--verify-manifest / --recreate-manifest / --prune-orphans)."
         ),
     )
     p_mat.add_argument(
@@ -1135,6 +1139,55 @@ def main(argv: Optional[list[str]] = None) -> int:
             "(~200 KB body — enough for typical voicescribe traces / "
             "explorer payloads, small enough to keep a 50MB minified "
             "json from expanding to a 500MB md file)."
+        ),
+    )
+    # v1.4.3 manifest-maintenance modes (closes lifecycle review #1).
+    # All three are mutually exclusive — argparse enforces. src_dir is
+    # optional when any one of these is set.
+    mgr_group = p_mat.add_mutually_exclusive_group()
+    mgr_group.add_argument(
+        "--verify-manifest",
+        action="store_true",
+        help=(
+            "v1.4.3: read-only diagnostic. Cross-checks "
+            "source_manifest.csv against actual files in inputs/; "
+            "reports orphan manifest rows (manifest references "
+            "missing file), orphan input files (file present but no "
+            "manifest row), and header drift from the canonical A50 "
+            "shape. Exit 0 = clean, 1 = drift detected, 2 = workspace "
+            "not initialized."
+        ),
+    )
+    mgr_group.add_argument(
+        "--recreate-manifest",
+        action="store_true",
+        help=(
+            "v1.4.3: rebuild source_manifest.csv from provenance "
+            "comments in staged input files. Backs up the prior "
+            "manifest to source_manifest.csv.bak.<UTC-timestamp> "
+            "atomically before overwrite — operator always has a "
+            "recoverable prior state. Files without provenance are "
+            "skipped with a warning."
+        ),
+    )
+    mgr_group.add_argument(
+        "--prune-orphans",
+        action="store_true",
+        help=(
+            "v1.4.3: delete input files that have no manifest row. "
+            "DESTRUCTIVE — requires --yes to confirm. Without --yes, "
+            "prints the dry-run list and exits 0. Refuses if "
+            "structural drift is present (header drift / manifest "
+            "missing) — operator must run --recreate-manifest first."
+        ),
+    )
+    p_mat.add_argument(
+        "--yes",
+        action="store_true",
+        help=(
+            "v1.4.3: confirm destructive operations (currently only "
+            "--prune-orphans). Without --yes, --prune-orphans is a "
+            "dry-run."
         ),
     )
     p_mat.set_defaults(func=cmd_materials)

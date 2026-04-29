@@ -4,6 +4,77 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.3] — 2026-04-29
+
+**Feature: `bsa materials` manifest-maintenance modes — `--verify-manifest`, `--recreate-manifest`, `--prune-orphans`.**
+
+Closes lifecycle review **rec #1** (recovery for partial-write states). Pre-v1.4.3 the materials staging path could leave a workspace in three unrecoverable shapes:
+
+1. **Orphan input files** — `--commit` wrote `source_NNN_<slug>.md` files but failed AT the manifest write (full disk / permission flip mid-run). Inputs got staged with no manifest row referencing them; downstream stages then either skipped them silently OR doubled them up on re-stage.
+2. **Orphan manifest rows** — operator manually deleted a stale staged file but forgot to remove the row. Stage 1 evidence-binding then complained about a missing source.
+3. **Header drift** — manifest header silently diverged from canonical A50 shape (e.g., column re-ordered by a spreadsheet tool). Subsequent `--commit` refused with header-drift error and operator had no in-tool repair.
+
+v1.4.3 closes all three by adding three manifest-maintenance modes that operate on an existing workspace WITHOUT a `src_dir` positional argument.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3` (no POLICY_GLOBS edits — `scripts/*.py` isn't in canon-globs).
+
+### Added
+
+- **`_verify_manifest(workspace) -> tuple[list[str], list[str], list[str]]`** in `scripts/_bsa_cli_materials.py` — pure read-only cross-check between `source_manifest.csv` and `analysis/proposals/stage1/inputs/`. Returns three lists: `(orphan_manifest_rows, orphan_input_files, other_findings)` where `other_findings` carries structural problems (missing manifest, header drift, malformed SourceID, manifest-not-a-file). Single-pass over the manifest collects `sids_in_manifest` AND walks the inputs/ directory; reverse direction check then matches `source_NNN_*.md` against the SID set.
+- **`_recreate_manifest(workspace) -> str`** — rebuild the manifest from `<!-- bsa materials: staged from <Origin> (kind=<k>); SourceID=<sid> -->` provenance comments embedded in each staged file at `_render_*` time. Walks inputs/ in deterministic name order, reads first 512 bytes of each file, extracts Origin + kind via existing `_PROVENANCE_COMMENT_RE`. Heuristically derives SourceType from kind + filename (interview/transcript → `interview_transcript`; pdf/docx → `document`; xlsx/csv/tsv/json → `process_note`). Defaults `ReliabilityTier=T5` + `DateOrVersion=today` with a Notes string flagging the auto-recreation. **Atomic backup**: existing manifest is copied to `source_manifest.csv.bak.<UTC-timestamp>` BEFORE the new manifest is written via `_atomic_write_text`; if backup fails, recreate refuses (raises `ConversionFailed`) so the operator never loses prior state. Files without a parseable provenance comment are SKIPPED with a stderr-style warning in the return string (operator can re-stage them explicitly).
+- **`_prune_orphans(workspace, *, confirmed: bool) -> tuple[list[str], list[str]]`** — delete input files that have no manifest row. Returns `(deleted, would_delete)` — `deleted` is empty unless `confirmed=True`. **Refuses on structural drift** (`other_findings` non-empty from `_verify_manifest`) — operator must repair the manifest first via `--recreate-manifest` so we never delete inputs while the manifest itself is broken. Per-file deletion failure raises `ConversionFailed` with the partial-state count.
+- **`--verify-manifest`** CLI flag on `bsa materials` (mutually exclusive group). Exit codes: `0` clean, `1` drift detected, `2` workspace not initialized. Output groups orphan rows / orphan files / structural findings into separate sections; truncates display at 20 entries with `... and N more`. Always closes with a "Recovery options" block tailored to which drift was found.
+- **`--recreate-manifest`** CLI flag (mutually exclusive group). Exit codes: `0` recreate success, `2` catastrophic failure (cannot back up prior manifest; cannot read inputs/). Reports row count + backup file name + skipped-no-provenance count.
+- **`--prune-orphans`** CLI flag (mutually exclusive group). Without `--yes` is a dry-run (lists what would be deleted, exit 0). With `--yes` actually deletes. Refuses (exit 2) if `_verify_manifest` returns structural drift; exit 0 if there are no orphans.
+- **`--yes`** CLI flag (outside the mutually exclusive group, since it's a confirmation modifier). Currently only `--prune-orphans` consults it; documented as future-extensible to other destructive ops.
+- **`src_dir`** positional now accepts `nargs="?"`, defaulting to `None`. Required only in staging mode; explicit error message points operator to manifest-maintenance flags if `src_dir` is omitted in staging mode.
+- **16 new tests** in `tests/test_bsa_cli_materials_recovery.py` covering: verify-clean, verify-orphan-manifest-row, verify-orphan-input-file, verify-header-drift, verify-missing-manifest, verify-uninitialized, recreate-rebuilds-from-provenance, recreate-backs-up-prior-manifest, recreate-skips-files-without-provenance, prune-dry-run, prune-yes-actually-deletes, prune-clean, prune-refuses-when-header-drift, prune-refuses-when-manifest-missing, staging-mode-requires-src-dir, verify-and-recreate-mutually-exclusive.
+
+### Changed
+
+- **`cmd_materials(args)`** dispatch reordered: workspace-initialization check moved to the top (so manifest-maintenance modes also benefit); manifest-maintenance branches run BEFORE the staging-mode `src_dir` check; the duplicate workspace-init check inside staging mode removed.
+- **Subcommand help** documents both modes (staging vs manifest-maintenance) with exit-code semantics.
+
+### Tests
+
+Total suite: **2105 passed** (was 2075 in v1.4.2 — +30 net new: 16 base coverage + 11 R1-fix verification + 2 R2-fix verification + 1 R3-fix verification).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 1 CRITICAL + 4 MAJOR + 3 MINOR. All 8 fixed:
+  - **CRITICAL** (`scripts/_bsa_cli_materials.py:cmd_materials`): manifest-maintenance modes bypassed `_check_write_containment`, letting a symlinked `analysis/` / `stage1/` / `inputs/` redirect `--prune-orphans --yes` outside the workspace. Fix: containment-check runs BEFORE the verify/recreate/prune branches; defense-in-depth resolves each prune target's parent against the resolved inputs/ root and refuses symlink leaves.
+  - **MAJOR #1** (`_recreate_manifest` backup naming): same-second backup file collision could overwrite the prior backup. Fix: backup name uses microsecond-precision timestamp + `O_EXCL` create + collision-retry counter (up to 64 attempts).
+  - **MAJOR #2** (parallel `_recreate_manifest`): no serialization between concurrent calls; the manifest could change between backup and replace, leaving overwritten content unrecoverable. Fix: new `_materials_lock(workspace)` context manager — `fcntl.flock(LOCK_EX | LOCK_NB)` on `<stage1>/.bsa_materials.lock`. Both recreate AND prune now hold the lock for the entire critical section. Non-blocking — if held by another process, raises `ConversionFailed` with a clear "another bsa materials operation is in progress" message.
+  - **MAJOR #3** (`_prune_orphans` TOCTOU): verify ran once, then deletion happened later using stale filenames. Fix: same `_materials_lock` covers verify + delete loop atomically. Plus defense-in-depth path validation (resolve parent, compare against resolved inputs root, refuse symlink leaves).
+  - **MAJOR #4** (`_recreate_manifest` SID validation): `.search()` accepted provenance comments anywhere in the first 512 chars; a renamed file kept its old `SourceID=S-007` comment but lived as `source_042_*.md` → row emitted with mismatched SID. Fix: `_PROVENANCE_COMMENT_RE.match(head.lstrip("BOM/whitespace"))` anchors at start; mismatch between filename SID and provenance SID → skip with explicit warning. Unknown `kind` values rejected (whitelisted set: pdf/docx/text/xlsx/csv/tsv/json).
+  - **MINOR #1**: UTF-8 BOM in manifest header treated as drift. Fix: read with `encoding="utf-8-sig"`.
+  - **MINOR #2**: `\d{3,4}` patterns wouldn't match 5+ digit SourceIDs (hypothetical 10000+ source engagement). Fix: `\d{3,}` consistently across `_verify_manifest` + `_recreate_manifest` (4 locations).
+  - **MINOR #3**: `--yes` accepted with `--verify-manifest` etc. and silently ignored. Fix: stderr warning when `--yes` is set without `--prune-orphans` so typos are caught.
+- **11 new tests** added to verify each R1 fix:
+  * test_recreate_refuses_when_inputs_dir_is_symlink
+  * test_prune_refuses_when_inputs_dir_is_symlink
+  * test_prune_refuses_symlink_input_file (defense-in-depth)
+  * test_recreate_backup_uses_microsecond_unique_name
+  * test_recreate_skips_when_provenance_sid_mismatches_filename
+  * test_recreate_anchors_provenance_at_start
+  * test_recreate_skips_unknown_kind
+  * test_verify_accepts_utf8_bom_header
+  * test_verify_handles_5_digit_source_id
+  * test_yes_without_prune_warns
+  * test_lock_blocks_concurrent_recreate
+- **R2**: REQUEST CHANGES — 1 R1-finding NOT_FIXED + 1 NEW MAJOR + 1 NEW MINOR. All 3 fixed:
+  - **R1 MINOR #2 NOT_FIXED**: `\d{3,4}` patterns remained in `_next_source_id` (line 160, 172) and `_plan_conversions` slug-detection (line 873) — staging path could mishandle 5+ digit SourceIDs. Fix: applied `\d{3,}` to all 3 staging-side regexes for full plugin consistency.
+  - **NEW MAJOR**: `_recreate_manifest` decoded the head with `errors="ignore"`, silently dropping invalid leading bytes — a corrupt-prefix file's later region containing a literal provenance comment could fool the anchored `.match`. Fix: read bytes first, strip only explicit UTF-8 BOM at byte level, decode strictly (`UnicodeDecodeError` → skip with no-provenance).
+  - **NEW MINOR**: `_materials_lock` auto-created `<stage1>/.bsa_materials.lock` even when stage1 didn't exist, leaving a sentinel in a partially-bootstrapped workspace. Fix: lock moved to `<workspace>/analysis/.bsa_materials.lock` (analysis/ is guaranteed by `WorkspaceState.is_initialized()` upstream); refuses with `ConversionFailed` if analysis/ missing.
+- **2 new tests** for R2 fixes:
+  * test_recreate_skips_binary_prefix_files (NEW MAJOR — strict-decode path)
+  * test_recreate_refuses_when_workspace_uninitialized (NEW MINOR — no auto-create on uninitialized workspace)
+- **R3**: REQUEST CHANGES — 1 NEW MAJOR introduced by the R2 strict-decode fix. Fixed:
+  - **NEW MAJOR**: `read_bytes()[:512]` could split a valid UTF-8 multibyte sequence at the boundary, causing legitimate Cyrillic/CJK-bodied files to fail strict decode and skip. Fix: use `codecs.getincrementaldecoder("utf-8")(errors="strict").decode(raw_head, final=False)` — incomplete trailing sequences are buffered (effectively dropped) while invalid mid-stream bytes still raise. Preserves both R2's foot-gun fix AND R3's valid-file handling.
+- **1 new test** for R3 fix:
+  * test_recreate_handles_utf8_multibyte_at_head_boundary (Cyrillic body that crosses the 512-byte head window must still produce a manifest row)
+- **R4**: APPROVE — R3 fix verified, no new issues. Decoder instantiated per file, BOM stripping remains byte-level before decode, regression coverage includes both the multibyte-boundary case and the invalid-prefix skip case.
+
 ## [v1.4.2] — 2026-04-28
 
 **Feature: `bsa materials` json/tsv/graphql support + `--max-json-chars` CLI override.**
