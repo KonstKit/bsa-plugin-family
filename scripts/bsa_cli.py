@@ -66,6 +66,7 @@ from scripts._bsa_cli_materials import (  # noqa: E402, F401  (re-exports)
     SourcePlan,
     _A50_HEADER,
     _A50_HEADER_WITH_EFFECTIVE_DATE,
+    _A50_HEADER_WITH_HASHES,
     _atomic_write_text,
     _bytes_human,
     _check_write_containment,
@@ -1188,6 +1189,39 @@ def main(argv: Optional[list[str]] = None) -> int:
             "v1.4.3: confirm destructive operations (currently only "
             "--prune-orphans). Without --yes, --prune-orphans is a "
             "dry-run."
+        ),
+    )
+    # v1.4.4 (closes lifecycle review #2): content-hash detection +
+    # raw-bytes retention. Both flags are additive to staging mode.
+    p_mat.add_argument(
+        "--restage-changed",
+        action="store_true",
+        help=(
+            "v1.4.4: in staging mode, compare each src file's "
+            "ContentHash (sha256) against the manifest's stored hash. "
+            "Files whose hash matches are SKIPPED (logged as "
+            "'unchanged'); files whose hash differs are RE-EXTRACTED "
+            "in place (existing SourceID + slug preserved; manifest "
+            "row updated, not appended). New files (not in manifest) "
+            "follow the normal staging path. Closes the v1.4.x gap "
+            "where re-running `bsa materials` on the same source "
+            "directory after editing one file required --force which "
+            "re-staged ALL files."
+        ),
+    )
+    p_mat.add_argument(
+        "--keep-raw",
+        action="store_true",
+        help=(
+            "v1.4.4: copy each src file's original bytes to "
+            "<workspace>/analysis/proposals/stage1/raw/"
+            "source_NNN_<slug>.<original-ext> after the staged .md "
+            "lands. Lets analysts refer back to the unmodified source "
+            "(useful for audit trails + reproducible re-extraction). "
+            "Idempotent: existing raw/ files with matching hash are "
+            "skipped. Default off to preserve the existing storage "
+            "profile (raw retention can double disk usage on large "
+            "engagements)."
         ),
     )
     p_mat.set_defaults(func=cmd_materials)

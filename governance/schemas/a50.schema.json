@@ -84,11 +84,26 @@
     "Notes": {
       "type": "string",
       "description": "Free-form notes. Empty string allowed."
+    },
+    "ContentHash": {
+      "type": "string",
+      "pattern": "^(?:|[a-f0-9]{64})$",
+      "description": "v1.4.4: SHA-256 hex digest of the original (pre-conversion) source file's bytes. 64 lowercase hex characters when populated; empty string when unknown (e.g., `bsa materials --recreate-manifest` ran without raw/ retention OR the source file was unreadable at staging time). Set at staging time by `bsa materials --commit`. Used by `bsa materials --restage-changed` to detect when a source's bytes changed between staging runs (skip-if-unchanged optimization). Downstream evidence-binding can also audit (does the file at Origin still match this hash, or was it modified after stage 1 froze the manifest?)."
+    },
+    "OriginalBytes": {
+      "type": "string",
+      "pattern": "^(?:|[0-9]+)$",
+      "description": "v1.4.4: byte length of the original source file at staging time. Decimal integer string when populated; empty string when unknown. Pair with ContentHash for cheap mtime/size pre-check before the full sha256 compare in --restage-changed."
+    },
+    "OriginalMtimeUtc": {
+      "type": "string",
+      "pattern": "^(?:|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$",
+      "description": "v1.4.4: ISO-8601 UTC mtime (second precision) of the original source file at staging time. Format: `YYYY-MM-DDTHH:MM:SSZ`. Empty when unknown. Combined with OriginalBytes gives a cheap pre-check before the full hash compare."
     }
   },
   "additionalProperties": true,
   "x-bsa-csv-columns-order": {
-    "_comment": "Canonical column order for diff stability. `order` is the closed set of required CSV columns. `optional_order` lists columns that MAY appear (introduced v1.2.16 to keep new fields backward-compatible at the CSV-shape layer). When present, optional columns SHOULD appear in the listed order, between DateOrVersion and Notes, but consumers tolerate any ordering. The CSV column-set check accepts a row file whose actual column set is `order` (alone) OR `order + any subset of optional_order`. Pre-v1.2.16 A50 CSVs (no EffectiveDate) and post-v1.2.16 A50 CSVs (EffectiveDate present) are both valid.",
+    "_comment": "Canonical column order for diff stability. `order` is the closed set of required CSV columns. `optional_order` lists columns that MAY appear (introduced v1.2.16 to keep new fields backward-compatible at the CSV-shape layer; v1.4.4 adds ContentHash + OriginalBytes + OriginalMtimeUtc). When present, optional columns SHOULD appear in the listed order, between DateOrVersion and Notes, but consumers tolerate any ordering. The CSV column-set check accepts a row file whose actual column set is `order` (alone) OR `order + any subset of optional_order`. Pre-v1.2.16, post-v1.2.16 (with EffectiveDate), and post-v1.4.4 (with hash columns) A50 CSVs are all valid.",
     "order": [
       "SourceID",
       "SourceType",
@@ -102,7 +117,10 @@
       "Notes"
     ],
     "optional_order": [
-      "EffectiveDate"
+      "EffectiveDate",
+      "ContentHash",
+      "OriginalBytes",
+      "OriginalMtimeUtc"
     ]
   },
   "x-bsa-uniqueness-rules": {

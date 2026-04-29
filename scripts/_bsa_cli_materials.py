@@ -120,6 +120,18 @@ class SourcePlan:
                               # disambiguation false-skipped distinct
                               # `team_a/foo.md` vs `team_b/foo.md`.
     skipped_reason: Optional[str] = None  # set when --commit would skip
+    # v1.4.4 (closes lifecycle review rec #2): content-hash columns.
+    # Populated lazily on --commit; absent on dry-run plans. Skipped
+    # plans (already-staged duplicates) leave these as None.
+    content_hash: Optional[str] = None         # sha256 hex digest
+    original_bytes: Optional[int] = None       # raw byte length
+    original_mtime_utc: Optional[str] = None   # ISO-8601 UTC second
+    # v1.4.4 --restage-changed: True when this plan replaces a row
+    # already in the manifest (by Origin lookup). source_id is set to
+    # the EXISTING SID; target overwrites the existing staged file.
+    # The writer updates the manifest row in place rather than
+    # appending a fresh row.
+    restage: bool = False
 
 
 def _slugify(name: str, max_len: int = 40) -> str:
@@ -841,12 +853,64 @@ def _existing_origins(manifest_path: Path) -> set[str]:
     return out
 
 
+def _existing_origin_index(manifest_path: Path) -> dict[str, dict[str, str]]:
+    """Map Origin → {SourceID, ContentHash, OriginalBytes,
+    OriginalMtimeUtc, slug} for every row in the manifest. Used by
+    `_plan_conversions` in --restage-changed mode to look up an
+    existing row's SID + stored hash without re-reading the manifest.
+
+    Tolerant of missing optional columns (manifests authored before
+    v1.4.4 simply yield empty hash fields). Tolerant of read errors
+    (returns empty dict). The slug field is derived from the staged
+    file's name so callers can locate the existing target without
+    re-running _slugify (which can drift if the slug-derivation
+    algorithm changes between versions)."""
+    out: dict[str, dict[str, str]] = {}
+    if not manifest_path.is_file():
+        return out
+    import csv as _csv
+    try:
+        with manifest_path.open(
+            "r", encoding="utf-8-sig", newline=""
+        ) as fh:
+            reader = _csv.DictReader(fh)
+            for row in reader:
+                origin = (row.get("Origin") or "").strip()
+                sid = (row.get("SourceID") or "").strip()
+                if not origin or not sid:
+                    continue
+                out[origin] = {
+                    "SourceID": sid,
+                    "ContentHash": (row.get("ContentHash") or "").strip(),
+                    "OriginalBytes": (row.get("OriginalBytes") or "").strip(),
+                    "OriginalMtimeUtc": (row.get("OriginalMtimeUtc") or "").strip(),
+                }
+    except (OSError, _csv.Error):
+        pass
+    # Augment with slug-from-disk so caller can locate the existing
+    # target without re-running _slugify (slug algorithm may drift
+    # between plugin versions; we trust on-disk shape).
+    inputs_dir = manifest_path.parent / "inputs"
+    if inputs_dir.is_dir():
+        slug_pat = re.compile(r"^source_(\d{3,})_(.+)\.md$")
+        sid_to_slug: dict[str, str] = {}
+        for f in inputs_dir.iterdir():
+            m = slug_pat.match(f.name)
+            if m and f.is_file():
+                sid_to_slug[f"S-{m.group(1)}"] = m.group(2)
+        for entry in out.values():
+            entry["slug"] = sid_to_slug.get(entry["SourceID"], "")
+    return out
+
+
 def _plan_conversions(
     src_files: list[Path],
     inputs_dir: Path,
     manifest_path: Path,
     src_dir_root: Path,
     force: bool,
+    *,
+    restage_changed: bool = False,
 ) -> list[SourcePlan]:
     """Build a list of SourcePlan, assigning fresh source IDs.
 
@@ -863,6 +927,12 @@ def _plan_conversions(
     plans: list[SourcePlan] = []
     next_id = _next_source_id(inputs_dir, manifest_path)
     already_staged = _existing_origins(manifest_path)
+    # v1.4.4 --restage-changed: load Origin → {SID, ContentHash, slug}
+    # so we can look up the existing row + decide skip-vs-restage based
+    # on hash comparison.
+    origin_index: dict[str, dict[str, str]] = (
+        _existing_origin_index(manifest_path) if restage_changed else {}
+    )
     # Slug→existing-path map for the slug-backstop: if the manifest
     # was deleted but old `source_NNN_<slug>.md` files remain, we
     # MUST detect those by slug. Round-2 fix: when the slug matches,
@@ -893,6 +963,67 @@ def _plan_conversions(
 
         # --- Primary idempotency check: Origin in manifest. -----------
         if origin_rel in already_staged and not force:
+            # v1.4.4: in --restage-changed mode, this is the BRANCH
+            # POINT — compare current src hash to manifest's stored
+            # hash. Same hash → skipped(unchanged). Different hash →
+            # restage with the existing SID + target slug.
+            if restage_changed and origin_rel in origin_index:
+                existing = origin_index[origin_rel]
+                stored_hash = existing.get("ContentHash") or ""
+                try:
+                    current_hash, current_size, current_mtime = (
+                        _file_metadata(src)
+                    )
+                except OSError as exc:
+                    plans.append(SourcePlan(
+                        src=src, kind=kind, target=inputs_dir / "_unreadable",
+                        source_id=existing.get("SourceID", "S-???"),
+                        origin_rel=origin_rel,
+                        skipped_reason=f"unreadable for hash compare: {exc}",
+                    ))
+                    continue
+                if stored_hash and stored_hash == current_hash:
+                    # Unchanged — skip cleanly. Use existing SID +
+                    # slug to keep the displayed plan readable.
+                    existing_slug = existing.get("slug") or slug
+                    sid = existing["SourceID"]
+                    sid_digits = sid.removeprefix("S-")
+                    target = (
+                        inputs_dir
+                        / f"source_{sid_digits}_{existing_slug}.md"
+                    )
+                    plans.append(SourcePlan(
+                        src=src, kind=kind, target=target, source_id=sid,
+                        origin_rel=origin_rel,
+                        skipped_reason=(
+                            "unchanged (ContentHash matches manifest); "
+                            "skipping under --restage-changed"
+                        ),
+                        content_hash=current_hash,
+                        original_bytes=current_size,
+                        original_mtime_utc=current_mtime,
+                    ))
+                    continue
+                # Different hash (OR no stored hash to compare against)
+                # → re-stage. Use existing SID + slug; overwrite target.
+                existing_slug = existing.get("slug") or slug
+                sid = existing["SourceID"]
+                sid_digits = sid.removeprefix("S-")
+                target = (
+                    inputs_dir
+                    / f"source_{sid_digits}_{existing_slug}.md"
+                )
+                plans.append(SourcePlan(
+                    src=src, kind=kind, target=target, source_id=sid,
+                    origin_rel=origin_rel,
+                    skipped_reason=None,
+                    restage=True,
+                    content_hash=current_hash,
+                    original_bytes=current_size,
+                    original_mtime_utc=current_mtime,
+                ))
+                continue
+            # Default behavior (no restage-changed): skip with message.
             sid_num = next_id
             sid = f"S-{sid_num:03d}"
             target_name = f"source_{sid_num:03d}_{slug}.md"
@@ -989,6 +1120,7 @@ def _render_draft_manifest(
     src_dir_root: Path,
     *,
     include_effective_date: bool = False,
+    include_hashes: bool = False,
 ) -> str:
     """Render a draft source_manifest.csv. ReliabilityTier defaults to
     T5 (most cautious) — the user MUST re-tag during /bsa-stage 1
@@ -999,12 +1131,29 @@ def _render_draft_manifest(
     column) so an append into an existing manifest that has already
     been backfilled with the v1.2.16 optional column doesn't
     misalign. The empty cell reads as 'n/a' in freshness_audit per
-    the optional_order extension contract."""
+    the optional_order extension contract.
+
+    v1.4.4: when ``include_hashes=True`` the rendered rows carry
+    ``ContentHash`` (sha256 hex), ``OriginalBytes`` (raw size), and
+    ``OriginalMtimeUtc`` (ISO-8601 UTC second) AFTER ``EffectiveDate``.
+    Hashes are sourced from ``SourcePlan.content_hash`` etc., which
+    cmd_materials populates per file at --commit time. Plans without
+    populated hash fields fall back to empty cells — operator can
+    re-stage with --restage-changed to backfill. ``include_hashes``
+    implies ``include_effective_date`` (the new variant always carries
+    EffectiveDate)."""
+    if include_hashes:
+        include_effective_date = True  # the hash header always carries EffectiveDate
     base = [
         "SourceID", "SourceType", "Title", "Origin", "AccessStatus",
         "ReliabilityTier", "Priority", "Language", "DateOrVersion",
     ]
-    cols = base + (["EffectiveDate"] if include_effective_date else []) + ["Notes"]
+    cols = base + (["EffectiveDate"] if include_effective_date else [])
+    cols += (
+        ["ContentHash", "OriginalBytes", "OriginalMtimeUtc"]
+        if include_hashes else []
+    )
+    cols += ["Notes"]
     out = [",".join(cols)]
     today = _today_iso()
     for p in plans:
@@ -1038,7 +1187,16 @@ def _render_draft_manifest(
         # v1.2.16: empty EffectiveDate cell when the existing manifest
         # already carries the column. Operator backfills the value
         # row-by-row at the same review pass that retags ReliabilityTier.
-        row = base_row + ([""] if include_effective_date else []) + [_csv_escape(notes)]
+        row = base_row + ([""] if include_effective_date else [])
+        # v1.4.4: hash columns. Empty when the plan didn't populate
+        # them (dry-run, skipped, or pre-v1.4.4 caller).
+        if include_hashes:
+            row += [
+                p.content_hash or "",
+                str(p.original_bytes) if p.original_bytes is not None else "",
+                p.original_mtime_utc or "",
+            ]
+        row += [_csv_escape(notes)]
         out.append(",".join(row))
     return "\n".join(out) + "\n"
 
@@ -1063,6 +1221,49 @@ def _bytes_human(n: int) -> str:
     if n < 1024 ** 2:
         return f"{n / 1024:.1f} KB"
     return f"{n / 1024 ** 2:.1f} MB"
+
+
+# v1.4.4 (closes lifecycle review rec #2). Content hashing helpers.
+# Streaming sha256 + (size, mtime) bundle so we can:
+#   1. Detect when a re-staged source has changed (--restage-changed).
+#   2. Persist a manifest row that downstream stages can audit against
+#      the actual bytes (was the source modified after stage 1 froze
+#      the manifest? — answers a long-standing audit question).
+#   3. Optionally retain the original (pre-conversion) bytes under
+#      analysis/proposals/stage1/raw/ via --keep-raw for reproducible
+#      re-extraction.
+def _compute_content_hash(path: Path, *, chunk_size: int = 65536) -> str:
+    """Streaming sha256 hex digest of `path`. Reads in 64 KB chunks
+    so we don't load 100+ MB call-data files into RAM. Raises OSError
+    on read failure (caller decides how to surface).
+
+    v1.4.4 R1 MINOR #3 caveat: if the source file is being actively
+    modified during this read (a writer process appending or
+    truncating), the digest reflects the partial mid-write byte
+    state, NOT a coherent snapshot. The CLI's contract assumes the
+    operator does not edit src/ during `bsa materials --commit`;
+    this is documented in the user-facing command help. For stronger
+    guarantees use `--keep-raw` and hash the raw/ copy after the fact."""
+    import hashlib  # local — only used here
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(chunk_size), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _file_metadata(path: Path) -> tuple[str, int, str]:
+    """Return (sha256_hex, size_bytes, mtime_utc_iso_seconds) for a
+    file path. mtime is rounded to the nearest second (UTC) — gives
+    a stable representation across filesystems with sub-second mtime
+    precision (most modern FS) AND those that don't (FAT32, some
+    NFS shares). ISO-8601 'Z' suffix for UTC clarity."""
+    from datetime import datetime, timezone
+    st = path.stat()
+    mtime_utc = datetime.fromtimestamp(
+        st.st_mtime, tz=timezone.utc
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return _compute_content_hash(path), st.st_size, mtime_utc
 
 
 @contextlib.contextmanager
@@ -1206,14 +1407,16 @@ def _verify_manifest(workspace: Path) -> tuple[list[str], list[str], list[str]]:
                     f"manifest is empty (no header row): {manifest}"
                 )
                 return orphan_rows, orphan_files, findings_other
-            # Header drift check — must match A50 shape (one of two
-            # accepted variants per v1.2.16 EffectiveDate addition).
+            # Header drift check — must match A50 shape (one of three
+            # accepted variants: base, +EffectiveDate v1.2.16,
+            # +ContentHash v1.4.4).
             header_str = ",".join(header_fields).strip()
-            if header_str not in (_A50_HEADER, _A50_HEADER_WITH_EFFECTIVE_DATE):
+            if header_str not in _ACCEPTED_A50_HEADERS:
                 findings_other.append(
                     f"manifest header drifts from canonical A50 shape "
-                    f"(expected {_A50_HEADER} OR "
-                    f"{_A50_HEADER_WITH_EFFECTIVE_DATE}; "
+                    f"(expected one of: {_A50_HEADER!r} | "
+                    f"{_A50_HEADER_WITH_EFFECTIVE_DATE!r} | "
+                    f"{_A50_HEADER_WITH_HASHES!r}; "
                     f"found {header_str!r})"
                 )
                 return orphan_rows, orphan_files, findings_other
@@ -1384,6 +1587,32 @@ def _recreate_manifest(workspace: Path) -> str:
         else:
             stype = "process_note"
         title = entry.stem.split("_", 2)[-1] if "_" in entry.stem else entry.stem
+        # v1.4.4: if --keep-raw was used during original staging, the
+        # source bytes live at <stage1>/raw/source_NNN_<slug>.<ext>.
+        # Try to recover hash + size + mtime so the recreated manifest
+        # matches what a fresh staging run would have produced.
+        # Otherwise leave the hash columns empty (operator can backfill
+        # via `bsa materials <src> --restage-changed --keep-raw`).
+        raw_dir = inputs_dir.parent / "raw"
+        content_hash = ""
+        original_bytes_str = ""
+        original_mtime = ""
+        if raw_dir.is_dir():
+            # Match by SourceID prefix — slug + extension may vary
+            # (the ORIGINAL extension is what we kept, not .md).
+            raw_candidates = sorted(
+                raw_dir.glob(f"source_{m.group(1)}_*"),
+            )
+            # Filter out subdirs / unexpected paths.
+            raw_candidates = [c for c in raw_candidates if c.is_file()]
+            if len(raw_candidates) == 1:
+                try:
+                    rh, rb, rmt = _file_metadata(raw_candidates[0])
+                    content_hash = rh
+                    original_bytes_str = str(rb)
+                    original_mtime = rmt
+                except OSError:
+                    pass  # leave empty; operator can re-stage
         rows_to_emit.append({
             "SourceID": sid,
             "SourceType": stype,
@@ -1394,6 +1623,10 @@ def _recreate_manifest(workspace: Path) -> str:
             "Priority": "medium",
             "Language": "en",
             "DateOrVersion": today,
+            "EffectiveDate": "",
+            "ContentHash": content_hash,
+            "OriginalBytes": original_bytes_str,
+            "OriginalMtimeUtc": original_mtime,
             "Notes": _csv_escape(
                 "auto-recreated by `bsa materials --recreate-manifest`; "
                 "ReliabilityTier defaulted to T5 — re-tag based on epistemic "
@@ -1462,9 +1695,15 @@ def _recreate_manifest(workspace: Path) -> str:
         backup_msg = f" (prior manifest backed up to {backup_path.name})"
 
     # Render new manifest body.
+    # v1.4.4: emit the WITH_HASHES variant by default so future
+    # tooling sees the new schema; cells are empty when raw/ wasn't
+    # retained (back-fill path documented above).
     cols = [
         "SourceID", "SourceType", "Title", "Origin", "AccessStatus",
-        "ReliabilityTier", "Priority", "Language", "DateOrVersion", "Notes",
+        "ReliabilityTier", "Priority", "Language", "DateOrVersion",
+        "EffectiveDate",
+        "ContentHash", "OriginalBytes", "OriginalMtimeUtc",
+        "Notes",
     ]
     out_lines = [",".join(cols)]
     for row in rows_to_emit:
@@ -1816,8 +2055,14 @@ def cmd_materials(args: argparse.Namespace) -> int:
         return 2
 
     # 2. Plan conversions (assigns IDs, flags target collisions).
+    # v1.4.4: --restage-changed compares src content-hash against the
+    # manifest's stored ContentHash; matched → skip-unchanged,
+    # mismatched → restage with EXISTING SourceID (in-place row update).
+    restage_changed_mode = bool(getattr(args, "restage_changed", False))
     plans = _plan_conversions(
-        supported, inputs_dir, manifest_path, src_dir, force=bool(args.force)
+        supported, inputs_dir, manifest_path, src_dir,
+        force=bool(args.force),
+        restage_changed=restage_changed_mode,
     )
 
     # 3. Render preview.
@@ -1859,8 +2104,22 @@ def cmd_materials(args: argparse.Namespace) -> int:
     if not args.commit:
         print("DRY RUN. Re-run with --commit to actually write files + draft manifest.")
         if any(not p.skipped_reason for p in plans):
+            # v1.4.4 R1 MINOR #1 fix: include flags so the suggested
+            # command preserves the operator's intent. Otherwise
+            # copy-paste of the suggestion silently downgrades from
+            # `--restage-changed` / `--keep-raw` mode to plain commit.
+            extras: list[str] = []
+            if restage_changed_mode:
+                extras.append("--restage-changed")
+            if bool(getattr(args, "keep_raw", False)):
+                extras.append("--keep-raw")
+            if bool(args.recursive):
+                extras.append("--recursive")
+            if bool(args.force):
+                extras.append("--force")
+            extras_str = (" " + " ".join(extras)) if extras else ""
             print("Suggested next:")
-            print(f"  bsa --workspace {root} materials {src_dir} --commit")
+            print(f"  bsa --workspace {root} materials {src_dir} --commit{extras_str}")
         return 0
 
     # PRE-FLIGHT: header-drift check + leaf-symlink check.
@@ -1900,12 +2159,31 @@ def cmd_materials(args: argparse.Namespace) -> int:
             )
             return 2
         existing_lines = existing_text.splitlines()
-        existing_header = existing_lines[0].strip() if existing_lines else ""
-        if existing_header not in (_A50_HEADER, _A50_HEADER_WITH_EFFECTIVE_DATE):
+        # v1.4.4: strip a leading UTF-8 BOM the same way utf-8-sig
+        # would; the body decode here uses plain utf-8 (legacy code
+        # path) so we normalize the first line manually for the
+        # header comparison.
+        first_line = existing_lines[0] if existing_lines else ""
+        if first_line.startswith("﻿"):
+            first_line = first_line.lstrip("﻿")
+        # v1.4.4 R1 MAJOR #2 fix: parse via csv so a quoted header
+        # (`"SourceID","SourceType",...` from a QUOTE_ALL writer or
+        # spreadsheet round-trip) normalizes to the bare-comma form
+        # before the header-set comparison.
+        import csv as _csv
+        try:
+            parsed_header_fields = next(
+                _csv.reader(io.StringIO(first_line))
+            )
+            existing_header = ",".join(parsed_header_fields).strip()
+        except (StopIteration, _csv.Error):
+            existing_header = first_line.strip()
+        if existing_header not in _ACCEPTED_A50_HEADERS:
             sys.stderr.write(
                 f"[bsa materials] existing source_manifest.csv has a non-canonical header.\n"
                 f"  Expected: {_A50_HEADER}\n"
                 f"        OR: {_A50_HEADER_WITH_EFFECTIVE_DATE}\n"
+                f"        OR: {_A50_HEADER_WITH_HASHES}\n"
                 f"  Found:    {existing_header or '(empty)'}\n"
                 f"Refuse to append — column misalignment would corrupt the register.\n"
                 f"Recovery options:\n"
@@ -1933,12 +2211,26 @@ def cmd_materials(args: argparse.Namespace) -> int:
 
     # 4. Commit phase: convert + write each file. Track failures.
     # v1.4.1: thread --max-rows-per-table into the tabular extractors.
+    # v1.4.4: thread --keep-raw flag into the writer loop (raw bytes
+    # retention next to the staged .md).
     max_rows_per_table = int(getattr(args, "max_rows_per_table", 5000))
     max_json_chars = int(getattr(args, "max_json_chars", 200_000))
+    keep_raw_flag = bool(getattr(args, "keep_raw", False))
     inputs_dir.mkdir(parents=True, exist_ok=True)
     written: list[SourcePlan] = []
     failed: list[tuple[SourcePlan, str]] = []
     unavailable_seen: set[str] = set()
+    # v1.4.4 R1 MAJOR #4 fix: snapshot existing staged-file bytes for
+    # restage plans BEFORE we overwrite them. On manifest-write
+    # failure we restore from this map so the staged file + manifest
+    # remain consistent (both old → manifest still reflects the file).
+    # v1.4.4 R2 NEW MAJOR fix: also track restage SIDs whose target
+    # did NOT exist before the write (operator deleted the staged
+    # file but kept the manifest row → restage creates a fresh
+    # staged file). On manifest-write failure these get UNLINKED
+    # rather than restored (no prior state to restore TO).
+    restage_snapshots: dict[str, bytes] = {}
+    restage_absent_targets: set[str] = set()
     for p in plans:
         if p.skipped_reason is not None:
             continue
@@ -1967,11 +2259,116 @@ def cmd_materials(args: argparse.Namespace) -> int:
             f"(kind={p.kind}); SourceID={p.source_id} -->\n\n"
             + content
         )
+        # v1.4.4 R1 MAJOR #4 fix: for restage plans, snapshot the
+        # existing staged-file bytes BEFORE overwrite so we can
+        # restore on a subsequent manifest-write failure (the
+        # mixed-state recovery path uses these to roll back).
+        # v1.4.4 R2 NEW MAJOR fix: distinguish "had-prior-bytes"
+        # (snapshot path) from "target absent" (unlink path) so we
+        # don't leave a brand-new file behind when manifest fails.
+        if p.restage:
+            if p.target.is_file():
+                try:
+                    restage_snapshots[p.source_id] = p.target.read_bytes()
+                except OSError:
+                    # Best-effort — if we can't snapshot, the rollback
+                    # path will simply skip restore and emit a clearer
+                    # mixed-state stderr message.
+                    pass
+            else:
+                restage_absent_targets.add(p.source_id)
         try:
             p.target.write_text(body, encoding="utf-8")
-            written.append(p)
         except OSError as exc:
             failed.append((p, f"write failed: {exc}"))
+            continue
+        # v1.4.4: compute hash + size + mtime AFTER successful write.
+        # For restage plans these were already populated in
+        # _plan_conversions (we needed them for the compare); for
+        # fresh plans we populate them now from the original src.
+        if p.content_hash is None or p.original_bytes is None:
+            try:
+                ch, ob, om = _file_metadata(p.src)
+                p.content_hash = ch
+                p.original_bytes = ob
+                p.original_mtime_utc = om
+            except OSError as exc:
+                # Hash failure is non-fatal — staged file is on disk
+                # already; manifest row will land with empty hash
+                # cells (operator can re-stage with --restage-changed
+                # later to backfill).
+                sys.stderr.write(
+                    f"[bsa materials] WARN hash compute failed for "
+                    f"{p.src.name}: {exc} (manifest row will have "
+                    f"empty ContentHash)\n"
+                )
+        # v1.4.4 --keep-raw: preserve a byte-perfect copy of the
+        # original under <stage1>/raw/source_NNN_<slug>.<ext>. Pure
+        # additive — never touches inputs/, manifest, or canonical
+        # state. Idempotent: if a raw file already exists with the
+        # same hash, skip the copy.
+        # v1.4.4 R1 MAJOR #3 fix: containment defense — refuse if
+        # raw/ OR the leaf raw_target is a symlink (a malicious
+        # symlink would let a copy land outside the workspace).
+        # Resolve raw_target.parent and verify it stays under the
+        # resolved raw_dir. The same defense pattern _prune_orphans
+        # uses in v1.4.3.
+        if keep_raw_flag:
+            raw_dir = stage1_dir / "raw"
+            try:
+                raw_dir.mkdir(parents=True, exist_ok=True)
+                if raw_dir.is_symlink():
+                    raise OSError(
+                        f"refusing to write: raw/ is a symlink "
+                        f"({raw_dir.readlink()}). Re-create as a real "
+                        f"directory before re-running."
+                    )
+                raw_dir_resolved = raw_dir.resolve(strict=True)
+                sid_digits = p.source_id.removeprefix("S-")
+                # Match the staged-file slug for sortability AND
+                # keep the ORIGINAL extension so the operator can
+                # round-trip via the original tooling.
+                raw_target = raw_dir / (
+                    f"source_{sid_digits}_{p.target.stem.split('_', 2)[-1]}"
+                    f"{p.src.suffix}"
+                )
+                if raw_target.is_symlink():
+                    raise OSError(
+                        f"refusing to write: raw target is a symlink "
+                        f"({raw_target.readlink()}). Manual cleanup "
+                        f"required."
+                    )
+                # Defense-in-depth: confirm resolved parent is the
+                # resolved raw_dir (catches a same-name symlink in a
+                # subpath that wasn't caught by the leaf check above).
+                resolved_parent = raw_target.parent.resolve(strict=True)
+                if resolved_parent != raw_dir_resolved:
+                    raise OSError(
+                        f"refusing to write: raw target's resolved "
+                        f"parent {resolved_parent} escapes raw dir "
+                        f"{raw_dir_resolved}"
+                    )
+                if raw_target.is_file() and p.content_hash:
+                    try:
+                        existing_hash = _compute_content_hash(raw_target)
+                        if existing_hash == p.content_hash:
+                            written.append(p)
+                            continue  # idempotent skip
+                    except OSError:
+                        pass  # fall through to overwrite
+                # v1.4.4 R1 MINOR #2 fix: copy2 (not copyfile) so
+                # OriginalMtimeUtc backfilled later by recreate
+                # reflects the SOURCE's mtime, not the copy time.
+                shutil.copy2(p.src, raw_target)
+            except OSError as exc:
+                # raw retention is best-effort; the manifest row +
+                # staged input file are already written. Surface a
+                # WARN and keep going (don't fail the whole batch).
+                sys.stderr.write(
+                    f"[bsa materials] WARN --keep-raw copy failed for "
+                    f"{p.src.name}: {exc}\n"
+                )
+        written.append(p)
 
     # 5. Write draft manifest (only for files we successfully wrote).
     # Header drift was already caught in the pre-flight; here we
@@ -2006,27 +2403,89 @@ def cmd_materials(args: argparse.Namespace) -> int:
             #   - manifest absent + new orphaned inputs (first-write fail)
             #   - manifest unchanged + new orphaned inputs (append fail)
             # No corrupted-manifest state.
-            orphans = ", ".join(p.target.name for p in written)
-            sys.stderr.write(
-                f"[bsa materials] WROTE {len(written)} input file(s) "
-                f"successfully, but the manifest write FAILED: {exc}\n"
-                f"  The manifest at {manifest_path} is UNCHANGED (atomic\n"
-                f"  write protects against partial-corruption); the new\n"
-                f"  inputs are ORPHANED. The slug-collision backstop\n"
-                f"  would skip these files on a plain re-run, so the\n"
-                f"  manifest would not get the rows for them. To recover:\n"
-                f"\n"
-                f"    1. Fix the underlying problem (permissions, disk\n"
-                f"       space, conflicting path).\n"
-                f"    2. Delete the orphaned input file(s):\n"
-                f"         {orphans}\n"
-                f"    3. Re-run `bsa materials --commit` from scratch.\n"
-            )
+            # v1.4.4 R1 MAJOR #4 fix: restage plans + new plans land
+            # in DIFFERENT recovery situations. Restage plans
+            # OVERWROTE an existing staged file whose manifest row
+            # is now stale; rollback the file to its snapshot so
+            # the manifest's hash + body match again. New plans are
+            # orphaned files (no manifest row at all) — same recovery
+            # guidance as before.
+            restage_failures: list[SourcePlan] = []
+            new_failures: list[SourcePlan] = []
+            for p in written:
+                if p.restage:
+                    restage_failures.append(p)
+                else:
+                    new_failures.append(p)
+            # Best-effort restore of restage targets.
+            # v1.4.4 R2 NEW MAJOR fix: three sub-cases
+            #   (a) had-prior-bytes (snapshot present) → restore
+            #   (b) target absent before write          → unlink
+            #   (c) snapshot read failed earlier        → unrestorable
+            restored_count = 0
+            unlinked_count = 0
+            unrestorable: list[str] = []
+            for p in restage_failures:
+                if p.source_id in restage_absent_targets:
+                    # The new file was created from scratch (no prior
+                    # state). Manifest is unchanged → unlinking the
+                    # new file leaves both file AND manifest in their
+                    # pre-restage state (file absent, manifest row
+                    # untouched).
+                    try:
+                        p.target.unlink()
+                        unlinked_count += 1
+                    except OSError:
+                        unrestorable.append(p.target.name)
+                    continue
+                snapshot = restage_snapshots.get(p.source_id)
+                if snapshot is None:
+                    unrestorable.append(p.target.name)
+                    continue
+                try:
+                    p.target.write_bytes(snapshot)
+                    restored_count += 1
+                except OSError:
+                    unrestorable.append(p.target.name)
+            orphans = ", ".join(p.target.name for p in new_failures)
+            msg_parts: list[str] = [
+                f"[bsa materials] manifest write FAILED: {exc}\n",
+                f"  The manifest at {manifest_path} is UNCHANGED (atomic\n",
+                f"  write protects against partial-corruption).\n",
+            ]
+            if restage_failures:
+                msg_parts.append(
+                    f"  RESTAGE rollback: {restored_count} restored from "
+                    f"snapshot, {unlinked_count} unlinked (no prior state); "
+                    f"manifest + filesystem are consistent for these.\n"
+                )
+                if unrestorable:
+                    msg_parts.append(
+                        f"  WARNING: could not roll back: {', '.join(unrestorable)}\n"
+                        f"    These files contain NEW content but the\n"
+                        f"    manifest's hash row still references the\n"
+                        f"    PRIOR bytes (or the file was created and\n"
+                        f"    couldn't be unlinked). Re-run `bsa materials\n"
+                        f"    <src> --commit --restage-changed` after\n"
+                        f"    fixing the underlying problem; the restage\n"
+                        f"    will re-detect the mismatch and converge.\n"
+                    )
+            if new_failures:
+                msg_parts.append(
+                    f"  ORPHANED new inputs ({len(new_failures)}): the\n"
+                    f"  slug-collision backstop would skip these files on\n"
+                    f"  a plain re-run. To recover:\n"
+                    f"    1. Fix the underlying problem.\n"
+                    f"    2. Delete the orphaned input file(s):\n"
+                    f"         {orphans}\n"
+                    f"    3. Re-run `bsa materials --commit` from scratch.\n"
+                )
+            sys.stderr.write("".join(msg_parts))
             print()
             print(f"Wrote {len(written)} file(s) under {inputs_dir}")
             print(
                 f"Manifest: UNCHANGED ({exc}) — atomic write rolled back; "
-                f"see stderr for orphan-input recovery."
+                f"see stderr for recovery."
             )
             return 2
 
@@ -2125,6 +2584,23 @@ _A50_HEADER_WITH_EFFECTIVE_DATE = (
     "SourceID,SourceType,Title,Origin,AccessStatus,"
     "ReliabilityTier,Priority,Language,DateOrVersion,EffectiveDate,Notes"
 )
+# v1.4.4 (closes lifecycle review rec #2): the hash variant extends the
+# EffectiveDate variant with three append-only columns. Downstream
+# csv.DictReader consumers ignore unknown fields, so existing tooling
+# remains compatible. Column placement chosen so existing slice-based
+# parsers (none in this codebase, but defensive) that read columns by
+# index up to "EffectiveDate" continue to work.
+_A50_HEADER_WITH_HASHES = (
+    "SourceID,SourceType,Title,Origin,AccessStatus,"
+    "ReliabilityTier,Priority,Language,DateOrVersion,EffectiveDate,"
+    "ContentHash,OriginalBytes,OriginalMtimeUtc,Notes"
+)
+# Single source of truth for "any header we accept on read".
+_ACCEPTED_A50_HEADERS = (
+    _A50_HEADER,
+    _A50_HEADER_WITH_EFFECTIVE_DATE,
+    _A50_HEADER_WITH_HASHES,
+)
 
 
 class ManifestHeaderDrift(RuntimeError):
@@ -2212,21 +2688,155 @@ def _upsert_draft_manifest(
     truncated.
     """
     if manifest_path.is_file():
-        existing = manifest_path.read_text(encoding="utf-8")
-        existing_header = (existing.splitlines() or [""])[0].strip()
-        # v1.2.16: align new rows to the existing header's shape.
-        # Pre-flight already validated the header is one of the two
-        # accepted shapes (_A50_HEADER or _A50_HEADER_WITH_EFFECTIVE_DATE);
-        # we just need to mirror that shape so column counts match.
-        include_eff = existing_header == _A50_HEADER_WITH_EFFECTIVE_DATE
-        new_rows = _render_draft_manifest(
-            written, src_dir_root, include_effective_date=include_eff,
+        # v1.4.4: utf-8-sig swallows any BOM the spreadsheet round-trip
+        # introduced — same robustness fix _verify_manifest got in
+        # v1.4.3 R1. Without -sig, a BOM-prefixed manifest's first
+        # column reads as "﻿SourceID" and the header check fails.
+        existing = manifest_path.read_text(encoding="utf-8-sig")
+        existing_lines = existing.splitlines()
+        # v1.4.4 R2 NEW MAJOR fix: csv-parse the header here too.
+        # Pre-flight normalizes quoting before its set check, but
+        # this function did `existing_lines[0].strip()` which left
+        # quoted headers (`"SourceID","SourceType",...`) intact. The
+        # quoted form is NOT in _ACCEPTED_A50_HEADERS, so include_eff
+        # / include_hashes both evaluated False → appended rows had
+        # base-shape (no EffectiveDate / hashes) under a quoted-hash-
+        # shape header → column count mismatch on every row.
+        import csv as _csv  # lazy
+        first_line = existing_lines[0] if existing_lines else ""
+        try:
+            parsed_fields = next(_csv.reader(io.StringIO(first_line)))
+            existing_header = ",".join(parsed_fields).strip()
+        except (StopIteration, _csv.Error):
+            existing_header = first_line.strip()
+        # v1.2.16 / v1.4.4: align new rows to the existing header's
+        # shape. Pre-flight already validated the header is one of the
+        # three accepted shapes; we just need to mirror that shape so
+        # column counts match.
+        include_eff = existing_header in (
+            _A50_HEADER_WITH_EFFECTIVE_DATE, _A50_HEADER_WITH_HASHES,
         )
-        # Drop the header from new_rows (line 0).
-        new_body_lines = new_rows.splitlines()[1:]
-        merged = existing.rstrip("\n") + "\n" + "\n".join(new_body_lines) + "\n"
+        include_hashes = existing_header == _A50_HEADER_WITH_HASHES
+        # v1.4.4 --restage-changed: split written into restage (in-
+        # place SID replacement) + new (append). Restaged rows REPLACE
+        # the existing line for that SID; new rows append at the end.
+        restage_plans = [p for p in written if p.restage]
+        new_plans = [p for p in written if not p.restage]
+        if restage_plans:
+            # v1.4.4 R1 MAJOR #2 fix: parse via stdlib csv so a
+            # quoted SourceID (`"S-007"`) is matched correctly.
+            # Previous regex `^([^,\"]+)` left quoted cells unmatched
+            # AND the loop reported "updated N rows" anyway — silent
+            # data loss masked as success. We now fail loudly when
+            # any restage SID can't be located.
+            #
+            # v1.4.4 R1 MAJOR #1 fix: preserve every operator-curated
+            # cell (ReliabilityTier, Priority, EffectiveDate, Notes,
+            # ...). Only the hash trio + Title + Origin + SourceType
+            # are source-derived; everything else stays as the
+            # operator left it after the stage-1 review pass.
+            import csv as _csv  # lazy
+            sid_to_plan: dict[str, SourcePlan] = {
+                p.source_id: p for p in restage_plans
+            }
+            try:
+                src_reader = _csv.DictReader(io.StringIO(existing))
+                src_fieldnames = src_reader.fieldnames or []
+                src_rows = list(src_reader)
+            except _csv.Error as exc:
+                raise OSError(
+                    f"cannot parse existing manifest as CSV: {exc}"
+                ) from exc
+            updated_sids: set[str] = set()
+            today = _today_iso()
+            for row in src_rows:
+                sid = (row.get("SourceID") or "").strip()
+                if sid not in sid_to_plan:
+                    continue
+                plan = sid_to_plan[sid]
+                # Re-derive ONLY source-derived columns. Title +
+                # Origin can change if the file was renamed under
+                # src_dir; SourceType heuristic re-runs against the
+                # new staged-file slug.
+                slug_lower = plan.target.stem.lower()
+                if "interview" in slug_lower or "transcript" in slug_lower:
+                    stype = "interview_transcript"
+                elif plan.kind in ("pdf", "docx"):
+                    stype = "document"
+                else:
+                    stype = "process_note"
+                row["SourceType"] = stype
+                row["Title"] = plan.src.stem
+                row["Origin"] = plan.origin_rel or str(plan.src)
+                # Hash trio — always overwrite (this is the whole
+                # point of restage). Empty string when plan didn't
+                # populate (e.g., src unreadable mid-flight).
+                if "ContentHash" in src_fieldnames:
+                    row["ContentHash"] = plan.content_hash or ""
+                if "OriginalBytes" in src_fieldnames:
+                    row["OriginalBytes"] = (
+                        str(plan.original_bytes)
+                        if plan.original_bytes is not None else ""
+                    )
+                if "OriginalMtimeUtc" in src_fieldnames:
+                    row["OriginalMtimeUtc"] = plan.original_mtime_utc or ""
+                # DateOrVersion: bump to today so freshness_audit
+                # reflects the restage event. Operator can override
+                # in the same review pass that re-tags reliability.
+                row["DateOrVersion"] = today
+                updated_sids.add(sid)
+            missing_sids = set(sid_to_plan.keys()) - updated_sids
+            if missing_sids:
+                raise OSError(
+                    f"restage targets not found in manifest: "
+                    f"{sorted(missing_sids)}. Manifest update aborted "
+                    f"to prevent silent data loss; the staged input "
+                    f"file(s) on disk may already reflect the new "
+                    f"content. Re-run after manually adding rows for "
+                    f"the missing SourceID(s)."
+                )
+            # v1.4.4 R2 NEW MINOR fix: contract is "row VALUES are
+            # preserved; quoting style is normalized to QUOTE_MINIMAL".
+            # Cosmetic QUOTE_ALL from a spreadsheet round-trip becomes
+            # minimal-quoted (only cells containing comma / quote /
+            # newline get quoted) on restage rewrite. Cells with
+            # operator-meaningful quoting (commas inside Notes, etc.)
+            # still get correctly quoted by QUOTE_MINIMAL — only the
+            # cosmetic "everything quoted for safety" gets lost.
+            buf = io.StringIO()
+            writer = _csv.DictWriter(
+                buf, fieldnames=src_fieldnames,
+                quoting=_csv.QUOTE_MINIMAL,
+            )
+            writer.writeheader()
+            writer.writerows(src_rows)
+            merged = buf.getvalue()
+        else:
+            merged = existing.rstrip("\n") + "\n"
+        if new_plans:
+            new_rows = _render_draft_manifest(
+                new_plans, src_dir_root,
+                include_effective_date=include_eff,
+                include_hashes=include_hashes,
+            )
+            # Drop the header from new_rows (line 0).
+            new_body_lines = new_rows.splitlines()[1:]
+            if not merged.endswith("\n"):
+                merged = merged + "\n"
+            merged = merged + "\n".join(new_body_lines) + "\n"
         _atomic_write_text(manifest_path, merged)
-        return f"appended {len(written)} draft row(s) to existing manifest"
-    new_rows = _render_draft_manifest(written, src_dir_root)
+        action_parts: list[str] = []
+        if restage_plans:
+            action_parts.append(f"updated {len(restage_plans)} restaged row(s)")
+        if new_plans:
+            action_parts.append(f"appended {len(new_plans)} new draft row(s)")
+        return "; ".join(action_parts) or "manifest unchanged"
+    # v1.4.4: new manifests get hash columns by DEFAULT — operators
+    # creating a fresh workspace today benefit from content-change
+    # detection without an opt-in flag. Existing manifests keep their
+    # shape (handled above).
+    new_rows = _render_draft_manifest(
+        written, src_dir_root, include_hashes=True,
+    )
     _atomic_write_text(manifest_path, new_rows)
     return f"created with {len(written)} draft row(s)"

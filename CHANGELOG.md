@@ -4,6 +4,69 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.4] — 2026-04-29
+
+**Feature: `bsa materials` content-hash columns + `--restage-changed` + `--keep-raw` raw-bytes retention.**
+
+Closes lifecycle review **rec #2** (content-change detection + reproducible re-extraction). Three coordinated additions:
+
+1. **Content-hash columns** in `source_manifest.csv` — `ContentHash` (sha256 hex), `OriginalBytes` (decimal byte count), `OriginalMtimeUtc` (ISO-8601 UTC second). Third accepted A50 header variant `_A50_HEADER_WITH_HASHES`. New manifests written by `--commit` carry these by default; existing legacy-shape manifests are appended in their existing shape (no implicit schema upgrade — operator opt-in via `--restage-changed`).
+2. **`--restage-changed`** — in staging mode, compare each src file's sha256 against the manifest's stored hash. Match → SKIP (logged "unchanged"). Mismatch → re-extract IN PLACE (existing SourceID + slug preserved, manifest row updated rather than appended). New files (Origin not in manifest) follow the normal staging path. Closes the long-standing UX gap where editing one file in a 100-source engagement required `--force` which re-staged ALL files.
+3. **`--keep-raw`** — copy each src file's original bytes to `<workspace>/analysis/proposals/stage1/raw/source_NNN_<slug>.<original-ext>` AFTER the staged .md lands. Lets analysts refer back to unmodified source AND lets `--recreate-manifest` backfill hash columns from raw/ when no live src directory is available. Idempotent (existing raw/ file with matching hash → skip). Default OFF to preserve the existing storage profile (raw retention can double disk usage on large engagements).
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3` (`scripts/*.py` + `governance/schemas/a50.schema.json` are NOT in canon-globs; the schema addition is additive — `additionalProperties: true` + new entries in `optional_order` keep all pre-v1.4.4 manifests valid).
+
+### Added
+
+- **`_compute_content_hash(path, *, chunk_size=65536) -> str`** in `scripts/_bsa_cli_materials.py` — streaming sha256 hex digest. Reads in 64 KB chunks so a 100+ MB call-data file doesn't load into RAM. Stdlib hashlib only.
+- **`_file_metadata(path) -> tuple[str, int, str]`** — bundle of `(sha256_hex, size_bytes, mtime_utc_iso_seconds)`. UTC-second precision for portable mtime representation across filesystems with different sub-second resolutions.
+- **`_existing_origin_index(manifest_path) -> dict[origin, dict[str, str]]`** — Origin → {SourceID, ContentHash, OriginalBytes, OriginalMtimeUtc, slug} map for `--restage-changed` lookup. Tolerant of missing optional columns (legacy manifests yield empty hash fields). Slug derived from on-disk staged file name (not re-running `_slugify` — slug-derivation may drift between plugin versions; we trust on-disk shape).
+- **`_A50_HEADER_WITH_HASHES`** constant — third accepted A50 header variant. Schema documents it via `optional_order: [EffectiveDate, ContentHash, OriginalBytes, OriginalMtimeUtc]`.
+- **`SourcePlan.content_hash` / `original_bytes` / `original_mtime_utc` / `restage`** dataclass fields. Hash fields populated lazily during commit phase; `restage=True` signals in-place row replacement (existing SourceID + slug, manifest row updated rather than appended).
+- **`--restage-changed`** CLI flag on `bsa materials`.
+- **`--keep-raw`** CLI flag.
+- **A50 schema additions** — `ContentHash`, `OriginalBytes`, `OriginalMtimeUtc` properties (with patterns: 64 lowercase hex / decimal integer string / `YYYY-MM-DDTHH:MM:SSZ`). All three added to `optional_order`. `additionalProperties: true` was already set so extra columns pass through downstream csv.DictReader consumers transparently.
+- **15 new tests** in `tests/test_bsa_cli_materials_hashes.py` covering: hash helper correctness, file_metadata tuple shape, new manifest emits WITH_HASHES header, every commit row carries non-empty hash, verify accepts new header, legacy-shape manifest preserved on append (no implicit upgrade), restage-changed skips unchanged file, restage-changed re-extracts changed file with SourceID preservation, restage-changed on legacy manifest forces re-extract, keep-raw copies original bytes, keep-raw preserves binary extension byte-for-byte, keep-raw idempotent on second pass, recreate backfills hashes from raw/, recreate leaves hashes empty without raw/, schema lists the 3 new optional columns.
+
+### Changed
+
+- **`_render_draft_manifest`** gains `include_hashes: bool = False` parameter. When True, renders the 3 new columns; `include_effective_date` is auto-promoted to True (the new variant always carries EffectiveDate as its prefix).
+- **`_upsert_draft_manifest`** detects the existing manifest's header shape and renders new rows in matching shape. New manifests get WITH_HASHES by default. Restage plans take an in-place row-replacement code path (split written into `restage_plans` + `new_plans`, replace rows by SourceID, append new rows). Reads with `utf-8-sig` so a BOM-prefixed manifest round-trips cleanly.
+- **`_verify_manifest`** accepts all three header variants via `_ACCEPTED_A50_HEADERS` tuple.
+- **`_recreate_manifest`** emits the WITH_HASHES variant by default; backfills hash columns from `<stage1>/raw/source_NNN_*.<ext>` when present (matched by SourceID prefix; slug + extension allowed to vary).
+- **`_plan_conversions`** gains `restage_changed: bool = False` parameter. When True + Origin matches existing manifest row: hash compare → skip-unchanged OR restage-with-existing-SID. Plus pre-flight header check now accepts all three variants.
+- **`cmd_materials`** writer loop computes hash + size + mtime AFTER successful staged-file write (for new plans; restage plans already have these from `_plan_conversions`). When `--keep-raw`, copies original bytes to `<stage1>/raw/source_NNN_<slug>.<ext>` with idempotent skip on hash match.
+- **One existing test** (`test_materials_install_hint_no_canonical_header_safety`) extended to pin all three header variants against the schema (was pinning only base + EffectiveDate variant).
+
+### Tests
+
+Total suite: **2127 passed** (was 2105 in v1.4.3 — +22 net new: 15 base coverage + 5 R1-fix verification + 2 R2-fix verification).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 4 MAJOR + 3 MINOR. All 7 fixed:
+  - **MAJOR #1** (`_upsert_draft_manifest` restage row regen): `_render_draft_manifest` produced fresh rows with default values (T5 / medium / today / auto-staged Notes), wiping operator-curated fields from the stage-1 review pass. Fix: parse existing rows via `csv.DictReader`, mutate ONLY source-derived columns (Title / Origin / SourceType) + the hash trio + DateOrVersion (bumped to today so freshness_audit reflects the restage event); leave ReliabilityTier / Priority / Language / EffectiveDate / Notes untouched.
+  - **MAJOR #2** (`_upsert_draft_manifest` regex-based row matching): `^([^,\"]+)` failed to match quoted SourceIDs (`"S-007",...`) and the loop reported "updated N rows" anyway → silent data loss. Fix: parse via stdlib csv (DictReader/DictWriter), abort with `OSError` if any restage SID can't be located in the manifest. Same fix applied to staging-mode pre-flight header check (was using string-equality on the raw first line; now csv-parses the header to normalize quoting before the set comparison).
+  - **MAJOR #3** (`--keep-raw` containment bypass): the writer mkdir'd `<stage1>/raw/` and copied through it without verifying the path wasn't a symlink. A symlinked raw/ would let copies land outside the workspace. Fix: defense-in-depth check — refuse if `raw/` is a symlink, refuse if leaf raw_target is a symlink, resolve the parent and verify it stays under the resolved raw_dir (mirrors v1.4.3's `_prune_orphans` defense pattern).
+  - **MAJOR #4** (restage write-then-fail mixed state): `--restage-changed` overwrote the existing staged file BEFORE updating the manifest; if the manifest write failed, the file was new but the row's hash referenced the old bytes. Recovery guidance wrongly classified them as orphan inputs. Fix: snapshot existing staged-file bytes into an in-memory map BEFORE overwrite (per restage plan); on manifest-write failure, restore each restage target from its snapshot (best-effort) and emit a dedicated stderr message distinguishing restage rollback vs orphan-new-input recovery paths. Unrestorable cases (snapshot read failed) get a specific guidance line about re-running `--restage-changed` to re-detect and converge.
+  - **MINOR #1**: dry-run "Suggested next" command dropped active flags. Fix: include `--restage-changed`, `--keep-raw`, `--recursive`, `--force` in the suggestion when set.
+  - **MINOR #2**: `shutil.copyfile` doesn't preserve mtime → `_recreate_manifest` later backfilled OriginalMtimeUtc as the copy time, not the source's actual mtime. Fix: `shutil.copy2` (preserves stat metadata).
+  - **MINOR #3**: documented the concurrent-source-mutation caveat in `_compute_content_hash` docstring (CLI's contract assumes operator doesn't edit src/ during commit; for stronger guarantees use `--keep-raw` + hash the raw/ copy).
+- **5 new tests** for R1 fixes:
+  * test_restage_preserves_operator_curated_fields (MAJOR #1)
+  * test_restage_handles_quoted_sourceid_correctly (MAJOR #2)
+  * test_keep_raw_refuses_symlinked_raw_dir (MAJOR #3)
+  * test_dry_run_suggested_command_preserves_flags (MINOR #1)
+  * test_keep_raw_copy2_preserves_source_mtime (MINOR #2)
+- **R2**: REQUEST CHANGES — 2 NEW MAJOR + 1 NEW MINOR. All 3 fixed:
+  - **NEW MAJOR #1**: `_upsert_draft_manifest` derived `include_eff` / `include_hashes` from the RAW first line, not the csv-normalized header. Pre-flight accepted a quoted-hash-shape header, but `existing_header in _ACCEPTED_A50_HEADERS` evaluated False against the quoted form → appended rows landed with base shape (column count mismatch). Fix: csv-parse the first line (`csv.reader(io.StringIO(first_line))`) before the shape comparison.
+  - **NEW MAJOR #2**: Restage rollback only handled the "had-prior-bytes → restore from snapshot" case. When restage created a fresh staged file (operator deleted the old one but kept the manifest row), the rollback skipped both restore AND unlink → the new file was left behind under an unchanged manifest row (hash mismatch). Fix: track absent-target SIDs in a separate set; rollback unlinks them so manifest + filesystem stay consistent.
+  - **NEW MINOR**: `csv.DictWriter(quoting=QUOTE_MINIMAL)` rewrites QUOTE_ALL manifests with minimal quoting, contradicting the comment "preserves original quoting". Fix: clarified the contract — values are preserved; quoting style normalizes to QUOTE_MINIMAL on restage rewrite (cosmetic QUOTE_ALL → minimal; operator-meaningful quoting around commas/quotes/newlines is still applied correctly by QUOTE_MINIMAL).
+- **2 new tests** for R2 fixes:
+  * test_upsert_handles_quoted_hash_header_correctly (NEW MAJOR #1)
+  * test_restage_rollback_unlinks_absent_targets (NEW MAJOR #2)
+- **R3**: APPROVE — all R2 fixes verified, no new issues. CRLF first-line handling safe via `splitlines()`, csv parsing uses `io.StringIO` (no FD leak), whitespace/quoting artifacts don't create silent mismatches.
+
 ## [v1.4.3] — 2026-04-29
 
 **Feature: `bsa materials` manifest-maintenance modes — `--verify-manifest`, `--recreate-manifest`, `--prune-orphans`.**

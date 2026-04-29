@@ -1685,6 +1685,7 @@ def test_materials_install_hint_no_canonical_header_safety(tmp_path: Path) -> No
         from scripts.bsa_cli import (
             _A50_HEADER,
             _A50_HEADER_WITH_EFFECTIVE_DATE,
+            _A50_HEADER_WITH_HASHES,
         )
     finally:
         sys.path.pop(0)
@@ -1700,15 +1701,28 @@ def test_materials_install_hint_no_canonical_header_safety(tmp_path: Path) -> No
     # v1.2.16 R1 fix: also pin the extended-shape variant. Inserts
     # every optional_order column after DateOrVersion (before Notes)
     # in the order they're listed in the schema.
+    # v1.4.4: pin all THREE accepted shapes against the schema. We
+    # walk optional_order's prefix sequences so the pin survives
+    # additions to the optional set without rewriting every variant
+    # constant.
     optional = cols.get("optional_order", [])
     base = list(cols["order"])
     notes_idx = base.index("Notes")
-    extended_cols = base[:notes_idx] + optional + base[notes_idx:]
-    extended_documented = ",".join(extended_cols)
-    assert _A50_HEADER_WITH_EFFECTIVE_DATE == extended_documented, (
+    # Variant 1: base + EffectiveDate + Notes (v1.2.16 shape).
+    expected_eff = base[:notes_idx] + ["EffectiveDate"] + base[notes_idx:]
+    assert _A50_HEADER_WITH_EFFECTIVE_DATE == ",".join(expected_eff), (
         f"_A50_HEADER_WITH_EFFECTIVE_DATE drifted from a50.schema.json. "
         f"_A50_HEADER_WITH_EFFECTIVE_DATE={_A50_HEADER_WITH_EFFECTIVE_DATE!r} "
-        f"vs expected={extended_documented!r}. Update bsa_cli.py to match."
+        f"vs expected={','.join(expected_eff)!r}. Update bsa_cli.py to match."
+    )
+    # Variant 2: base + EffectiveDate + ContentHash + OriginalBytes
+    #          + OriginalMtimeUtc + Notes (v1.4.4 shape — the full
+    # optional_order set).
+    expected_hashes = base[:notes_idx] + optional + base[notes_idx:]
+    assert _A50_HEADER_WITH_HASHES == ",".join(expected_hashes), (
+        f"_A50_HEADER_WITH_HASHES drifted from a50.schema.json. "
+        f"_A50_HEADER_WITH_HASHES={_A50_HEADER_WITH_HASHES!r} "
+        f"vs expected={','.join(expected_hashes)!r}. Update bsa_cli.py to match."
     )
 
 
