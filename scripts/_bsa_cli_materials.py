@@ -96,6 +96,21 @@ _EXT_TO_KIND: dict[str, str] = {
     # regardless of which client exported the email.
     ".eml": "eml",
     ".msg": "msg",
+    # v1.4.7 (closes lifecycle review rec #3 third / final half):
+    # images. Always classified as `image`; per-file extraction
+    # always emits the metadata block (format / dimensions / bytes).
+    # OCR text extraction is OPT-IN via the operator's `--ocr` flag
+    # (heavy dep: requires `pytesseract` package + system `tesseract`
+    # binary). Without --ocr, the staged file contains metadata-
+    # only body + a placeholder pointing at the flag — but the image
+    # is still REGISTERED in the manifest as evidence (analyst can
+    # manually inspect it OR re-stage with --restage-changed --ocr
+    # after installing tesseract).
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".tiff": "image",
+    ".tif": "image",
 }
 
 # Per-file safety caps. The user is pointing this at arbitrary
@@ -1098,6 +1113,195 @@ def _render_email_markdown_from_msg(msg, source_name: str) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
+def _convert_image(
+    path: Path,
+    *,
+    ocr_enabled: bool = False,
+    ocr_lang: str = "eng",
+) -> str:
+    """Stage an image (.png / .jpg / .jpeg / .tiff / .tif) into the
+    manifest with metadata + optional OCR text.
+
+    v1.4.7 (closes lifecycle review rec #3 final half).
+
+    Two-mode design:
+      * **default (no `--ocr`)**: emit metadata-only body — Format,
+        Dimensions, Bytes — followed by a placeholder noting that
+        OCR was not run AND how to enable it. The image is still
+        REGISTERED in the manifest as evidence; the staged .md
+        carries the provenance comment and a metadata anchor that
+        downstream evidence-binding can reference. Operator can
+        re-stage with `--restage-changed --ocr` later (v1.4.4
+        synergy) to backfill the OCR text without losing the
+        existing manifest row.
+      * **`--ocr` flag set**: invoke pytesseract → tesseract binary
+        on the image. Output appended under `## OCR` H2 with the
+        language tag. tesseract failures (binary missing, image
+        unreadable) raise ConversionFailed so the operator sees a
+        clear error per-file rather than a silent empty body.
+
+    `ocr_lang` accepts tesseract's `+`-separated language codes
+    (e.g. `eng+rus` for English+Russian) when multiple language
+    packs are installed.
+
+    Raises ConversionUnavailable when pytesseract / Pillow is
+    missing AND the operator passed --ocr (without --ocr, only
+    Pillow is needed for the metadata read; failure to import
+    Pillow degrades gracefully to bytes-only metadata)."""
+    # v1.4.7 R1 MAJOR #2 fix: validate ocr_lang shape before threading
+    # to tesseract. Prevents argv-injection AND surfaces typos cleanly.
+    # Allowed: lowercase ASCII letters / digits / underscore / `+`
+    # (the multi-pack separator). Tesseract codes are well-formed
+    # (eng / rus / chi_sim / eng+rus etc.).
+    if ocr_enabled and not re.match(r"^[a-z0-9_+]+$", ocr_lang):
+        raise ConversionFailed(
+            f"invalid --ocr-lang value {ocr_lang!r}: only lowercase "
+            f"ASCII letters / digits / underscore / `+` allowed. Use "
+            f"`tesseract --list-langs` to see installed packs."
+        )
+    # Pillow is needed even for metadata-only mode (gives us
+    # Format + Dimensions). It's a soft dep — if absent we degrade
+    # to size-only metadata rather than crash.
+    # v1.4.7 R1 MINOR fix: harden against DecompressionBombWarning
+    # (Pillow's two-tier "this image is suspiciously huge" guard);
+    # treat the warning as fatal so a 200-MP attack image doesn't
+    # silently slip through to OCR.
+    import warnings as _warnings
+    width: Optional[int] = None
+    height: Optional[int] = None
+    img_format: Optional[str] = None
+    n_frames = 1
+    try:
+        from PIL import Image  # type: ignore[import-not-found]
+    except ImportError:
+        Image = None  # type: ignore[assignment]
+    if Image is not None:
+        try:
+            with _warnings.catch_warnings():
+                _warnings.simplefilter(
+                    "error", Image.DecompressionBombWarning,
+                )
+                with Image.open(str(path)) as img:
+                    img_format = img.format
+                    width, height = img.size
+                    # v1.4.7 R1 MAJOR #3 fix: detect multi-page TIFFs
+                    # so we don't silently OCR only the first frame.
+                    n_frames = getattr(img, "n_frames", 1)
+        except Image.DecompressionBombError as exc:
+            raise ConversionFailed(
+                f"Pillow refused image {path.name} as a decompression "
+                f"bomb (>89M pixels): {exc}"
+            ) from exc
+        except Image.DecompressionBombWarning as exc:
+            raise ConversionFailed(
+                f"Pillow flagged image {path.name} as suspiciously "
+                f"large (DecompressionBombWarning): {exc}"
+            ) from exc
+        except Exception as exc:
+            raise ConversionFailed(
+                f"Pillow failed to read image {path.name}: {exc}"
+            ) from exc
+
+    try:
+        size_bytes = path.stat().st_size
+    except OSError as exc:
+        raise ConversionFailed(
+            f"cannot stat image {path.name}: {exc}"
+        ) from exc
+
+    parts: list[str] = ["## Image metadata", ""]
+    if img_format is not None:
+        parts.append(f"- **Format**: {img_format}")
+    else:
+        parts.append(
+            f"- **Format**: (unknown — Pillow not installed)"
+        )
+    if width is not None and height is not None:
+        parts.append(f"- **Dimensions**: {width}x{height}")
+    parts.append(f"- **Bytes**: {size_bytes}")
+    if n_frames > 1:
+        parts.append(f"- **Pages**: {n_frames}")
+    parts.append("")
+
+    parts.append("## OCR")
+    parts.append("")
+    if not ocr_enabled:
+        parts.append(
+            "_(OCR not run — re-stage with `--ocr` to extract text "
+            "via tesseract; default-off because tesseract is a "
+            "system-level binary that operators install separately)_"
+        )
+        return "\n".join(parts).rstrip() + "\n"
+
+    # OCR mode: lazy-import pytesseract; surface install hints if
+    # the package OR the system binary is missing.
+    try:
+        import pytesseract  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise ConversionUnavailable(
+            "pytesseract not installed. Install with `pip install "
+            "pytesseract Pillow` (and ensure the `tesseract` system "
+            "binary is on PATH — `brew install tesseract` on macOS, "
+            "`apt-get install tesseract-ocr` on Debian/Ubuntu)."
+        ) from exc
+    if Image is None:
+        raise ConversionUnavailable(
+            "Pillow not installed but required for OCR. Install with "
+            "`pip install Pillow`."
+        )
+    parts.append(f"_(OCR via tesseract, lang={ocr_lang})_")
+    parts.append("")
+    # v1.4.7 R1 MAJOR #2 fix: iterate every frame for multi-page
+    # TIFFs so a scanned 50-page bundle doesn't silently lose 49
+    # pages. Single-frame images (PNG/JPEG/single TIFF) take the
+    # n_frames=1 path with no ## Page header noise.
+    try:
+        with Image.open(str(path)) as img:
+            collected: list[str] = []
+            for frame_idx in range(n_frames):
+                if n_frames > 1:
+                    try:
+                        img.seek(frame_idx)
+                    except Exception:
+                        break
+                try:
+                    text = pytesseract.image_to_string(img, lang=ocr_lang)
+                except pytesseract.TesseractNotFoundError as exc:  # type: ignore[attr-defined]
+                    raise ConversionUnavailable(
+                        f"tesseract binary not found on PATH ({exc}). "
+                        f"Install via `brew install tesseract` (macOS) "
+                        f"or `apt-get install tesseract-ocr` "
+                        f"(Debian/Ubuntu)."
+                    ) from exc
+                except Exception as exc:
+                    raise ConversionFailed(
+                        f"OCR failed on {path.name} "
+                        f"(frame {frame_idx + 1}/{n_frames}): {exc}"
+                    ) from exc
+                stripped = text.strip()
+                if n_frames > 1:
+                    collected.append(f"### Page {frame_idx + 1}")
+                    collected.append("")
+                if stripped:
+                    collected.append(stripped)
+                else:
+                    collected.append(
+                        "_(tesseract returned no text — image may be a "
+                        "diagram with no readable glyphs, or text is "
+                        "below tesseract's confidence threshold)_"
+                    )
+                if n_frames > 1 and frame_idx < n_frames - 1:
+                    collected.append("")
+            parts.append("\n".join(collected).rstrip())
+    except (ConversionFailed, ConversionUnavailable):
+        raise
+    except Exception as exc:
+        raise ConversionFailed(
+            f"OCR failed on {path.name}: {exc}"
+        ) from exc
+    return "\n".join(parts).rstrip() + "\n"
+
+
 def _read_text(path: Path) -> str:
     """Read MD/TXT verbatim with a tolerant encoding fallback."""
     try:
@@ -1742,6 +1946,8 @@ def _plan_conversions(
     force: bool,
     *,
     restage_changed: bool = False,
+    ocr_enabled: bool = False,
+    ocr_lang: str = "eng",
 ) -> list[SourcePlan]:
     """Build a list of SourcePlan, assigning fresh source IDs.
 
@@ -1813,7 +2019,53 @@ def _plan_conversions(
                         skipped_reason=f"unreadable for hash compare: {exc}",
                     ))
                     continue
-                if stored_hash and stored_hash == current_hash:
+                # v1.4.7 R1 MAJOR #1 fix: when --ocr is set AND the
+                # plan is an image whose existing staged body lacks
+                # OCR text (i.e., previously staged metadata-only),
+                # FORCE restage even if the source bytes are unchanged.
+                # The hash compare alone can't detect "OCR intent
+                # changed" — operator's --ocr flag is the trigger.
+                # Also force when ocr_enabled and the staged file
+                # uses a DIFFERENT lang tag (operator switched langs).
+                ocr_backfill_needed = False
+                if ocr_enabled and kind == "image":
+                    existing_slug = existing.get("slug") or slug
+                    sid = existing["SourceID"]
+                    sid_digits = sid.removeprefix("S-")
+                    existing_target = (
+                        inputs_dir
+                        / f"source_{sid_digits}_{existing_slug}.md"
+                    )
+                    if existing_target.is_file():
+                        try:
+                            existing_body = existing_target.read_text(
+                                encoding="utf-8"
+                            )
+                        except OSError:
+                            existing_body = ""
+                        if "OCR not run" in existing_body:
+                            ocr_backfill_needed = True
+                        elif "lang=" in existing_body:
+                            # v1.4.7 R2 NEW MAJOR fix: detect lang
+                            # SWITCH — trigger restage if the
+                            # previously-OCR'd lang doesn't match
+                            # the now-requested ocr_lang. Operators
+                            # who staged in `eng` and re-stage with
+                            # `--ocr-lang=rus` expect the body to
+                            # be re-extracted; without this, the
+                            # hash-skip silently keeps the old eng
+                            # text.
+                            import re as _re_local
+                            m_lang = _re_local.search(
+                                r"lang=([a-z0-9_+]+)", existing_body
+                            )
+                            if m_lang and m_lang.group(1) != ocr_lang:
+                                ocr_backfill_needed = True
+                if (
+                    stored_hash
+                    and stored_hash == current_hash
+                    and not ocr_backfill_needed
+                ):
                     # Unchanged — skip cleanly. Use existing SID +
                     # slug to keep the displayed plan readable.
                     existing_slug = existing.get("slug") or slug
@@ -1995,9 +2247,13 @@ def _render_draft_manifest(
         # (web exports / Confluence pages tend to be procedural).
         # v1.4.6: eml/msg → email_thread (distinct evidence class —
         # stakeholder approvals, requirement clarifications, etc.).
+        # v1.4.7: image → screenshot (UI screenshots, whiteboard
+        # photos, scanned-but-not-OCR'd diagrams).
         slug_lower = p.target.stem.lower()
         if "interview" in slug_lower or "transcript" in slug_lower:
             stype = "interview_transcript"
+        elif p.kind == "image":
+            stype = "screenshot"
         elif p.kind in ("eml", "msg"):
             stype = "email_thread"
         elif p.kind in ("pdf", "docx", "pptx"):
@@ -2346,9 +2602,10 @@ def _recreate_manifest(workspace: Path) -> str:
     # #4 fix: validate kind so a corrupted/renamed file doesn't slip
     # in with `kind=evil` and confuse downstream type heuristics.
     # v1.4.5 adds pptx + html. v1.4.6 adds eml + msg (email evidence).
+    # v1.4.7 adds image (png/jpg/jpeg/tiff/tif).
     _known_kinds = {
         "pdf", "docx", "text", "xlsx", "csv", "tsv", "json",
-        "pptx", "html", "eml", "msg",
+        "pptx", "html", "eml", "msg", "image",
     }
 
     for entry in sorted(inputs_dir.iterdir(), key=lambda p: p.name):
@@ -2421,9 +2678,12 @@ def _recreate_manifest(workspace: Path) -> str:
         # v1.4.5 keeps pptx in the "document" bucket; html lands as
         # process_note (web exports are typically procedural docs).
         # v1.4.6: eml/msg → email_thread (matches the staging path).
+        # v1.4.7: image → screenshot.
         slug_lower = entry.stem.lower()
         if "interview" in slug_lower or "transcript" in slug_lower:
             stype = "interview_transcript"
+        elif kind == "image":
+            stype = "screenshot"
         elif kind in ("eml", "msg"):
             stype = "email_thread"
         elif kind in ("pdf", "docx", "pptx"):
@@ -2905,10 +3165,20 @@ def cmd_materials(args: argparse.Namespace) -> int:
     # manifest's stored ContentHash; matched → skip-unchanged,
     # mismatched → restage with EXISTING SourceID (in-place row update).
     restage_changed_mode = bool(getattr(args, "restage_changed", False))
+    # v1.4.7 R1 MAJOR #1 fix: thread --ocr into the planner so the
+    # restage-changed hash-skip shortcut can detect when an image
+    # was previously staged metadata-only AND --ocr now wants to
+    # backfill text. Without this, --restage-changed --ocr is a no-op
+    # for unchanged images.
+    # v1.4.7 R2 NEW MAJOR fix: also thread --ocr-lang so the planner
+    # can detect a lang SWITCH (eng → rus) and force restage even
+    # when the source bytes are unchanged.
     plans = _plan_conversions(
         supported, inputs_dir, manifest_path, src_dir,
         force=bool(args.force),
         restage_changed=restage_changed_mode,
+        ocr_enabled=bool(getattr(args, "ocr", False)),
+        ocr_lang=str(getattr(args, "ocr_lang", "eng")),
     )
 
     # 3. Render preview.
@@ -2963,9 +3233,30 @@ def cmd_materials(args: argparse.Namespace) -> int:
                 extras.append("--recursive")
             if bool(args.force):
                 extras.append("--force")
+            # v1.4.7: preserve --ocr / --ocr-lang in the suggested
+            # command so a copy-paste doesn't silently downgrade
+            # from OCR-on to OCR-off.
+            # v1.4.7 R1 MAJOR #3 fix: shlex.quote every operator-
+            # provided value so a maliciously-supplied --ocr-lang
+            # like `'$(...)'` survives copy-paste as a literal
+            # rather than executing in the new shell. Same hardening
+            # applied to root + src_dir which contain operator-
+            # supplied paths.
+            import shlex as _shlex
+            if bool(getattr(args, "ocr", False)):
+                extras.append("--ocr")
+                ocr_lang_val = str(getattr(args, "ocr_lang", "eng"))
+                if ocr_lang_val != "eng":
+                    extras.append(
+                        f"--ocr-lang={_shlex.quote(ocr_lang_val)}"
+                    )
             extras_str = (" " + " ".join(extras)) if extras else ""
             print("Suggested next:")
-            print(f"  bsa --workspace {root} materials {src_dir} --commit{extras_str}")
+            print(
+                f"  bsa --workspace {_shlex.quote(str(root))} "
+                f"materials {_shlex.quote(str(src_dir))} --commit"
+                f"{extras_str}"
+            )
         return 0
 
     # PRE-FLIGHT: header-drift check + leaf-symlink check.
@@ -3059,9 +3350,13 @@ def cmd_materials(args: argparse.Namespace) -> int:
     # v1.4.1: thread --max-rows-per-table into the tabular extractors.
     # v1.4.4: thread --keep-raw flag into the writer loop (raw bytes
     # retention next to the staged .md).
+    # v1.4.7: thread --ocr / --ocr-lang into the image extractor
+    # (default off; metadata-only body when OCR not requested).
     max_rows_per_table = int(getattr(args, "max_rows_per_table", 5000))
     max_json_chars = int(getattr(args, "max_json_chars", 200_000))
     keep_raw_flag = bool(getattr(args, "keep_raw", False))
+    ocr_enabled = bool(getattr(args, "ocr", False))
+    ocr_lang = str(getattr(args, "ocr_lang", "eng"))
     inputs_dir.mkdir(parents=True, exist_ok=True)
     written: list[SourcePlan] = []
     failed: list[tuple[SourcePlan, str]] = []
@@ -3085,6 +3380,8 @@ def cmd_materials(args: argparse.Namespace) -> int:
                 p,
                 max_rows_per_table=max_rows_per_table,
                 max_json_chars=max_json_chars,
+                ocr_enabled=ocr_enabled,
+                ocr_lang=ocr_lang,
             )
         except ConversionUnavailable as exc:
             unavailable_seen.add(p.kind)
@@ -3367,17 +3664,26 @@ def _convert_one(
     p: SourcePlan,
     max_rows_per_table: int = _DEFAULT_MAX_ROWS_PER_TABLE,
     max_json_chars: int = 200_000,
+    *,
+    ocr_enabled: bool = False,
+    ocr_lang: str = "eng",
 ) -> str:
     """Dispatch by kind. Pure helper for cmd_materials.
 
     v1.4.1 adds xlsx + csv routing.
     v1.4.2 adds tsv + json routing (graphql goes through `text`).
     v1.4.5 adds pptx + html routing.
+    v1.4.6 adds eml + msg routing.
+    v1.4.7 adds image routing (png/jpg/jpeg/tiff/tif).
 
     `max_rows_per_table` propagates the operator's --max-rows-per-table
     choice into tabular extractors (xlsx, csv, tsv).
     `max_json_chars` propagates --max-json-chars into the json
-    pretty-printer body cap. Non-applicable kinds ignore the flags."""
+    pretty-printer body cap.
+    `ocr_enabled` + `ocr_lang` propagate the operator's --ocr +
+    --ocr-lang into the image extractor (default off; metadata-only
+    body when OCR not requested).
+    Non-applicable kinds ignore the flags."""
     if p.kind == "pdf":
         return _convert_pdf(p.src)
     if p.kind == "docx":
@@ -3400,6 +3706,10 @@ def _convert_one(
         return _convert_eml(p.src)
     if p.kind == "msg":
         return _convert_msg(p.src)
+    if p.kind == "image":
+        return _convert_image(
+            p.src, ocr_enabled=ocr_enabled, ocr_lang=ocr_lang,
+        )
     raise ConversionFailed(f"unknown kind {p.kind!r} for {p.src.name}")
 
 
@@ -3423,6 +3733,7 @@ def _count_kinds(plans: list[SourcePlan]) -> str:
             ("tsv", "TSV"), ("json", "JSON"),
             ("pptx", "PPTX"), ("html", "HTML"),
             ("eml", "EML"), ("msg", "MSG"),
+            ("image", "IMG"),
         )
         if k in counts
     )
@@ -3622,9 +3933,12 @@ def _upsert_draft_manifest(
                 # because the v1.4.5 kind addition wasn't threaded
                 # through this code path).
                 # v1.4.6: same fix forward for eml/msg → email_thread.
+                # v1.4.7: same fix forward for image → screenshot.
                 slug_lower = plan.target.stem.lower()
                 if "interview" in slug_lower or "transcript" in slug_lower:
                     stype = "interview_transcript"
+                elif plan.kind == "image":
+                    stype = "screenshot"
                 elif plan.kind in ("eml", "msg"):
                     stype = "email_thread"
                 elif plan.kind in ("pdf", "docx", "pptx"):

@@ -1154,18 +1154,22 @@ def test_materials_force_overwrites(tmp_path: Path) -> None:
 
 def test_materials_unsupported_files_reported_separately(tmp_path: Path) -> None:
     """Files with unsupported extensions are listed in the report
-    but do not abort the run; convertible files still proceed."""
+    but do not abort the run; convertible files still proceed.
+
+    v1.4.7: png/jpg/jpeg/tiff/tif moved INTO supported (image kind);
+    test now uses .exe + .iso (still unsupported binary archives) to
+    cover the same idempotency contract."""
     ws = _init_workspace(tmp_path)
     src = _make_src_dir(tmp_path, {
         "ok.md": "good",
         "bin.exe": "junk",
-        "image.png": "binary-stub",
+        "archive.iso": "binary-stub",
     })
     result = _run_cli(["-w", str(ws), "materials", str(src), "--commit"])
     assert result.returncode == 0
     assert "Unsupported (not staged)" in result.stdout
     assert "bin.exe" in result.stdout
-    assert "image.png" in result.stdout
+    assert "archive.iso" in result.stdout
     inputs = ws / "analysis" / "proposals" / "stage1" / "inputs"
     files = [p.name for p in inputs.iterdir()]
     assert files == ["source_001_ok.md"]

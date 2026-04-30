@@ -1085,12 +1085,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         default=None,
         help=(
             "Directory containing source files to stage. Supported "
-            "extensions (v1.4.6): .pdf, .docx, .md/.markdown, .txt, "
+            "extensions (v1.4.7): .pdf, .docx, .md/.markdown, .txt, "
             ".xlsx, .csv, .tsv, .json, .graphql, .pptx, .html/.htm, "
-            ".eml, .msg. Anything else is reported as 'unsupported' "
-            "and skipped. v1.4.3+: optional when a manifest-maintenance "
-            "flag is set (--verify-manifest / --recreate-manifest / "
-            "--prune-orphans)."
+            ".eml, .msg, .png, .jpg/.jpeg, .tiff/.tif. Anything else "
+            "is reported as 'unsupported' and skipped. v1.4.3+: "
+            "optional when a manifest-maintenance flag is set "
+            "(--verify-manifest / --recreate-manifest / --prune-orphans)."
         ),
     )
     p_mat.add_argument(
@@ -1223,6 +1223,33 @@ def main(argv: Optional[list[str]] = None) -> int:
             "skipped. Default off to preserve the existing storage "
             "profile (raw retention can double disk usage on large "
             "engagements)."
+        ),
+    )
+    # v1.4.7 (closes lifecycle review #3 final half): OCR for images.
+    # Heavy dep (system tesseract binary + pytesseract) — opt-in.
+    p_mat.add_argument(
+        "--ocr",
+        action="store_true",
+        help=(
+            "v1.4.7: enable OCR text extraction for image files "
+            "(.png/.jpg/.jpeg/.tiff/.tif) via pytesseract + the "
+            "system tesseract binary. Default off because tesseract "
+            "is system-level (install via `brew install tesseract` "
+            "on macOS, `apt-get install tesseract-ocr` on Debian/"
+            "Ubuntu). Without --ocr, image files are still staged "
+            "(metadata-only body — Format/Dimensions/Bytes); operator "
+            "can re-stage with `--restage-changed --ocr` to backfill "
+            "OCR text after installing tesseract."
+        ),
+    )
+    p_mat.add_argument(
+        "--ocr-lang",
+        default="eng",
+        help=(
+            "v1.4.7: tesseract language pack code (default `eng`). "
+            "Use `+` to combine multiple installed packs, e.g. "
+            "`eng+rus` for English+Russian. List installed packs via "
+            "`tesseract --list-langs`. Ignored when --ocr is not set."
         ),
     )
     p_mat.set_defaults(func=cmd_materials)

