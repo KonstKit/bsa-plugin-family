@@ -7,7 +7,7 @@
 ```
 claude plugin marketplace add /Users/kkitanin/projects/bsa-plugin-family
 claude plugin install bsa-full@bsa-marketplace
-claude plugin list       # expect bsa-full@1.2.11 (v1.2.x line; manifest may lag git tag during canon-neutral patch releases)
+claude plugin list       # expect bsa-full@1.4.0 (v1.4.x line; manifest pinned at 1.4.0 across v1.4.0..v1.4.11 since none of those changed canon policy globs)
 ```
 
 Full install / uninstall / upgrade (including session-only `claude --plugin-dir` path): [INSTALL.md](INSTALL.md).
@@ -31,7 +31,19 @@ Each `/bsa-stage N` invocation runs the stage's full worker chain (worker + any 
 
 ## Status
 
-**v1.2.11** — current release. v1.2.x line progression: v1.2.0 (first canon bump since v1.1.6 — one-line cross-ref), v1.2.1 (A51 `link_strength_override` enum, closes TODO-S8-02-LINK-STRENGTH-OVERRIDE), v1.2.2 (A72 incremental-diff helper, closes TODO-S8-02-INCREMENTAL-MATRIX), v1.2.3 (A71 runnable test export in Cucumber / pytest-bdd / jest, closes TODO-S8-01-RUNNABLE-EXPORT), v1.2.4 (Phase 7 telemetry foundation L1a — canon-neutral), v1.2.5 (A70 negative-path scenario suggestions, closes TODO-S8-01-NEGATIVE-PATH-HEURISTICS), v1.2.6 (end-to-end sidecar fixture), v1.2.7 (A61 schema formalization), v1.2.8 (A61 cross-row F5 enforcement — FK to A59 + AnchorID uniqueness), v1.2.9 (C4 relationship `view_element_id` convention — closes the v1.2.6 round-1 scope-down), v1.2.10 (generic `x-bsa-uniqueness-rules` extension — extracts A61's uniqueness logic, canon-neutral), v1.2.11 (third BSA sidecar `dbml-from-context` — relational-schema text; closes half of the pre-v1.2.11 open follow-up at `docs/sidecar_inventory.md`; status experimental). v1.1.x background:
+**v1.4.11** — current release. Tag `v1.4.11` (manifest pinned at `1.4.0` across v1.4.0..v1.4.11 since none of those changed canon policy globs). Full per-release notes in [CHANGELOG.md](CHANGELOG.md). High-level progression since the last README rewrite at v1.1.8:
+
+- **v1.2.x line** (v1.2.0 → v1.2.16) — A51 enum extensions, A72 incremental-diff helper, A71 runnable test export (Cucumber / pytest-bdd / jest), Phase 7 telemetry foundation, A70 negative-path heuristics, end-to-end sidecar fixture, A61 schema formalization + cross-row F5 enforcement, C4 relationship convention, generic `x-bsa-uniqueness-rules` extension, third BSA sidecar `dbml-from-context`, A50 `EffectiveDate` optional column.
+- **v1.3.x line** (v1.3.0 → v1.3.11) — multi-profile readiness gates, A63 audit-trail rules, canon-policy split into `canon_policy.json` (v1.3.6 hotfix for Claude Code v2.1.19 plugin install schema), `bsa_cli.py` god-module decomposition + materials staging carve-out (v1.3.9 / v1.3.10 / v1.3.11), test-fixture polish.
+- **v1.4.x line** (v1.4.0 → v1.4.11) — **closes the entire 6-rec lifecycle review**:
+  * **rec #1** (v1.4.3): `bsa materials --verify-manifest` / `--recreate-manifest` / `--prune-orphans` recovery flags.
+  * **rec #2** (v1.4.4): A50 `ContentHash` / `OriginalBytes` / `OriginalMtimeUtc` columns + `--restage-changed` + `--keep-raw`.
+  * **rec #3** (v1.4.1 / v1.4.2 / v1.4.5 / v1.4.6 / v1.4.7): expanded `bsa materials` format coverage from 5 → 18 extensions: pdf/docx/md/txt + xlsx/csv (v1.4.1) + tsv/json/graphql (v1.4.2) + pptx/html/htm (v1.4.5) + eml/msg (v1.4.6) + png/jpg/jpeg/tiff/tif with optional OCR via tesseract (v1.4.7).
+  * **rec #4** (v1.4.8 + v1.4.11 hotfix): `scripts/validate_crossrefs.py` + CI gate — catches stale skill→file references on every commit. v1.4.11 extended default scan to commands/ + nested docs/ + nested governance/ (was false-clean for 26 files).
+  * **rec #5** (v1.4.9): unified idempotency between Python `backlog_live_apply.py` + 3 shell drivers (jira/linear/github) — same key format `bsa-{StoryID}-{canon_hash_prefix}`, cross-read both state files, platform filter on cross-read.
+  * **rec #6** (v1.4.10): `bsa workspace snapshot` / `restore` / `bundle` subcommands — full state dump, atomic rollback restore (with archive-member validation against path-traversal + Windows drive-letter + symlink-escape attacks), transfer-ready bundle.
+
+v1.1.x background:
 
 - **v1.1.0** (Phase-3 close) — full Phase-3 dev-handoff: 5 new skills (`bsa-nfr-collector`, `bsa-story-writer`, `bsa-test-scenario-builder`, `bsa-traceability-matrix`, `bsa-backlog-bridge`); 4 new canonical artifacts (A62 NFR register, A70 story register, A71 test scenarios, A72 traceability matrix); 3 new platform-specific export shapes (Jira REST v3 JSON, Linear CSV, generic CSV); 3 new immutable invariants (INV-08, INV-09, INV-10).
 - **v1.1.1** — A51 enum extensions (`inventory_gap` + `cross_tier_contradiction` + `Severity=critical`) for the first external pilot drift bundle, plus internal contract alignment across 6 docs/SKILL.md files.
@@ -43,7 +55,7 @@ Each `/bsa-stage N` invocation runs the stage's full worker chain (worker + any 
 - **v1.1.7** — Pilot anonymization across the active surface (the original first-pilot client name was scrubbed from schemas/scripts/docs/tests/hooks; the universal alias `Pilot-1` is used throughout).
 - **v1.1.8** — Documentation polish: refreshed README, getting_started, FAQ, CONTRIBUTING, INSTALL to reflect the v1.1.x reality after the rapid-fire v1.1.0..v1.1.7 release line.
 
-28 skills (9 main-cycle workers + 5 discovery workers + 5 auditors + 5 Phase-3 workers + 2 sidecars + 1 orchestrator + 1 meta) • 6 slash-commands + 1 Phase-3 composite (`/bsa-dev-handoff`) • 3 safety hooks • 8 golden fixtures (3 happy-path: `project_0001`/`0002`/`0003` + 5 adversarial: `prompt_injection`, `nfr_claim_contradiction`, `multi_way_contradiction`, `tier_delta_auto_resolution`, `block_on_contradiction` — last one is `spec_only`, documenting an opt-in failure mode the v1.2 implementation will use as its regression baseline) • 1412 unit tests (the exact count grows with each release; the invariant is "all pass") • evidence-bound claim layer (INV-01) • closed `ClaimType` enum (INV-07) • tier-aware weighted coverage (KPI-001) • two-key promotion • no-new-claims gate • Phase-3 story-claim provenance (INV-08) + NFR measurability (INV-09) + test-scenario provenance (INV-10).
+**32 skills** (9 main-cycle workers + 5 discovery workers + 5 auditors + 5 Phase-3 workers + 3 sidecars `c4-plantuml` / `dbml` / `camunda-bpmn` / contract exporters: `openapi`/`asyncapi`/`proto` + 1 orchestrator + 1 meta) • **7 slash-commands** + 1 Phase-3 composite (`/bsa-dev-handoff`) • **3 safety hooks** • **9 golden fixtures** (4 happy-path + 5 adversarial) • **2255 unit tests** (the exact count grows with each release; the invariant is "all pass") • **18 supported source formats** for `bsa materials` staging (rec #3 close): pdf/docx/md/txt/xlsx/csv/tsv/json/graphql/pptx/html/htm/eml/msg/png/jpg/jpeg/tiff/tif • evidence-bound claim layer (INV-01) • closed `ClaimType` enum (INV-07) • tier-aware weighted coverage (KPI-001) • two-key promotion • no-new-claims gate • Phase-3 story-claim provenance (INV-08) + NFR measurability (INV-09) + test-scenario provenance (INV-10).
 
 External pilot status: see [docs/pilot_validation.md](docs/pilot_validation.md). Phase 2.5 external shakedown (2-4 weeks of real-project usage) framing applies to v1.0.x; v1.1.x is post-shakedown — the v1.0.x → v1.1.x migration tool exists precisely to bring shakedown-era workspaces forward.
 

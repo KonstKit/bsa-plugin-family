@@ -2,7 +2,7 @@
 
 ## Workflow
 
-Solo + AI-assist, local-only repo (no public remote). All changes land on `main` directly after local self-review + a `codex exec` review round (often multiple rounds for substantial patches — 15 rounds total across the v1.1.x line). There is no PR surface because there is no other reviewer.
+Solo + AI-assist, local-only repo (no public remote). All changes land on `main` directly after local self-review + a `codex exec` review round (often multiple rounds for substantial patches — 15 rounds total across the v1.1.x line; the v1.4.x lifecycle-review-close cycle added ≈25-30 more rounds across v1.4.3..v1.4.11). There is no PR surface because there is no other reviewer.
 
 ### Commit messages
 
@@ -22,10 +22,11 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
 ### Pre-commit checklist
 
-- `pytest tests/` — full test suite must pass (1412 tests as of v1.1.7; the exact count grows with each release — the invariant is "all pass", not a hardcoded number).
-- `python3 scripts/fixture_runner.py --all` — all 8 fixtures (3 happy-path: `project_0001`/`0002`/`0003` + 5 adversarial: `prompt_injection`, `nfr_claim_contradiction`, `multi_way_contradiction`, `tier_delta_auto_resolution`, `block_on_contradiction` — last one is `spec_only=true`) must validate.
+- `pytest tests/` — full test suite must pass (2255 tests as of v1.4.11; the exact count grows with each release — the invariant is "all pass", not a hardcoded number).
+- `python3 scripts/fixture_runner.py --all` — all 9 fixtures (4 happy-path + 5 adversarial: `prompt_injection`, `nfr_claim_contradiction`, `multi_way_contradiction`, `tier_delta_auto_resolution`, `block_on_contradiction` — last one is `spec_only=true`) must validate.
 - `python3 scripts/privacy_scan.py` — 0 blockers.
 - `python3 scripts/security_audit.py` — 0 CRITICAL + 0 HIGH (drift detection for token leakage / insecure subprocess / dangerous builtins; v1.1.11).
+- `python3 scripts/validate_crossrefs.py` — 0 broken markdown cross-references (v1.4.8: stdlib validator catches stale skill→file refs; v1.4.11 hotfix extended scan to commands/ + nested docs/ + nested governance/; CI-wired via `.github/workflows/ci.yml::validate-crossrefs` job).
 - `python3 scripts/compute_canon_hash.py` — output must match `.claude-plugin/canon_policy.json` `hash_full` (v1.3.6: extracted from `plugin.json` because Claude Code v2.1.19 install schema rejects unknown top-level keys; the `test_manifest_canon_hash_matches_current_script_output` pytest case also enforces this).
 - Manifest test (`test_manifest_version_and_canon_semver_agree`) — `plugin.json::version` MUST equal `canon_policy.json::semver`.
 - Every commit references the relevant US-ID from the sprint plan (or the section letter — `A2`, `B1`, `C`, etc. — for v1.1.x patch-line work).

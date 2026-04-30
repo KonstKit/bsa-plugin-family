@@ -48,7 +48,7 @@ Verify the install:
 claude plugin list
 ```
 
-Expected output includes `bsa-full@1.2.11` (the manifest version of the current v1.2.x line; tag may be ahead during canon-neutral patch releases — the same two-semver discipline that kept manifest at 1.1.6 across v1.1.7..v1.1.19, at 1.2.3 across v1.2.4, at 1.2.5 across v1.2.6-v1.2.8, and at 1.2.9 across v1.2.10).
+Expected output includes `bsa-full@1.4.0` (the manifest version is pinned at `1.4.0` across the entire v1.4.x line — v1.4.0 through v1.4.11 — since none of those changed canon policy globs; the git tag is therefore ahead of the manifest. Same two-semver discipline that kept manifest at 1.1.6 across v1.1.7..v1.1.19, at 1.2.3 across v1.2.4, at 1.2.5 across v1.2.6..v1.2.8, etc.).
 
 ## First use — in a fresh project directory
 
