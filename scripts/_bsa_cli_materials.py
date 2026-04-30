@@ -569,6 +569,16 @@ class _HTMLToMarkdown:
                 import html as _html_lib
                 outer._on_data(_html_lib.unescape(f"&#{name};"))
 
+            def unknown_decl(_self, decl: str) -> None:
+                # v1.4.12 audit MINOR #2 fix: HTMLParser routes
+                # `<![CDATA[...]]>` to unknown_decl, not handle_data.
+                # Without this, `<title><![CDATA[Hello]]></title>`
+                # silently dropped the title content. Surface
+                # CDATA payload as data so the title-fragment
+                # capture path picks it up.
+                if decl.startswith("CDATA["):
+                    outer._on_data(decl[len("CDATA["):])
+
         self._parser = _Parser(convert_charrefs=True)
 
     # Forward a couple of HTMLParser methods so the caller doesn't
@@ -746,7 +756,20 @@ class _HTMLToMarkdown:
         # Collapse whitespace within text runs (multiple spaces /
         # tabs / newlines → single space). Markdown structure relies
         # on the explicit `\n` injections from tag handlers.
-        normalized = re.sub(r"[ \t\r\n]+", " ", data)
+        # v1.4.12 audit MINOR #1 fix: also normalize Unicode whitespace
+        # (NBSP  , en/em/punctuation spaces  - , narrow
+        # NBSP  , medium math space  , ideographic space
+        # 　) AND strip zero-width separators (​-‍,
+        # ﻿) outside <pre>. ASCII-only collapse let NBSP /
+        # em-space survive into the staged markdown, hurting analyst
+        # grep consistency.
+        normalized = re.sub(
+            r"[ \t\r\n  -   　]+",
+            " ",
+            data,
+        )
+        # Strip zero-width separators entirely (no replacement).
+        normalized = re.sub(r"[​-‍﻿]", "", normalized)
         if normalized.strip():
             self._buf.append(normalized)
         elif self._buf and not self._buf[-1].endswith((" ", "\n")):
@@ -915,8 +938,26 @@ def _render_email_markdown(msg, source_name: str) -> str:
     # Disposition: inline + filename) so an image-only email's
     # staged body still records WHAT was attached, even if the
     # rendered HTML body collapses to nothing.
+    # v1.4.12 audit MAJOR #2 fix: track an `other_parts` bucket for
+    # MIME leaves we don't classify as body / attachment / inline-
+    # media. Pre-fix S/MIME signature parts (`application/pkcs7-
+    # signature`), text/calendar invites, and assorted application/*
+    # leaves silently disappeared from the staged manifest. Email
+    # evidence completeness requires every leaf appears SOMEWHERE
+    # in the rendered body — even if just as a part-marker entry.
     attachments: list[tuple[str, str, int]] = []  # (filename, ctype, size)
     inline_media: list[tuple[str, str, int]] = []  # same shape
+    other_parts: list[tuple[str, str, int, str]] = []  # + marker tag
+    # MIME content-types worth a special tag in the Attachments line.
+    _SPECIAL_PART_TAGS = {
+        "application/pkcs7-signature": "signature",
+        "application/x-pkcs7-signature": "signature",
+        "application/pgp-signature": "signature",
+        "text/calendar": "calendar",
+        "application/ics": "calendar",
+        "text/vcard": "vcard",
+    }
+    consumed_as_body: set[int] = set()  # id() of parts used as body
     for part in msg.walk():
         ctype = part.get_content_type()
         # Skip multipart containers (no leaf content).
@@ -957,16 +998,35 @@ def _render_email_markdown(msg, source_name: str) -> str:
         if ctype == "text/plain" and plain_body is None:
             try:
                 plain_body = part.get_content()
+                consumed_as_body.add(id(part))
             except Exception:
                 # Fallback for malformed MIME — get raw payload.
                 payload = part.get_payload(decode=True) or b""
                 plain_body = payload.decode("utf-8", errors="replace")
+                consumed_as_body.add(id(part))
         elif ctype == "text/html" and html_body is None:
             try:
                 html_body = part.get_content()
+                consumed_as_body.add(id(part))
             except Exception:
                 payload = part.get_payload(decode=True) or b""
                 html_body = payload.decode("utf-8", errors="replace")
+                consumed_as_body.add(id(part))
+        else:
+            # v1.4.12 audit MAJOR #2 fix: catch-all for unhandled
+            # MIME leaves. Includes S/MIME signatures, calendar
+            # invites, vcards, second text/plain alternatives,
+            # text/* parts the operator didn't pick as body, etc.
+            # Each leaf MUST appear under the Attachments section
+            # with a part-marker tag.
+            try:
+                payload = part.get_payload(decode=True) or b""
+            except Exception:
+                payload = b""
+            tag = _SPECIAL_PART_TAGS.get(ctype.lower(), "part")
+            other_parts.append(
+                (fname or f"(unnamed {ctype})", ctype, len(payload), tag)
+            )
 
     parts.append("## Body")
     parts.append("")
@@ -1001,19 +1061,26 @@ def _render_email_markdown(msg, source_name: str) -> str:
     # a single Attachments section so an inline-image-only email
     # always has a record of WHAT it carried (4-tuple includes
     # is_inline flag for the [inline] marker).
-    attach_rows: list[tuple[str, str, int, bool]] = [
-        (fname, ctype, size, False) for fname, ctype, size in attachments
+    # v1.4.12 audit MAJOR #2 fix: also surface `other_parts` (S/MIME
+    # signatures, calendar invites, vcards, second text alternatives,
+    # etc.) with their part-marker tag — email evidence completeness
+    # demands every MIME leaf appear somewhere in the staged body.
+    attach_rows: list[tuple[str, str, int, str]] = [
+        (fname, ctype, size, "") for fname, ctype, size in attachments
     ] + [
-        (fname, ctype, size, True) for fname, ctype, size in inline_media
+        (fname, ctype, size, "inline") for fname, ctype, size in inline_media
+    ] + [
+        (fname, ctype, size, tag)
+        for fname, ctype, size, tag in other_parts
     ]
     if attach_rows:
         parts.append("## Attachments")
         parts.append("")
-        for fname, ctype, size, is_inline in attach_rows:
-            inline_tag = " [inline]" if is_inline else ""
+        for fname, ctype, size, tag in attach_rows:
+            tag_suffix = f" [{tag}]" if tag else ""
             safe_fname = _normalize_email_header_value(fname)
             parts.append(
-                f"- {safe_fname} ({ctype}, {size} bytes){inline_tag}"
+                f"- {safe_fname} ({ctype}, {size} bytes){tag_suffix}"
             )
         parts.append("")
     return "\n".join(parts).rstrip() + "\n"
@@ -1118,6 +1185,8 @@ def _convert_image(
     *,
     ocr_enabled: bool = False,
     ocr_lang: str = "eng",
+    ocr_timeout_sec: int = 60,
+    ocr_max_pages: int = 50,
 ) -> str:
     """Stage an image (.png / .jpg / .jpeg / .tiff / .tif) into the
     manifest with metadata + optional OCR text.
@@ -1255,23 +1324,50 @@ def _convert_image(
     # TIFFs so a scanned 50-page bundle doesn't silently lose 49
     # pages. Single-frame images (PNG/JPEG/single TIFF) take the
     # n_frames=1 path with no ## Page header noise.
+    # v1.4.12 audit MAJOR #3 fix: cap multi-page OCR work to bounded
+    # tesseract subprocess time + page count. A 1000-page TIFF
+    # (real-world legal-discovery scan) would otherwise spawn 1000
+    # tesseract subprocesses (each 1-2s) → ~30 minutes of CPU + an
+    # unbounded staged .md. Cap pages explicitly + per-call timeout
+    # so the worst case is `min(n_frames, ocr_max_pages) *
+    # ocr_timeout_sec` seconds with a clear truncation footer.
+    pages_to_ocr = min(n_frames, ocr_max_pages)
+    pages_skipped = max(0, n_frames - ocr_max_pages)
     try:
         with Image.open(str(path)) as img:
             collected: list[str] = []
-            for frame_idx in range(n_frames):
+            for frame_idx in range(pages_to_ocr):
                 if n_frames > 1:
                     try:
                         img.seek(frame_idx)
                     except Exception:
                         break
                 try:
-                    text = pytesseract.image_to_string(img, lang=ocr_lang)
+                    text = pytesseract.image_to_string(
+                        img, lang=ocr_lang, timeout=ocr_timeout_sec,
+                    )
                 except pytesseract.TesseractNotFoundError as exc:  # type: ignore[attr-defined]
                     raise ConversionUnavailable(
                         f"tesseract binary not found on PATH ({exc}). "
                         f"Install via `brew install tesseract` (macOS) "
                         f"or `apt-get install tesseract-ocr` "
                         f"(Debian/Ubuntu)."
+                    ) from exc
+                except RuntimeError as exc:
+                    # pytesseract raises RuntimeError on timeout (per
+                    # 0.3.10+ semantics). Surface as ConversionFailed
+                    # with explicit timeout context — operator can
+                    # raise --ocr-timeout-sec.
+                    if "timeout" in str(exc).lower():
+                        raise ConversionFailed(
+                            f"OCR timeout on {path.name} (frame "
+                            f"{frame_idx + 1}/{n_frames}, "
+                            f"limit={ocr_timeout_sec}s). Raise "
+                            f"--ocr-timeout-sec or pre-trim the image."
+                        ) from exc
+                    raise ConversionFailed(
+                        f"OCR failed on {path.name} "
+                        f"(frame {frame_idx + 1}/{n_frames}): {exc}"
                     ) from exc
                 except Exception as exc:
                     raise ConversionFailed(
@@ -1290,8 +1386,16 @@ def _convert_image(
                         "diagram with no readable glyphs, or text is "
                         "below tesseract's confidence threshold)_"
                     )
-                if n_frames > 1 and frame_idx < n_frames - 1:
+                if frame_idx < pages_to_ocr - 1:
                     collected.append("")
+            if pages_skipped > 0:
+                collected.append("")
+                collected.append(
+                    f"_[bsa materials: OCR truncated — "
+                    f"{pages_skipped} of {n_frames} pages NOT "
+                    f"processed (cap=--ocr-max-pages={ocr_max_pages}). "
+                    f"Raise the cap or split the source.]_"
+                )
             parts.append("\n".join(collected).rstrip())
     except (ConversionFailed, ConversionUnavailable):
         raise
@@ -3357,6 +3461,16 @@ def cmd_materials(args: argparse.Namespace) -> int:
     keep_raw_flag = bool(getattr(args, "keep_raw", False))
     ocr_enabled = bool(getattr(args, "ocr", False))
     ocr_lang = str(getattr(args, "ocr_lang", "eng"))
+    # v1.4.12 audit MAJOR #1 fix: generic post-conversion output cap.
+    # `--max-mb` limits SOURCE bytes, not decompressed pptx/msg
+    # content nor OCR output. A crafted compressed pptx (a 2MB zip
+    # that decompresses to 500MB of text) OR an OCR pass on a 100-
+    # page TIFF could blow up the staged .md size. Apply a generic
+    # truncation footer after every _convert_one call.
+    max_output_chars = int(getattr(args, "max_output_chars", 5_000_000))
+    # v1.4.12 audit MAJOR #3 fix: OCR per-call timeout + page cap.
+    ocr_timeout_sec = int(getattr(args, "ocr_timeout_sec", 60))
+    ocr_max_pages = int(getattr(args, "ocr_max_pages", 50))
     inputs_dir.mkdir(parents=True, exist_ok=True)
     written: list[SourcePlan] = []
     failed: list[tuple[SourcePlan, str]] = []
@@ -3382,7 +3496,23 @@ def cmd_materials(args: argparse.Namespace) -> int:
                 max_json_chars=max_json_chars,
                 ocr_enabled=ocr_enabled,
                 ocr_lang=ocr_lang,
+                ocr_timeout_sec=ocr_timeout_sec,
+                ocr_max_pages=ocr_max_pages,
             )
+            # v1.4.12 audit MAJOR #1 fix: truncate at max_output_chars.
+            # Applies uniformly to ALL extractor outputs (csv/tsv/json
+            # have their own internal caps; this is the safety net for
+            # pptx/html/eml/msg/image where decompressed/OCR output is
+            # unbounded by source size).
+            if len(content) > max_output_chars:
+                truncated_at = max_output_chars
+                content = (
+                    content[:truncated_at].rstrip()
+                    + "\n\n_[bsa materials: body truncated at "
+                    f"{truncated_at:,} chars by --max-output-chars; "
+                    f"raise the cap (default 5_000_000) OR pre-trim "
+                    f"the source]_\n"
+                )
         except ConversionUnavailable as exc:
             unavailable_seen.add(p.kind)
             failed.append((p, f"unavailable: {exc}"))
@@ -3667,6 +3797,8 @@ def _convert_one(
     *,
     ocr_enabled: bool = False,
     ocr_lang: str = "eng",
+    ocr_timeout_sec: int = 60,
+    ocr_max_pages: int = 50,
 ) -> str:
     """Dispatch by kind. Pure helper for cmd_materials.
 
@@ -3708,7 +3840,11 @@ def _convert_one(
         return _convert_msg(p.src)
     if p.kind == "image":
         return _convert_image(
-            p.src, ocr_enabled=ocr_enabled, ocr_lang=ocr_lang,
+            p.src,
+            ocr_enabled=ocr_enabled,
+            ocr_lang=ocr_lang,
+            ocr_timeout_sec=ocr_timeout_sec,
+            ocr_max_pages=ocr_max_pages,
         )
     raise ConversionFailed(f"unknown kind {p.kind!r} for {p.src.name}")
 

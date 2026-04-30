@@ -22,7 +22,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
 ### Pre-commit checklist
 
-- `pytest tests/` — full test suite must pass (2255 tests as of v1.4.11; the exact count grows with each release — the invariant is "all pass", not a hardcoded number).
+- `python3 -m pytest` — full test suite must pass (2826 tests as of v1.4.12; the exact count grows with each release — the invariant is "all pass", not a hardcoded number). Note: `pytest tests/` runs only the `tests/` directory (~2032); the canonical invocation `python3 -m pytest` also discovers `scripts/` + `skills/*/scripts/` for ~2826 total.
 - `python3 scripts/fixture_runner.py --all` — all 9 fixtures (4 happy-path + 5 adversarial: `prompt_injection`, `nfr_claim_contradiction`, `multi_way_contradiction`, `tier_delta_auto_resolution`, `block_on_contradiction` — last one is `spec_only=true`) must validate.
 - `python3 scripts/privacy_scan.py` — 0 blockers.
 - `python3 scripts/security_audit.py` — 0 CRITICAL + 0 HIGH (drift detection for token leakage / insecure subprocess / dangerous builtins; v1.1.11).

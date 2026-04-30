@@ -1252,6 +1252,46 @@ def main(argv: Optional[list[str]] = None) -> int:
             "`tesseract --list-langs`. Ignored when --ocr is not set."
         ),
     )
+    # v1.4.12 audit (rec #3 second-pass): resource bounds on
+    # extractor outputs + OCR subprocess time/page count. Defaults
+    # chosen so legitimate engagements don't trip; hostile sources
+    # get clean truncation footers.
+    p_mat.add_argument(
+        "--max-output-chars",
+        type=int,
+        default=5_000_000,
+        help=(
+            "v1.4.12: cap converted body length in chars (default "
+            "5_000_000 ≈ 5MB). Applies to ALL extractors as a safety "
+            "net — a crafted compressed pptx (small zip → 500MB "
+            "decompressed text) OR an OCR pass on a 100-page TIFF "
+            "would otherwise blow up the staged .md size. Bodies "
+            "exceeding the cap are truncated with a clear footer."
+        ),
+    )
+    p_mat.add_argument(
+        "--ocr-timeout-sec",
+        type=int,
+        default=60,
+        help=(
+            "v1.4.12: per-page tesseract timeout in seconds (default "
+            "60). Prevents a malformed image from stalling the CLI "
+            "indefinitely. Operator can raise for legitimately "
+            "complex pages."
+        ),
+    )
+    p_mat.add_argument(
+        "--ocr-max-pages",
+        type=int,
+        default=50,
+        help=(
+            "v1.4.12: cap OCR processing to first N pages of a "
+            "multi-page TIFF (default 50). Defends against "
+            "1000-page legal-discovery scans spawning 1000 tesseract "
+            "subprocesses. Pages beyond the cap are noted in a "
+            "truncation footer; raise the cap or split the source."
+        ),
+    )
     p_mat.set_defaults(func=cmd_materials)
 
     # v1.4.10 (closes lifecycle review rec #6): workspace

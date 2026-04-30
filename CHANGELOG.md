@@ -4,6 +4,46 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.12] — 2026-04-30
+
+**Hotfix: second-pass audit findings on v1.4.5..v1.4.7 extractor surface.**
+
+Codex full re-audit of v1.4.5..v1.4.7 (the pptx/html/eml/msg/image/OCR diff) caught 3 MAJOR + 3 MINOR issues missed in the per-release rounds. Pre-fix:
+- No generic output cap on pptx/html/eml/msg/image conversions — `--max-mb` only limited SOURCE bytes; a crafted compressed pptx (small zip → 500MB decompressed text) OR an OCR pass on a 100-page TIFF could blow up the staged .md.
+- EML silently dropped MIME leaves it didn't classify as body / attachment / inline — S/MIME signatures, text/calendar invites, vcards disappeared from the staged record, breaking email-evidence completeness.
+- OCR ran tesseract per page with no timeout AND no page cap — a 1000-page legal-discovery TIFF would spawn 1000 subprocesses (~30 min CPU + unbounded staged .md).
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3`.
+
+### Added
+
+- **`--max-output-chars=<int>`** CLI flag (default `5_000_000` ≈ 5MB). Generic post-conversion truncation applied uniformly to ALL extractors as a safety net. Bodies exceeding the cap are truncated with a clear footer pointing at the operator's lever.
+- **`--ocr-timeout-sec=<int>`** CLI flag (default `60`). Per-page tesseract timeout via `pytesseract.image_to_string(timeout=...)`. Catches malformed images that stall the CLI; `RuntimeError` with "timeout" in message → `ConversionFailed` with explicit timeout context.
+- **`--ocr-max-pages=<int>`** CLI flag (default `50`). Caps OCR processing to first N pages of a multi-page TIFF. Skipped pages noted in a truncation footer; raise the cap or split the source.
+- **`other_parts: list[tuple[str, str, int, str]]`** in `_render_email_markdown` — catch-all for MIME leaves not consumed as body / attachment / inline-media. Includes part-marker tags via `_SPECIAL_PART_TAGS` map (`signature` / `calendar` / `vcard`). Surfaced under `## Attachments` with `[<tag>]` suffix.
+- **`unknown_decl` handler** in `_HTMLToMarkdown._Parser` — captures `<![CDATA[...]]>` payload (HTMLParser routes CDATA there, NOT to handle_data). Without this, `<title><![CDATA[...]]></title>` silently lost the title.
+- **Unicode whitespace normalization** in `_HTMLToMarkdown._on_data`: NBSP (U+00A0), en/em/punctuation/narrow/medium/ideographic spaces (U+2000..U+200A, U+202F, U+205F, U+3000) collapse to ASCII space; zero-width separators (U+200B..U+200D, U+FEFF) stripped entirely.
+- **10 new tests** in `tests/test_bsa_cli_materials_audit_v1_4_12.py`: max-output-chars truncation + default-passes-short, EML S/MIME signature listed under Attachments, EML text/calendar listed, OCR --ocr-max-pages cap with truncation footer, OCR --ocr-timeout-sec param threaded, HTML NBSP/em-space/ZWSP normalization, HTML CDATA title captured, restage detects binary-image-byte mutation, --keep-raw mixed-format batch (md+html+png).
+
+### Changed
+
+- **`cmd_materials`** writer loop: reads `args.max_output_chars` / `args.ocr_timeout_sec` / `args.ocr_max_pages`; threads OCR options into `_convert_one`; truncates `content` post-conversion with footer.
+- **`_convert_one`** signature gains `ocr_timeout_sec: int = 60` + `ocr_max_pages: int = 50` kwargs; threaded through to `_convert_image`.
+- **`_convert_image`** OCR loop now uses `pages_to_ocr = min(n_frames, ocr_max_pages)` + per-call `timeout=ocr_timeout_sec`. Skipped pages emit a clear truncation footer with the cap value.
+
+### Tests
+
+Total suite: **2826 passed** (was 2816 in v1.4.11 — +10 net new for audit-fix verification).
+
+> _Note on counting basis_: this entry uses the canonical `python3 -m pytest` discovery (full suite — `tests/` + `scripts/` + `skills/*/scripts/`). Earlier v1.4.x CHANGELOG entries cited a narrower count from a pre-discovery filter (consistent +233 offset from `pytest tests/` only). The +10 net-new delta is identical under either basis — only the absolute baseline number changed. Going forward, all entries use the full-suite count.
+
+### Codex Review
+
+Triggered by Codex's own second-pass audit message: "previous findings on v1.4.5..v1.4.7 remain separate scope" (left over after v1.4.8 verdict). This release closes that scope.
+
+- **R1 (audit)**: REQUEST CHANGES — 3 MAJOR + 3 MINOR (the findings listed above).
+- **R2**: APPROVE — all 6 closed. Edge checks confirmed: Python `str` slicing is Unicode-safe before UTF-8 write; EML attachment/inline branches `continue` before `other_parts`; single-image OCR still calls `image_to_string(timeout=...)`; source UTF-8 round-trip OK; `DOCTYPE` routes to `handle_decl` (not `unknown_decl`), so the CDATA handler doesn't accidentally fire on doctype declarations.
+
 ## [v1.4.11] — 2026-04-30
 
 **Hotfix: `validate_crossrefs.py` default-scan coverage gap (v1.4.8 P1 follow-up).**
