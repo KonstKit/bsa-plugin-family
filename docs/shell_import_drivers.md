@@ -16,27 +16,29 @@ The canonical implementation remains `scripts/backlog_live_apply.py` (Python, fu
 
 ## State files
 
-**Important — shell drivers use SEPARATE state files from the Python impl** (`scripts/backlog_live_apply.py`):
+**v1.4.9 (rec #5): unified idempotency.** Python and shell drivers now share the same key space AND cross-read each other's state files. Operators can switch drivers mid-engagement without re-creating issues.
 
 | | Python impl | Shell drivers |
 |---|---|---|
-| Path | `analysis/handoff/live_api_response_<platform>.json` | `analysis/handoff/live_api_response_<platform>_shell.json` |
+| **Write** path | `analysis/handoff/live_api_response_<platform>.json` | `analysis/handoff/live_api_response_<platform>_shell.json` |
+| **Read** paths | BOTH (Python F5-validated + shell loose) | BOTH (shell + Python canonical) |
 | Shape | F5-validated against `governance/schemas/live_api_response.schema.json` (strict, additionalProperties:false) | Simpler `.results[].status` shape; no F5 validation |
-| Idempotency key format | `bsa-{StoryID}-{canon_hash_prefix}` | `bsa-{StoryID}-sh-{sha256(StoryID\|Title)[:8]}` (`-sh-` infix) |
+| Idempotency key format | `bsa-{StoryID}-{canon_hash_prefix}` | **same as Python** (was `bsa-{StoryID}-sh-{sha256}` pre-v1.4.9) |
 
-**Implication**: Python and shell tracks **do NOT interoperate** on idempotency. Operators should pick ONE driver per workspace. Mixing the two will result in duplicate platform-side issues because:
+**Cross-read semantics**: on startup each driver merges idempotency keys from BOTH state files into a single done-set. A key produced by EITHER driver causes the matching row to skip. Each driver still WRITES only to its own path (Python keeps F5 validation; shell stays simpler — cross-write would require shell to construct F5-valid JSON which is impractical in bash).
 
-1. The two state files live at different paths — neither tool sees the other's state.
-2. Even if you symlink them, the idempotency key formats are different, so prior keys from one tool would never match the other's key generation.
+**Platform filter (v1.4.9 R1 MAJOR #3)**: cross-read enforces `.platform` field match when present. A misplaced state file (e.g. a Linear shell state renamed to `*_jira_shell.json`) won't poison this run's idempotency decisions. Files without `.platform` are accepted (legacy v1.1.17 shell state didn't always emit it).
 
-This is a deliberate v1.1.17 design choice. True interop would require the shell drivers to fully reimplement the Python F5-validated state schema (operator_run_id, platform_base_url, summary block, canon-hash-prefix idempotency keys, etc.), which would defeat the "lightweight shell alternative" goal. If you need a unified track, use the Python impl.
+**`--canon-hash` (v1.4.9)**: shell drivers REQUIRE `--canon-hash HEX` when `--apply` is set (matches Python's contract). Auto-detected from `<workspace>/.claude-plugin/canon_policy.json` `hash_prefix` field when omitted.
+
+**Migration from pre-v1.4.9 shell state**: legacy `bsa-{StoryID}-sh-{sha256}` keys won't match the new format → ONE-TIME duplicate creation per legacy story. Operators with large legacy state can rewrite keys via the jq one-liner in CHANGELOG v1.4.9 §Migration. Solo workflow: accept the cost.
 
 ## Common contract
 
 All three drivers share:
 
 - **Dry-run by default.** `--apply` is required to actually POST. Dry-run prints the per-row plan + row count + target URL.
-- **Idempotency via prior state file.** If `analysis/handoff/live_api_response_{platform}_shell.json` exists (NOTE: separate path from Python's canonical `live_api_response_{platform}.json` — see §"State files" below), rows whose idempotency key matches a `status=created` or `status=skipped` entry are skipped on rerun. The key format is `bsa-{StoryID}-sh-{sha256(StoryID|Title)[:8]}` — intentionally distinct from the Python impl's key format (`bsa-{StoryID}-{canon_hash_prefix}`) so the two tracks do NOT collide.
+- **Idempotency via prior state file.** Both `live_api_response_{platform}_shell.json` (shell driver writeback) AND `live_api_response_{platform}.json` (Python's canonical state) are READ on startup. Rows whose idempotency key matches a `status=created` or `status=skipped` entry in EITHER file are skipped on rerun. v1.4.9 unified the key format: `bsa-{StoryID}-{canon_hash_prefix}` — same as Python. Pre-v1.4.9 shell state used `bsa-{StoryID}-sh-{sha256}` and is documented as one-time-duplicate migration cost in CHANGELOG v1.4.9 §Migration.
 - **Token via env var only.** Never via CLI arg. The driver scrubs base64-looking tokens from error output as defense-in-depth.
 - **Partial-failure tolerant.** Per-row failures are logged; the driver continues to the next row. Exit 1 at the end if any row failed, 0 if clean.
 - **macOS compatibility.** All three drivers avoid `declare -A` (bash 3.2 lacks associative arrays); prior state tracking uses a tmpfile + `grep -Fxq` pattern.

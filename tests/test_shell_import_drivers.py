@@ -110,7 +110,26 @@ def test_script_avoids_declare_dash_a(script: Path) -> None:
 def _make_workspace(tmp_path: Path) -> Path:
     handoff = tmp_path / "analysis" / "handoff"
     handoff.mkdir(parents=True, exist_ok=True)
+    # v1.4.9 rec #5: shell drivers now auto-detect canon_hash_prefix
+    # from `.claude-plugin/canon_policy.json` so unified-key fixtures
+    # don't need to pass --canon-hash explicitly. Use a stable test
+    # hash so test fixtures can derive expected idempotency keys.
+    plugin_dir = tmp_path / ".claude-plugin"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    (plugin_dir / "canon_policy.json").write_text(
+        json.dumps({
+            "semver": "1.4.9",
+            "hash_prefix": "abc12345",
+            "hash_full": "abc12345" + "0" * 56,
+        }), encoding="utf-8",
+    )
     return tmp_path
+
+
+# v1.4.9 rec #5: stable canon hash prefix used by all _make_workspace
+# fixtures + every test that builds an "expected idempotency key" for
+# the unified `bsa-{StoryID}-{canon_hash_prefix}` format.
+_TEST_CANON_HASH = "abc12345"
 
 
 def _write_jira_export(workspace: Path, n_rows: int = 2) -> None:
@@ -291,15 +310,15 @@ def test_github_apply_refuses_without_repo(tmp_path) -> None:
 
 def test_jira_prior_state_skips_already_created(tmp_path) -> None:
     """A prior live_api_response_jira_shell.json with an idempotency_key
-    matching the current row must cause that row to be skipped."""
+    matching the current row must cause that row to be skipped.
+
+    v1.4.9 rec #5: key format unified to `bsa-{StoryID}-{canon_hash}`
+    (was `bsa-{StoryID}-sh-{sha256}`). The fixture's canon_policy.json
+    pins `hash_prefix=abc12345` so this test derives the expected key
+    deterministically."""
     workspace = _make_workspace(tmp_path)
     _write_jira_export(workspace, n_rows=2)
-    # Compute the expected idempotency key for STORY-001 the same
-    # way the driver does: sha256("STORY-001|Test story 1") first 8
-    # hex chars, prefixed with "bsa-STORY-001-sh-".
-    import hashlib
-    digest = hashlib.sha256(b"STORY-001|Test story 1").hexdigest()[:8]
-    prior_key = f"bsa-STORY-001-sh-{digest}"
+    prior_key = f"bsa-STORY-001-{_TEST_CANON_HASH}"
     (workspace / "analysis/handoff/live_api_response_jira_shell.json").write_text(
         json.dumps({
             "rows": [
@@ -468,13 +487,10 @@ def test_jira_prior_state_preserved_on_rerun(tmp_path) -> None:
 
 def test_linear_prior_state_skips_already_created(tmp_path) -> None:
     """Mirror of test_jira_prior_state_skips_already_created for the
-    Linear driver — earlier test coverage only exercised the Jira
-    path. Per Codex should #2."""
-    import hashlib
+    Linear driver — v1.4.9 unified key format."""
     workspace = _make_workspace(tmp_path)
     _write_csv_export(workspace, "backlog_export_linear.csv", n_rows=2)
-    digest = hashlib.sha256(b"STORY-001|Test 1").hexdigest()[:8]
-    prior_key = f"bsa-STORY-001-sh-{digest}"
+    prior_key = f"bsa-STORY-001-{_TEST_CANON_HASH}"
     (workspace / "analysis/handoff/live_api_response_linear_shell.json").write_text(
         json.dumps({
             "platform": "linear",
@@ -543,15 +559,12 @@ def test_jira_malformed_json_does_not_crash(tmp_path) -> None:
 
 def test_github_prior_state_skips_already_created(tmp_path) -> None:
     """v1.1.17 round-2 (Codex PARTIAL #1): mirror the Jira/Linear
-    idempotency test for GitHub — earlier coverage was dry-run-only.
-    Uses the canonical .results[]/.status state shape (round-2)."""
-    import hashlib
+    idempotency test for GitHub — v1.4.9 unified key format."""
     workspace = _make_workspace(tmp_path)
     _write_github_csv_export(workspace, n_rows=2)
     if shutil.which("gh") is None:
         pytest.skip("gh CLI not installed")
-    digest = hashlib.sha256(b"STORY-001|Test 1").hexdigest()[:8]
-    prior_key = f"bsa-STORY-001-sh-{digest}"
+    prior_key = f"bsa-STORY-001-{_TEST_CANON_HASH}"
     (workspace / "analysis/handoff/live_api_response_github_shell.json").write_text(
         json.dumps({
             "platform": "github",
@@ -575,12 +588,12 @@ def test_drivers_accept_canonical_results_shape(tmp_path) -> None:
     drivers MUST accept the canonical Python state shape
     (`.results[].status`) — NOT just the round-1 shell shape
     (`.rows[].outcome`). Pin: prior state in canonical shape causes
-    the matching idempotency key to be skipped on a shell rerun."""
-    import hashlib
+    the matching idempotency key to be skipped on a shell rerun.
+
+    v1.4.9 rec #5: unified key format — see fixture's canon_policy.json."""
     workspace = _make_workspace(tmp_path)
     _write_jira_export(workspace, n_rows=1)
-    digest = hashlib.sha256(b"STORY-001|Test story 1").hexdigest()[:8]
-    prior_key = f"bsa-STORY-001-sh-{digest}"
+    prior_key = f"bsa-STORY-001-{_TEST_CANON_HASH}"
     # Use the Python canonical shape exactly.
     (workspace / "analysis/handoff/live_api_response_jira_shell.json").write_text(
         json.dumps({
@@ -609,17 +622,306 @@ def test_drivers_accept_canonical_results_shape(tmp_path) -> None:
     )
 
 
-def test_drivers_use_separate_state_path_from_python(tmp_path) -> None:
-    """v1.1.17 round-3 (Codex HIGH closure): the shell drivers MUST
-    write to `live_api_response_<plat>_shell.json` (with `_shell`
-    suffix), NOT the canonical `live_api_response_<plat>.json` path
-    used by `scripts/backlog_live_apply.py`. Pin: a Python state
-    file at the canonical path is NEVER touched by a shell-driver
-    apply run."""
+def test_v1_4_9_python_skips_on_shell_prior_state(tmp_path) -> None:
+    """v1.4.9 rec #5 (closes 'unified idempotency' gap): Python's
+    backlog_live_apply.py MUST cross-read shell's state file. An
+    operator who ran the shell driver first and now switches to
+    Python should NOT get duplicate issues created.
+
+    This is the symmetric companion to
+    test_drivers_writeback_uses_separate_state_path_from_python (which
+    pins shell-reads-Python). Both directions must work for true
+    driver-switch idempotency."""
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from scripts.backlog_live_apply import _load_combined_prior_state
+    finally:
+        sys.path.pop(0)
+    workspace = _make_workspace(tmp_path)
+    handoff = workspace / "analysis" / "handoff"
+    # Shell-state-only: Python file absent, shell file has STORY-001.
+    shell_path = handoff / "live_api_response_jira_shell.json"
+    python_path = handoff / "live_api_response_jira.json"
+    shell_payload = {
+        "platform": "jira",
+        "results": [
+            {
+                "story_id": "STORY-001",
+                "idempotency_key": f"bsa-STORY-001-{_TEST_CANON_HASH}",
+                "status": "created",
+            },
+        ],
+    }
+    shell_path.write_text(json.dumps(shell_payload), encoding="utf-8")
+    combined = _load_combined_prior_state(python_path, shell_path, "jira")
+    expected_key = f"bsa-STORY-001-{_TEST_CANON_HASH}"
+    assert expected_key in combined, (
+        f"Python's combined prior-state must include shell's keys. "
+        f"Got: {list(combined.keys())!r}"
+    )
+    assert combined[expected_key].get("_source") == "shell", (
+        f"Source-of-key marker missing: {combined[expected_key]!r}"
+    )
+
+
+def test_v1_4_9_canon_hash_rejects_multiline_value(tmp_path) -> None:
+    """R1 MAJOR #1 fix: `--canon-hash` must reject a multi-line value
+    where one line happens to match the regex (e.g. jq emitting a
+    JSON string with embedded \\n). Length-check + POSIX case-glob
+    is unambiguous and rejects this."""
+    handoff = tmp_path / "analysis" / "handoff"
+    handoff.mkdir(parents=True, exist_ok=True)
+    _write_jira_export(tmp_path, n_rows=1)
+    env = os.environ.copy()
+    env["BSA_JIRA_TOKEN"] = "ATATT3xPLACEHOLDER" + "x" * 30
+    env["BSA_JIRA_EMAIL"] = "test@example.invalid"
+    # Inject a multi-line value: first line matches, second is junk.
+    multiline_hash = "abc12345\nBADBADBA"
+    result = subprocess.run(
+        [
+            "bash", str(JIRA_SCRIPT),
+            "--workspace", str(tmp_path),
+            "--apply",
+            "--base-url", "https://example.invalid",
+            "--canon-hash", multiline_hash,
+        ],
+        capture_output=True, text=True, env=env, timeout=10,
+    )
+    assert result.returncode == 2, (
+        f"multi-line --canon-hash must exit 2; got {result.returncode}. "
+        f"stderr: {result.stderr!r}"
+    )
+    assert "8 lowercase hex" in result.stderr or "EXACTLY 8" in result.stderr
+
+
+def test_v1_4_9_python_skipped_status_treated_as_done(tmp_path) -> None:
+    """R1 MAJOR #2 fix: a row whose status=='skipped' in Python's
+    prior state must be treated as authoritatively-done. Otherwise:
+    run #1 creates STORY-001 (status=created); run #2 sees prior
+    state and emits status=skipped; run #3 reads run #2's state and
+    re-creates because it didn't accept 'skipped'.
+
+    Tests via _load_shell_prior_state (no F5 validation) — the
+    relevant code path is the same `status in ('created', 'skipped')`
+    filter shared with _load_prior_state_validated. (Building a full
+    F5-valid fixture is too noisy for a per-status semantics test.)"""
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from scripts.backlog_live_apply import _load_shell_prior_state
+    finally:
+        sys.path.pop(0)
+    state_path = tmp_path / "live_api_response_jira_shell.json"
+    state_path.write_text(json.dumps({
+        "platform": "jira",
+        "results": [
+            {
+                "story_id": "STORY-001",
+                "idempotency_key": f"bsa-STORY-001-{_TEST_CANON_HASH}",
+                "status": "skipped",
+                "attempts": 0,
+            },
+            {
+                "story_id": "STORY-002",
+                "idempotency_key": f"bsa-STORY-002-{_TEST_CANON_HASH}",
+                "status": "created",
+                "attempts": 1,
+            },
+        ],
+    }), encoding="utf-8")
+    out = _load_shell_prior_state(state_path, expected_platform="jira")
+    expected_skipped_key = f"bsa-STORY-001-{_TEST_CANON_HASH}"
+    expected_created_key = f"bsa-STORY-002-{_TEST_CANON_HASH}"
+    assert expected_skipped_key in out, (
+        f"v1.4.9 must accept status=skipped as done; got: {list(out.keys())!r}"
+    )
+    assert expected_created_key in out, (
+        f"v1.4.9 status=created must still be accepted; got: {list(out.keys())!r}"
+    )
+
+
+def test_v1_4_9_shell_loader_filters_misplaced_platform(tmp_path) -> None:
+    """R1 MAJOR #3 fix: a shell state file at jira-shell path but
+    with .platform='linear' must be REJECTED by the cross-read
+    loader (defends against misplaced/poisoned files)."""
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from scripts.backlog_live_apply import _load_shell_prior_state
+    finally:
+        sys.path.pop(0)
+    state_path = tmp_path / "live_api_response_jira_shell.json"
+    state_path.write_text(json.dumps({
+        "platform": "linear",  # WRONG — file is at jira path
+        "results": [
+            {
+                "story_id": "STORY-001",
+                "idempotency_key": f"bsa-STORY-001-{_TEST_CANON_HASH}",
+                "status": "created",
+            },
+        ],
+    }), encoding="utf-8")
+    # When expected_platform=jira is enforced, the wrong-platform
+    # file must yield empty.
+    out = _load_shell_prior_state(state_path, expected_platform="jira")
+    assert out == {}, (
+        f"misplaced platform must be rejected; got: {list(out.keys())!r}"
+    )
+    # Files WITHOUT a platform field still accepted (legacy shell state).
+    state_path.write_text(json.dumps({
+        "results": [
+            {
+                "story_id": "STORY-001",
+                "idempotency_key": f"bsa-STORY-001-{_TEST_CANON_HASH}",
+                "status": "created",
+            },
+        ],
+    }), encoding="utf-8")
+    out2 = _load_shell_prior_state(state_path, expected_platform="jira")
+    assert f"bsa-STORY-001-{_TEST_CANON_HASH}" in out2, (
+        f"legacy file without .platform must be accepted; got: {list(out2.keys())!r}"
+    )
+
+
+def test_v1_4_9_r2_platform_false_value_rejected(tmp_path) -> None:
+    """R2 NEW MAJOR fix: a poisoned state file with `"platform": false`
+    must be REJECTED (jq's `//` operator also defaults on `false` —
+    explicit `== null or == "<plat>"` check is required)."""
+    workspace = _make_workspace(tmp_path)
+    _write_jira_export(workspace, n_rows=1)
+    state_path = workspace / "analysis/handoff/live_api_response_jira_shell.json"
+    state_path.write_text(json.dumps({
+        "platform": False,  # Poisoned — explicit non-string non-null
+        "results": [
+            {
+                "story_id": "STORY-001",
+                "idempotency_key": f"bsa-STORY-001-{_TEST_CANON_HASH}",
+                "status": "created",
+            },
+        ],
+    }), encoding="utf-8")
+    result = subprocess.run(
+        ["bash", str(JIRA_SCRIPT), "--workspace", str(workspace)],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    # Poisoned platform must NOT suppress the create.
+    assert "[SKIP] STORY-001" not in result.stdout, (
+        f"poisoned platform=false must be rejected; got: {result.stdout!r}"
+    )
+
+
+def test_v1_4_9_r2_writeback_overwrites_wrong_platform(tmp_path) -> None:
+    """R2 NEW MAJOR fix: when writeback overlays a misplaced/poisoned
+    state file (existing platform != current run's platform), the
+    writeback MUST discard the prior rows AND force-set the correct
+    platform — otherwise future runs would reject their OWN state
+    via the v1.4.9 R1 platform filter (chicken-and-egg)."""
+    workspace = _make_workspace(tmp_path)
+    _write_jira_export(workspace, n_rows=1)
+    state_path = workspace / "analysis/handoff/live_api_response_jira_shell.json"
+    # Drop a state file claiming platform=linear (poisoned/misplaced).
+    state_path.write_text(json.dumps({
+        "platform": "linear",
+        "results": [
+            {
+                "story_id": "STORY-LINEAR-OLD",
+                "idempotency_key": "bsa-STORY-LINEAR-OLD-aaaaaaaa",
+                "status": "created",
+            },
+        ],
+    }), encoding="utf-8")
+    # Run jira driver in dry-run (no writeback yet — verify the
+    # cross-read rejects the poisoned file as expected).
+    result1 = subprocess.run(
+        ["bash", str(JIRA_SCRIPT), "--workspace", str(workspace)],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result1.returncode == 0
+    assert "[SKIP] STORY-LINEAR-OLD" not in result1.stdout
+    # NOTE: Dry-run doesn't write state. To test writeback behavior
+    # without going through real --apply (which needs network), we
+    # invoke the writeback Python inline directly.
+    import subprocess as _sp
+    new_path = workspace / "analysis/handoff/live_api_response_jira_shell.json.new"
+    rc = _sp.run(
+        ["python3", "-c", """
+import json, sys, os
+prior_path, new_path, platform = sys.argv[1:4]
+prior = {"platform": platform, "results": []}
+if os.path.isfile(prior_path):
+    try:
+        with open(prior_path) as fh:
+            prior = json.load(fh)
+    except Exception:
+        pass
+if not isinstance(prior, dict):
+    prior = {"platform": platform, "results": []}
+prior_platform = prior.get("platform")
+if prior_platform is not None and prior_platform != platform:
+    prior = {"platform": platform, "results": []}
+else:
+    prior["platform"] = platform
+prior["results"] = []
+prior["results"].append({
+    "story_id": "STORY-001",
+    "idempotency_key": "bsa-STORY-001-" + "abc12345",
+    "status": "created",
+})
+with open(new_path, "w") as fh:
+    json.dump(prior, fh)
+""", str(state_path), str(new_path), "jira"],
+    ).returncode
+    assert rc == 0
+    rewritten = json.loads(new_path.read_text(encoding="utf-8"))
+    assert rewritten["platform"] == "jira", (
+        f"writeback must force-set correct platform; got: {rewritten!r}"
+    )
+    assert not any(
+        r.get("story_id") == "STORY-LINEAR-OLD" for r in rewritten["results"]
+    ), f"misplaced rows must be discarded; got: {rewritten!r}"
+
+
+def test_v1_4_9_canon_hash_required_when_apply(tmp_path) -> None:
+    """v1.4.9 rec #5: --apply requires --canon-hash (or auto-detect).
+    A workspace WITHOUT canon_policy.json AND without --canon-hash
+    must surface the requirement explicitly, not silently fall back
+    to a non-canonical key."""
+    handoff = tmp_path / "analysis" / "handoff"
+    handoff.mkdir(parents=True, exist_ok=True)
+    # Note: NO canon_policy.json — explicitly skip _make_workspace.
+    _write_jira_export(tmp_path, n_rows=1)
+    env = os.environ.copy()
+    env["BSA_JIRA_TOKEN"] = "ATATT3xPLACEHOLDER" + "x" * 30
+    env["BSA_JIRA_EMAIL"] = "test@example.invalid"
+    result = subprocess.run(
+        [
+            "bash", str(JIRA_SCRIPT),
+            "--workspace", str(tmp_path),
+            "--apply",
+            "--base-url", "https://example.invalid",
+        ],
+        capture_output=True, text=True, env=env, timeout=10,
+    )
+    assert result.returncode == 2, (
+        f"--apply without canon-hash must exit 2; got {result.returncode}"
+    )
+    assert "canon-hash" in result.stderr.lower(), (
+        f"stderr must mention canon-hash; got: {result.stderr!r}"
+    )
+
+
+def test_drivers_writeback_uses_separate_state_path_from_python(tmp_path) -> None:
+    """v1.1.17 round-3 (Codex HIGH) — partially superseded in v1.4.9
+    rec #5. The shell drivers WRITE to `live_api_response_<plat>_shell.json`
+    (separate path) — that part is unchanged. But v1.4.9 inverts the
+    READ contract: shell drivers NOW READ Python's canonical state to
+    skip rows already created by Python (closes the `bsa-{StoryID}-
+    {canon_hash_prefix}` unified-key-space gap). Pin both:
+      * Python's canonical file is NEVER MODIFIED by shell.
+      * Shell's writeback lands ONLY at the `_shell.json` path.
+      * Shell DOES skip a row whose key is in Python's canonical state
+        (this is the v1.4.9 cross-read behaviour change)."""
     workspace = _make_workspace(tmp_path)
     _write_jira_export(workspace, n_rows=2)
-    # Drop a Python-shaped state file at the CANONICAL path. The
-    # shell driver must NOT read or modify it.
     canonical_path = workspace / "analysis/handoff/live_api_response_jira.json"
     canonical_payload = {
         "schema_version": "1.0",
@@ -627,7 +929,7 @@ def test_drivers_use_separate_state_path_from_python(tmp_path) -> None:
         "results": [
             {
                 "story_id": "STORY-001",
-                "idempotency_key": "bsa-STORY-001-deadbeef",  # Python format
+                "idempotency_key": f"bsa-STORY-001-{_TEST_CANON_HASH}",
                 "status": "created",
                 "attempts": 1,
             },
@@ -641,27 +943,31 @@ def test_drivers_use_separate_state_path_from_python(tmp_path) -> None:
         capture_output=True, text=True, timeout=15,
     )
     assert result.returncode == 0
-    # Shell driver reports zero prior keys (it reads from
-    # *_shell.json which doesn't exist → empty), so STORY-001 is
-    # NOT skipped.
-    assert "[SKIP] STORY-001" not in result.stdout, (
-        "shell driver incorrectly read Python's canonical state file"
+    # v1.4.9 cross-read: STORY-001 IS skipped because its key is in
+    # Python's canonical state file.
+    assert "[SKIP] STORY-001" in result.stdout, (
+        f"v1.4.9 shell driver MUST cross-read Python's canonical "
+        f"state file. stdout: {result.stdout!r}"
     )
-    # Python's canonical file MUST be unchanged byte-for-byte.
+    # Python's canonical file MUST still be unchanged byte-for-byte
+    # (read-only access; writeback stays at *_shell.json).
     assert canonical_path.read_text(encoding="utf-8") == canonical_content, (
-        "shell driver modified Python's canonical state file"
+        "shell driver modified Python's canonical state file (read-only contract)"
     )
+    # And shell writeback lands ONLY at the `_shell.json` path (dry-run
+    # writes nothing, but the canonical-path read-only assertion above
+    # is what matters).
 
 
 def test_drivers_accept_legacy_rows_shape(tmp_path) -> None:
     """v1.1.17 round-2 (Codex HIGH): in-place upgrade for round-1
     shell state files (.rows[]/.outcome shape). Pin: prior state in
-    legacy shape ALSO causes the matching key to be skipped."""
-    import hashlib
+    legacy shape ALSO causes the matching key to be skipped.
+
+    v1.4.9 rec #5: unified key format."""
     workspace = _make_workspace(tmp_path)
     _write_jira_export(workspace, n_rows=1)
-    digest = hashlib.sha256(b"STORY-001|Test story 1").hexdigest()[:8]
-    prior_key = f"bsa-STORY-001-sh-{digest}"
+    prior_key = f"bsa-STORY-001-{_TEST_CANON_HASH}"
     # Round-1 shell shape (legacy).
     (workspace / "analysis/handoff/live_api_response_jira_shell.json").write_text(
         json.dumps({

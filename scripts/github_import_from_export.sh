@@ -30,6 +30,7 @@ usage() {
   cat <<'EOF'
 Usage: github_import_from_export.sh [--workspace DIR] [--export PATH]
                                     [--apply] [--repo OWNER/NAME]
+                                    [--canon-hash HEX]
                                     [--project-owner OWNER]
                                     [--project-number N]
                                     [-h|--help]
@@ -49,6 +50,12 @@ Other:
   --export PATH           — Default:
                             <workspace>/analysis/handoff/backlog_export_github.csv
   --apply                 — Default: dry-run.
+  --canon-hash HEX        — v1.4.9 (rec #5): 8 lowercase hex chars
+                            matching .claude-plugin/canon_policy.json
+                            hash_prefix. REQUIRED when --apply (matches
+                            Python contract). Auto-detected from
+                            `<workspace>/.claude-plugin/canon_policy.json`
+                            when --apply set without --canon-hash.
 
 Example:
   export GH_TOKEN=ghp_...
@@ -67,6 +74,7 @@ REPO=""
 PROJECT_OWNER=""
 PROJECT_NUMBER=""
 APPLY=0
+CANON_HASH=""  # v1.4.9 rec #5: unified idempotency key format.
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -74,6 +82,7 @@ while [ $# -gt 0 ]; do
     --export) EXPORT_PATH="$2"; shift 2 ;;
     --apply) APPLY=1; shift ;;
     --repo) REPO="$2"; shift 2 ;;
+    --canon-hash) CANON_HASH="$2"; shift 2 ;;
     --project-owner) PROJECT_OWNER="$2"; shift 2 ;;
     --project-number) PROJECT_NUMBER="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -111,6 +120,30 @@ if [ "${APPLY}" = "1" ]; then
   fi
 fi
 
+# v1.4.9 rec #5: resolve canon-hash. Operator may pass --canon-hash
+# explicitly (matches Python contract); fallback auto-detects from
+# `<workspace>/.claude-plugin/canon_policy.json`.
+if [ -z "${CANON_HASH}" ]; then
+  CANON_POLICY_PATH="${WORKSPACE}/.claude-plugin/canon_policy.json"
+  if [ -f "${CANON_POLICY_PATH}" ] && command -v jq >/dev/null 2>&1; then
+    CANON_HASH=$(jq -r '.hash_prefix // empty' "${CANON_POLICY_PATH}" 2>/dev/null || true)
+  fi
+fi
+if [ "${APPLY}" = "1" ]; then
+  # v1.4.9 R1 MAJOR #1 fix: see jira_import_from_export.sh.
+  if [ "${#CANON_HASH}" -ne 8 ]; then
+    echo "[github_import] --apply requires --canon-hash with EXACTLY 8 lowercase hex chars (got len ${#CANON_HASH}: '${CANON_HASH}'). Pass it explicitly OR ensure ${WORKSPACE}/.claude-plugin/canon_policy.json carries hash_prefix." >&2
+    exit 2
+  fi
+  case "${CANON_HASH}" in
+    [a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]) ;;
+    *)
+      echo "[github_import] --apply requires --canon-hash with 8 lowercase hex chars (got: '${CANON_HASH}'). Allowed: 0-9 a-f only." >&2
+      exit 2
+      ;;
+  esac
+fi
+
 # --- CSV parse helper (same shape as linear driver) ---
 # v1.1.17 round-2 (Codex SHOULD #2): sanitize tabs/newlines in
 # StoryID/Title before emitting TSV (see linear driver comment).
@@ -143,11 +176,22 @@ echo "[github_import] state: ${STATE_PATH}"
 # AND legacy `.rows[]/.outcome` on read; always WRITE current shape.
 DONE_KEYS_FILE="$(mktemp -t bsa_github_done.XXXXXX)"
 done_count=0
-if [ -f "${STATE_PATH}" ]; then
-  python3 -c "
+# v1.4.9 rec #5: cross-read both state files (shell + Python). With
+# the unified key format `bsa-{StoryID}-{canon_hash_prefix}`, prior
+# runs from EITHER driver are recognized.
+PYTHON_STATE_PATH="${WORKSPACE}/analysis/handoff/live_api_response_github.json"
+for read_path in "${STATE_PATH}" "${PYTHON_STATE_PATH}"; do
+  if [ -f "${read_path}" ]; then
+    python3 -c "
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
+    # v1.4.9 R1 MAJOR #3 fix: prefilter by .platform field. A
+    # misplaced state file (e.g. linear renamed to *_github*) must
+    # not poison this run. Files without .platform accepted (legacy).
+    plat = d.get('platform')
+    if plat is not None and plat != 'github':
+        sys.exit(0)
     keys = set()
     for row in d.get('results', []):
         if isinstance(row, dict) and row.get('status') in ('created', 'skipped'):
@@ -163,9 +207,13 @@ try:
         print(k)
 except Exception:
     pass
-" "${STATE_PATH}" 2>/dev/null > "${DONE_KEYS_FILE}" || true
+" "${read_path}" 2>/dev/null >> "${DONE_KEYS_FILE}" || true
+  fi
+done
+if [ -s "${DONE_KEYS_FILE}" ]; then
+  sort -u "${DONE_KEYS_FILE}" -o "${DONE_KEYS_FILE}"
   done_count=$(wc -l < "${DONE_KEYS_FILE}" | tr -d ' ')
-  echo "[github_import] prior state: ${done_count} already-succeeded row(s) will be skipped."
+  echo "[github_import] prior state: ${done_count} already-succeeded row(s) will be skipped (read from shell + python state files)."
 fi
 
 is_already_done() {
@@ -190,8 +238,12 @@ trap cleanup_all EXIT INT TERM
 
 while IFS=$'\t' read -r story_id title row_json; do
   [ -z "${story_id}" ] && continue
-  hash=$(printf '%s|%s' "${story_id}" "${title}" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-8)
-  idem_key="bsa-${story_id}-sh-${hash}"
+  # v1.4.9 rec #5: unified key format (see jira / linear drivers).
+  if [ -n "${CANON_HASH}" ]; then
+    idem_key="bsa-${story_id}-${CANON_HASH}"
+  else
+    idem_key="bsa-${story_id}-dryrun"
+  fi
 
   if is_already_done "${idem_key}"; then
     echo "  [SKIP] ${story_id}: already-created"
@@ -258,7 +310,13 @@ if os.path.isfile(prior_path):
         pass
 if not isinstance(prior, dict):
     prior = {"platform": platform, "results": []}
-prior.setdefault("platform", platform)
+# v1.4.9 R2 NEW MAJOR fix: discard prior rows when platform mismatches
+# (misplaced/poisoned file); force-set platform on writeback.
+prior_platform = prior.get("platform")
+if prior_platform is not None and prior_platform != platform:
+    prior = {"platform": platform, "results": []}
+else:
+    prior["platform"] = platform
 existing = prior.get("results")
 if not isinstance(existing, list):
     existing = []

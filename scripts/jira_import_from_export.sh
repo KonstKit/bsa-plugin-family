@@ -39,6 +39,7 @@ usage() {
   cat <<'EOF'
 Usage: jira_import_from_export.sh [--workspace DIR] [--export PATH]
                                   [--apply] [--base-url URL]
+                                  [--canon-hash HEX]
                                   [--email-env VAR] [--token-env VAR]
                                   [--timeout SEC] [--max-retries N]
                                   [-h|--help]
@@ -54,6 +55,12 @@ Optional:
   --apply            — Actually POST. Default: dry-run (print plan only).
   --base-url URL     — Jira Cloud base URL, e.g. https://acme.atlassian.net
                        Required for --apply.
+  --canon-hash HEX   — v1.4.9 (rec #5): 8 lowercase hex chars matching
+                       .claude-plugin/canon_policy.json hash_prefix.
+                       REQUIRED when --apply (matches Python contract).
+                       Auto-detected from
+                       `<workspace>/.claude-plugin/canon_policy.json`
+                       when --apply set without --canon-hash.
   --timeout SEC      — Per-request timeout. Default: 30.
   --max-retries N    — Max retry budget per row. Default: 5.
   --email-env VAR    — Env var containing email. Default: BSA_JIRA_EMAIL.
@@ -79,6 +86,7 @@ TIMEOUT=30
 MAX_RETRIES=5
 EMAIL_ENV="BSA_JIRA_EMAIL"
 TOKEN_ENV="BSA_JIRA_TOKEN"
+CANON_HASH=""  # v1.4.9 rec #5: unified idempotency key format.
 
 # --- arg parsing -------------------------------------------------------
 
@@ -88,6 +96,7 @@ while [ $# -gt 0 ]; do
     --export) EXPORT_PATH="$2"; shift 2 ;;
     --apply) APPLY=1; shift ;;
     --base-url) BASE_URL="$2"; shift 2 ;;
+    --canon-hash) CANON_HASH="$2"; shift 2 ;;
     --timeout) TIMEOUT="$2"; shift 2 ;;
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
     --email-env) EMAIL_ENV="$2"; shift 2 ;;
@@ -154,6 +163,34 @@ if [ "${APPLY}" = "1" ]; then
   fi
 fi
 
+# v1.4.9 rec #5: resolve canon-hash. Operator may pass --canon-hash
+# explicitly (matches Python contract); fallback auto-detects from
+# `<workspace>/.claude-plugin/canon_policy.json`.
+if [ -z "${CANON_HASH}" ]; then
+  CANON_POLICY_PATH="${WORKSPACE}/.claude-plugin/canon_policy.json"
+  if [ -f "${CANON_POLICY_PATH}" ]; then
+    CANON_HASH=$(jq -r '.hash_prefix // empty' "${CANON_POLICY_PATH}" 2>/dev/null || true)
+  fi
+fi
+if [ "${APPLY}" = "1" ]; then
+  # v1.4.9 R1 MAJOR #1 fix: validate the WHOLE variable as a single
+  # 8-char lowercase-hex string. Earlier `grep -Eq '^...$'` was line-
+  # based and would accept a multiline jq-emitted value whose first
+  # line happened to match. Length-check + POSIX case-glob is
+  # unambiguous (no regex engine, no multi-line ambiguity).
+  if [ "${#CANON_HASH}" -ne 8 ]; then
+    echo "[jira_import] --apply requires --canon-hash with EXACTLY 8 lowercase hex chars (got len ${#CANON_HASH}: '${CANON_HASH}'). Pass it explicitly OR ensure ${WORKSPACE}/.claude-plugin/canon_policy.json carries hash_prefix." >&2
+    exit 2
+  fi
+  case "${CANON_HASH}" in
+    [a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]) ;;
+    *)
+      echo "[jira_import] --apply requires --canon-hash with 8 lowercase hex chars (got: '${CANON_HASH}'). Allowed: 0-9 a-f only." >&2
+      exit 2
+      ;;
+  esac
+fi
+
 # --- scrub helper ------------------------------------------------------
 # Scrub any token-shape leak from a string (defense-in-depth; curl
 # -sS already hides auth headers, but we also scrub our own error
@@ -192,13 +229,38 @@ echo "[jira_import] log: ${LOG_PATH}"
 #   * legacy round-1:      `.rows[].outcome`
 DONE_KEYS_FILE="$(mktemp -t bsa_jira_done.XXXXXX)"
 done_count=0
-if [ -f "${STATE_PATH}" ]; then
-  jq -r '
-    (.results[]? | select(.status=="created" or .status=="skipped") | .idempotency_key),
-    (.rows[]? | select(.outcome=="created" or .outcome=="already_exists") | .idempotency_key)
-  ' "${STATE_PATH}" 2>/dev/null | sort -u > "${DONE_KEYS_FILE}" || true
+# v1.4.9 rec #5: cross-read both state files. Accept idempotency keys
+# from EITHER the shell driver's own state OR the Python driver's
+# canonical state at `live_api_response_<plat>.json`. Together with
+# the unified key format (bsa-{StoryID}-{canon_hash_prefix}, no more
+# `-sh-` infix), this lets operators switch drivers mid-engagement
+# without re-creating issues.
+PYTHON_STATE_PATH="${WORKSPACE}/analysis/handoff/live_api_response_jira.json"
+for read_path in "${STATE_PATH}" "${PYTHON_STATE_PATH}"; do
+  if [ -f "${read_path}" ]; then
+    # v1.4.9 R1 MAJOR #3 fix: prefilter by `.platform` field to
+    # defend against a misplaced/poisoned state file (e.g. a Linear
+    # state renamed to *_jira_shell.json) silently suppressing
+    # creates for matching StoryIDs across platforms. Files WITHOUT
+    # a `platform` field are accepted (legacy v1.1.17 shell state
+    # didn't emit it).
+    # v1.4.9 R2 NEW MAJOR fix: explicit null check (was `// "jira"`)
+    # because jq's `//` operator also defaults on `false`. A
+    # poisoned file with `"platform": false` would otherwise pass.
+    jq -r '
+      if (.platform == null or .platform == "jira") then
+        (.results[]? | select(.status=="created" or .status=="skipped") | .idempotency_key),
+        (.rows[]? | select(.outcome=="created" or .outcome=="already_exists") | .idempotency_key)
+      else
+        empty
+      end
+    ' "${read_path}" 2>/dev/null >> "${DONE_KEYS_FILE}" || true
+  fi
+done
+if [ -s "${DONE_KEYS_FILE}" ]; then
+  sort -u "${DONE_KEYS_FILE}" -o "${DONE_KEYS_FILE}"
   done_count=$(wc -l < "${DONE_KEYS_FILE}" | tr -d ' ')
-  echo "[jira_import] prior state: ${done_count} already-succeeded row(s) will be skipped."
+  echo "[jira_import] prior state: ${done_count} already-succeeded row(s) will be skipped (read from shell + python state files)."
 fi
 
 is_already_done() {
@@ -239,19 +301,20 @@ if [ "${APPLY}" = "1" ]; then
   printf 'user = "%s:%s"\n' "${!EMAIL_ENV}" "${!TOKEN_ENV}" > "${AUTH_TMP}"
 fi
 
-# stream each issue + its idempotency key (derived from the ProjectKey +
-# Summary hash; the Python impl uses canon_hash prefix + StoryID — here
-# we use a simpler shell-friendly form: sha256 of StoryID+Summary).
+# stream each issue + its idempotency key.
+# v1.4.9 rec #5: unified key format `bsa-{StoryID}-{canon_hash}` —
+# same as Python backlog_live_apply.py:_make_idempotency_key. The
+# previous `-sh-{sha256-of-story-summary}` divergence forced operators
+# to pick ONE driver per workspace; cross-tool re-runs caused
+# duplicate issue creation. Now both drivers share one key space.
 while IFS=$'\t' read -r story_id summary raw_issue; do
-  # Build idempotency key. Shell equivalent of
-  # backlog_live_apply.py:_make_idempotency_key. We use a stable prefix
-  # "bsa-{StoryID}-sh-{hash8}" so shell drivers + Python impl don't
-  # collide on the same key space.
-  hash=$(printf '%s|%s' "${story_id}" "${summary}" | shasum -a 256 2>/dev/null | cut -c1-8)
-  if [ -z "${hash}" ]; then
-    hash=$(printf '%s|%s' "${story_id}" "${summary}" | sha256sum | cut -c1-8)
+  if [ -n "${CANON_HASH}" ]; then
+    idem_key="bsa-${story_id}-${CANON_HASH}"
+  else
+    # Dry-run without canon-hash: build a placeholder key (only used
+    # in [DRY-RUN] log; never written to state).
+    idem_key="bsa-${story_id}-dryrun"
   fi
-  idem_key="bsa-${story_id}-sh-${hash}"
 
   if is_already_done "${idem_key}"; then
     echo "  [SKIP] ${story_id} (idem=${idem_key}): prior state shows already-created."
@@ -361,7 +424,16 @@ if os.path.isfile(prior_path):
         pass
 if not isinstance(prior, dict):
     prior = {"platform": platform, "results": []}
-prior.setdefault("platform", platform)
+# v1.4.9 R2 NEW MAJOR fix: if prior file's `platform` is present
+# but mismatches our run's platform, the prior file is misplaced/
+# poisoned (e.g. linear state at jira path). Discarding only the
+# rows + force-overwriting `platform` ensures THIS run's writeback
+# carries the correct discriminator and future runs trust it.
+prior_platform = prior.get("platform")
+if prior_platform is not None and prior_platform != platform:
+    prior = {"platform": platform, "results": []}
+else:
+    prior["platform"] = platform  # force-set (covers None / absent)
 # Accept BOTH the canonical Python `results[]` shape AND the round-1
 # shell `rows[]` shape on read; ALWAYS emit canonical on write.
 existing = prior.get("results")

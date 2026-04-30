@@ -467,13 +467,115 @@ def _load_prior_state_validated(path: Path, expected_platform: str) -> dict[str,
         if _looks_token_shaped(r.get("platform_id", "")) or _looks_token_shaped(r.get("platform_url", "")) or _looks_token_shaped(r.get("last_error", "")):
             continue  # quarantine suspect rows
         key = (r.get("idempotency_key") or "").strip()
-        if key and r.get("status") == "created":
+        # v1.4.9 R1 MAJOR #2 fix: include `status=skipped` rows too.
+        # Otherwise: run #1 creates STORY-001 (status=created), run
+        # #2 sees prior-state and emits STORY-001 with status=skipped,
+        # run #3 reads run #2's state — STORY-001 not in done-set
+        # because we only accepted "created" — and re-creates it.
+        # `skipped` semantically means "already done in a prior run";
+        # treat as authoritative-done.
+        if key and r.get("status") in ("created", "skipped"):
             out[key] = r
     return out
 
 
 # Backward-compat alias — internal callers use the validated form now.
 _load_prior_state = _load_prior_state_validated  # type: ignore[assignment]
+
+
+def _load_shell_prior_state(
+    shell_path: Path, expected_platform: Optional[str] = None,
+) -> dict[str, dict]:
+    """Read idempotency keys from the shell-driver state file
+    (`live_api_response_<platform>_shell.json`).
+
+    v1.4.9 (closes lifecycle review rec #5): cross-read so a Python
+    `--apply` run picks up keys created by a prior shell-driver run
+    (and vice versa). Together with the unified key format
+    `bsa-{StoryID}-{canon_hash_prefix}` (shell now drops the legacy
+    `-sh-{hash}` infix), this lets operators switch drivers
+    mid-engagement without re-creating issues.
+
+    Best-effort: NO schema validation on this read (the shell state
+    file is operator-tooling output, not canonical state). We only
+    extract the idempotency keys and the bare minimum fields the
+    skip-decision needs (`status`, `idempotency_key`). Suspect rows
+    (token-shaped values in any echoed field) are quarantined out
+    via the same secret-pattern check as the validated path.
+
+    v1.4.9 R1 MAJOR #3 fix: when `expected_platform` is supplied AND
+    the file's top-level `platform` field is present, enforce match.
+    Defends against a misplaced/poisoned file (e.g. a Linear state
+    renamed to `live_api_response_jira_shell.json`) silently
+    suppressing creates for matching StoryIDs across platforms.
+    Files WITHOUT a `platform` field are accepted (legacy shell
+    state from v1.1.17 didn't always emit it)."""
+    if not shell_path.is_file():
+        return {}
+    try:
+        raw = shell_path.read_text(encoding="utf-8")
+        doc = json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(doc, dict):
+        return {}
+    if expected_platform is not None:
+        doc_platform = doc.get("platform")
+        if doc_platform is not None and doc_platform != expected_platform:
+            return {}
+    out: dict[str, dict] = {}
+    # Shell drivers emit `.results[]/.status` (current shape) AND
+    # `.rows[]/.outcome` (legacy round-1 shape). Accept both.
+    rows_iter: list[dict] = []
+    if isinstance(doc.get("results"), list):
+        for r in doc["results"]:
+            if isinstance(r, dict) and r.get("status") in ("created", "skipped"):
+                rows_iter.append(r)
+    if isinstance(doc.get("rows"), list):
+        for r in doc["rows"]:
+            if isinstance(r, dict) and r.get("outcome") in (
+                "created", "already_exists",
+            ):
+                rows_iter.append(r)
+    for r in rows_iter:
+        # Defensive secret scrub on every echoed field — operator
+        # mistakes (manually editing a shell state file with a token
+        # in last_error etc.) shouldn't propagate.
+        if (
+            _looks_token_shaped(r.get("platform_id", ""))
+            or _looks_token_shaped(r.get("platform_url", ""))
+            or _looks_token_shaped(r.get("last_error", ""))
+        ):
+            continue
+        key = (r.get("idempotency_key") or "").strip()
+        if key:
+            # Mark as "from shell" so downstream logging can
+            # distinguish if needed; key value alone drives the skip.
+            out[key] = {**r, "_source": "shell"}
+    return out
+
+
+def _load_combined_prior_state(
+    python_path: Path, shell_path: Path, expected_platform: str,
+) -> dict[str, dict]:
+    """v1.4.9 rec #5: merge prior state from BOTH Python's F5-validated
+    state file AND the shell driver's looser state file. Python keys
+    take precedence on conflict (it's the schema-authoritative source).
+
+    The combined dict is consumed by `_process_row` for the skip-on-
+    prior-success decision; both drivers now share the same
+    `bsa-{StoryID}-{canon_hash_prefix}` key space, so a key from
+    EITHER source is sufficient to skip.
+
+    v1.4.9 R1 MAJOR #3 fix: pass `expected_platform` into the shell
+    loader so a misplaced state file (e.g. a Linear shell state
+    renamed to `*_jira_shell.json`) doesn't poison this run's
+    idempotency decisions across platforms."""
+    combined = _load_shell_prior_state(shell_path, expected_platform)
+    combined.update(
+        _load_prior_state_validated(python_path, expected_platform)
+    )
+    return combined
 
 
 # Heuristic: anything looking like a JWT, GitHub PAT, Atlassian API token
@@ -837,7 +939,18 @@ def run(args: argparse.Namespace) -> int:
         # the prior file against the F5 schema FIRST — a poisoned/edited
         # prior file shouldn't propagate untrusted content into this
         # run's results. Codex round-1 should-fix #2.
-        prior_state = _load_prior_state_validated(response_path, args.platform)
+        # v1.4.9 rec #5: also cross-read the shell driver's state at
+        # `live_api_response_<plat>_shell.json` so an operator who ran
+        # the shell driver first doesn't get duplicate creates from a
+        # follow-up Python run. Both drivers now share the unified
+        # `bsa-{StoryID}-{canon_hash_prefix}` key format, so a hit in
+        # either state file is enough to skip.
+        shell_response_path = response_path.with_name(
+            response_path.stem + "_shell.json"
+        )
+        prior_state = _load_combined_prior_state(
+            response_path, shell_response_path, args.platform,
+        )
 
         # Drive each row
         log_records: list[LogRecord] = []

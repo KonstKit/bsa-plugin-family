@@ -4,6 +4,76 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.9] — 2026-04-30
+
+**Feature: unified idempotency between Python + shell import drivers (rec #5).**
+
+Closes lifecycle review **rec #5**. Pre-v1.4.9 the Python `scripts/backlog_live_apply.py` and the three shell drivers (`scripts/{jira,linear,github}_import_from_export.sh`) used DIFFERENT idempotency key formats AND read from SEPARATE state files — so an operator who ran the shell driver first and then switched to Python (or vice versa) got duplicate issue creation in the upstream tracker. The v1.1.17 docs explicitly told operators "pick ONE driver per workspace"; v1.4.9 retires that workaround.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3` (`scripts/*.sh` + `scripts/backlog_live_apply.py` are tooling, not canon).
+
+### Added
+
+- **`--canon-hash HEX` CLI flag** on all three shell drivers (linear/jira/github). Required when `--apply` (matches Python's contract). Auto-detected from `<workspace>/.claude-plugin/canon_policy.json` `hash_prefix` field when omitted. Validation: 8 lowercase hex chars (matches Python's `_CANON_HASH_PREFIX_RE`).
+- **`_load_shell_prior_state(shell_path)`** in `scripts/backlog_live_apply.py` — best-effort reader for shell state files (no F5 schema validation; the shell file is operator-tooling output, not canonical state). Quarantines suspect rows via the same secret-pattern check as the validated path.
+- **`_load_combined_prior_state(python_path, shell_path, expected_platform)`** — merges keys from BOTH state files. Python keys take precedence on conflict.
+- **2 new tests** in `tests/test_shell_import_drivers.py`:
+  * `test_v1_4_9_python_skips_on_shell_prior_state` — Python's combined prior-state must include shell's keys (closes the symmetric gap).
+  * `test_v1_4_9_canon_hash_required_when_apply` — `--apply` without canon-hash + no canon_policy.json must exit 2 with explicit error.
+
+### Changed
+
+- **Shell idempotency key format**: was `bsa-{StoryID}-sh-{sha256_of_StoryID_pipe_Summary[:8]}`, now `bsa-{StoryID}-{canon_hash_prefix}` — same as Python. The `-sh-` infix is GONE.
+- **Cross-read state files**: both Python AND shell drivers now read EACH OTHER's state file on startup. Python reads `live_api_response_<plat>.json` (its own, F5-validated) PLUS `live_api_response_<plat>_shell.json` (shell's, best-effort). Shell does the symmetric read. Together with the unified key format, this lets operators switch drivers mid-engagement without duplicate creation.
+- **Write contract unchanged**: each driver still writes ONLY to its own state file (Python keeps F5 validation; shell stays simpler). Cross-write would require shell to construct F5-valid JSON which is impractical in bash.
+- **Six existing tests updated** in `tests/test_shell_import_drivers.py` — fixture writes a `.claude-plugin/canon_policy.json` with stable `hash_prefix=abc12345` so test fixtures derive expected idempotency keys deterministically. The previously-pinning `test_drivers_use_separate_state_path_from_python` is renamed `test_drivers_writeback_uses_separate_state_path_from_python` and inverted: shell DOES read Python's canonical state (and skips matching keys) while Python's file remains read-only / unchanged.
+
+### Tests
+
+Total suite: **2224 passed** (was 2217 in v1.4.8 — +7 net new: 2 base v1.4.9 + 3 R1-fix verification + 2 R2-fix verification; 6 existing tests updated under unified key format).
+
+### Migration
+
+Three legacy-state scenarios after upgrading to v1.4.9:
+
+1. **Shell-only legacy state** (`_shell.json` from v1.4.8 with `bsa-{sid}-sh-{hash}` keys, no Python state): the FIRST re-run will see those legacy keys but won't match the new `bsa-{StoryID}-{canon_hash_prefix}` format → ONE-TIME duplicate creation per legacy story. Mitigations:
+   - Manually rewrite the `_shell.json` keys (`bsa-{sid}-sh-XXX` → `bsa-{sid}-{canon_hash_prefix}`).
+   - Move/delete the `_shell.json` file before re-running (forces full re-create).
+   - Accept the one-time duplicate cost (typical solo-workflow case).
+2. **Python-only state** (canonical `live_api_response_<plat>.json`, no `_shell.json`): NO migration concern. The Python keys ALREADY use the unified format; v1.4.9 shell drivers will cross-read and skip them on first run.
+3. **Both files present, overlapping stories** (rare — operator ran BOTH drivers in v1.4.8 era): Python's canonical keys (already unified format) take precedence → those stories skip cleanly. Shell-only-legacy keys for stories NOT in Python state still hit the one-time duplicate from scenario #1.
+
+No migration script ships in v1.4.9 (keep the patch focused). Operators who need bulk migration can drop a one-liner (R2 NEW MINOR fix: use jq `--arg` to interpolate the canon hash safely; embedding `${CANON_HASH}` inside the single-quoted jq program would otherwise be a literal string):
+```
+jq --arg canon "$CANON_HASH" '
+  .rows |= map(
+    .idempotency_key |= sub("bsa-(?<s>STORY-[A-Z0-9]+)-sh-[a-f0-9]+"; "bsa-\(.s)-\($canon)")
+  )
+' live_api_response_jira_shell.json > live_api_response_jira_shell.json.new
+mv live_api_response_jira_shell.json.new live_api_response_jira_shell.json
+```
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 3 MAJOR + 2 MINOR. All 5 fixed:
+  - **MAJOR #1** (canon-hash multi-line bypass): `grep -Eq '^[a-f0-9]{8}$'` is line-based; a multi-line value where one line happens to match (e.g. jq emitting JSON with embedded `\n`) was accepted. Fix: replaced with `[ "${#CANON_HASH}" -ne 8 ]` length check + POSIX case-glob `[a-f0-9][a-f0-9]...` (8 brackets) — unambiguous, no regex engine, no multi-line ambiguity. Applied uniformly to all three shell drivers.
+  - **MAJOR #2** (Python `status=skipped` not treated as done): `_load_prior_state_validated` only accepted `status=="created"` rows. After run #1 created STORY-001, run #2 emitted skipped, run #3 read run #2's state and re-created — silent duplicate. Fix: accept `status in ("created", "skipped")` matching the new shell loader semantics.
+  - **MAJOR #3** (cross-read missing platform filter): a misplaced state file (e.g. Linear shell state renamed to `*_jira_shell.json`) could silently suppress jira creates for matching StoryIDs. Fix: shell jq filter prefilters via `if ((.platform // "<plat>") == "<plat>") then ... else empty end`; Python `_load_shell_prior_state` accepts new optional `expected_platform` kwarg and rejects mismatched files (files without `.platform` are still accepted as legacy v1.1.17 shell state).
+  - **MINOR #1** (CHANGELOG migration wording): rewrote to cover three scenarios — shell-only legacy, Python-only, both files present (overlapping vs non-overlapping stories).
+  - **MINOR #2** (`docs/shell_import_drivers.md` stale): rewrote §"State files" to reflect v1.4.9 contract — unified key space, cross-read both files, separate write paths, platform filter, `--canon-hash` requirement.
+- **3 new tests** for R1 fixes:
+  * test_v1_4_9_canon_hash_rejects_multiline_value (MAJOR #1)
+  * test_v1_4_9_python_skipped_status_treated_as_done (MAJOR #2)
+  * test_v1_4_9_shell_loader_filters_misplaced_platform (MAJOR #3)
+- **R2**: REQUEST CHANGES — 2 NEW MAJOR + 1 NEW MINOR. All 3 fixed:
+  - **NEW MAJOR #1** (`jq //` defaults on `false`): `if ((.platform // "<plat>") == "<plat>")` accepted a poisoned file with `"platform": false` because jq's `//` treats both `null` AND `false` as the alternative trigger. Fix: explicit `if (.platform == null or .platform == "<plat>")` in jira/linear shell drivers (github already used `if plat is not None and plat != ...` which correctly distinguishes None from False).
+  - **NEW MAJOR #2** (writeback preserves wrong platform): if writeback ran over a misplaced/poisoned state file (existing platform != current run's platform), the writeback used `prior.setdefault("platform", platform)` which DIDN'T overwrite the wrong value. Future runs would then see a state file with the wrong `.platform` and reject their OWN state via the v1.4.9 R1 platform filter (chicken-and-egg). Fix: discard prior rows + force-set platform when the existing value mismatches; otherwise force-set on whatever existed (covers None/absent without preserving wrong values). Applied uniformly to all three shell drivers' writeback Python.
+  - **NEW MINOR**: CHANGELOG migration jq one-liner had `${CANON_HASH}` inside the single-quoted jq program — would have been written literally, not interpolated. Fix: switched to `jq --arg canon "$CANON_HASH" ... "\($canon)"` syntax (correct jq variable interpolation).
+- **2 new tests** for R2 fixes:
+  * test_v1_4_9_r2_platform_false_value_rejected (NEW MAJOR #1)
+  * test_v1_4_9_r2_writeback_overwrites_wrong_platform (NEW MAJOR #2)
+- **R3**: APPROVE — all 3 R2 fixes verified at the requested sites. `platform:false` correctly rejected; `platform:null` legacy-accepted; writeback's `prior_platform is not None` discriminates None vs False correctly; jq `--arg canon` syntax produces the expected canonical key. `bash -n` passes for all three drivers.
+
 ## [v1.4.8] — 2026-04-30
 
 **Feature: `scripts/validate_crossrefs.py` cross-reference validator + CI gate (rec #4).**

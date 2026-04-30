@@ -26,8 +26,9 @@ usage() {
   cat <<'EOF'
 Usage: linear_import_from_export.sh [--workspace DIR] [--export PATH]
                                     [--apply] [--team-id ID]
-                                    [--token-env VAR] [--timeout SEC]
-                                    [--max-retries N] [-h|--help]
+                                    [--canon-hash HEX] [--token-env VAR]
+                                    [--timeout SEC] [--max-retries N]
+                                    [-h|--help]
 
 Required env vars:
   $BSA_LINEAR_TOKEN  — Linear API key (starts with "lin_api_...").
@@ -38,6 +39,16 @@ Optional:
                        <workspace>/analysis/handoff/backlog_export_linear.csv
   --apply            — Actually POST. Default: dry-run.
   --team-id ID       — Linear team UUID. Required for --apply.
+  --canon-hash HEX   — v1.4.9 (rec #5 unified idempotency): 8 lowercase
+                       hex chars matching .claude-plugin/canon_policy.json
+                       hash_prefix. REQUIRED when --apply (matches
+                       Python backlog_live_apply.py contract).
+                       Idempotency key format becomes
+                       `bsa-{StoryID}-{HEX}` — same as Python — so the
+                       two drivers no longer collide on the same key
+                       space. Auto-detected from
+                       `<workspace>/.claude-plugin/canon_policy.json`
+                       when --apply set without --canon-hash.
   --token-env VAR    — Env var with API key. Default: BSA_LINEAR_TOKEN.
   --timeout SEC      — Default: 30.
   --max-retries N    — Default: 5.
@@ -59,6 +70,7 @@ APPLY=0
 TIMEOUT=30
 MAX_RETRIES=5
 TOKEN_ENV="BSA_LINEAR_TOKEN"
+CANON_HASH=""  # v1.4.9 rec #5: unified idempotency key format.
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -66,6 +78,7 @@ while [ $# -gt 0 ]; do
     --export) EXPORT_PATH="$2"; shift 2 ;;
     --apply) APPLY=1; shift ;;
     --team-id) TEAM_ID="$2"; shift 2 ;;
+    --canon-hash) CANON_HASH="$2"; shift 2 ;;
     --token-env) TOKEN_ENV="$2"; shift 2 ;;
     --timeout) TIMEOUT="$2"; shift 2 ;;
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
@@ -101,6 +114,33 @@ if [ "${APPLY}" = "1" ]; then
     echo "[linear_import] env var ${TOKEN_ENV} is empty" >&2
     exit 2
   fi
+fi
+
+# v1.4.9 rec #5: resolve canon-hash. Operator may pass --canon-hash
+# explicitly (matches Python contract); fallback auto-detects from
+# `<workspace>/.claude-plugin/canon_policy.json` so an operator who
+# already configured the workspace doesn't have to repeat the value.
+if [ -z "${CANON_HASH}" ]; then
+  CANON_POLICY_PATH="${WORKSPACE}/.claude-plugin/canon_policy.json"
+  if [ -f "${CANON_POLICY_PATH}" ]; then
+    CANON_HASH=$(jq -r '.hash_prefix // empty' "${CANON_POLICY_PATH}" 2>/dev/null || true)
+  fi
+fi
+# Validate when --apply (idempotency keys MUST be present in real
+# runs; dry-run can skip the check since we won't write state).
+if [ "${APPLY}" = "1" ]; then
+  # v1.4.9 R1 MAJOR #1 fix: see jira_import_from_export.sh.
+  if [ "${#CANON_HASH}" -ne 8 ]; then
+    echo "[linear_import] --apply requires --canon-hash with EXACTLY 8 lowercase hex chars (got len ${#CANON_HASH}: '${CANON_HASH}'). Pass it explicitly OR ensure ${WORKSPACE}/.claude-plugin/canon_policy.json carries hash_prefix." >&2
+    exit 2
+  fi
+  case "${CANON_HASH}" in
+    [a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]) ;;
+    *)
+      echo "[linear_import] --apply requires --canon-hash with 8 lowercase hex chars (got: '${CANON_HASH}'). Allowed: 0-9 a-f only." >&2
+      exit 2
+      ;;
+  esac
 fi
 
 scrub() {
@@ -147,13 +187,32 @@ echo "[linear_import] state: ${STATE_PATH}"
 # `live_api_response_<plat>.json`). See file-header comment.
 DONE_KEYS_FILE="$(mktemp -t bsa_linear_done.XXXXXX)"
 done_count=0
-if [ -f "${STATE_PATH}" ]; then
-  jq -r '
-    (.results[]? | select(.status=="created" or .status=="skipped") | .idempotency_key),
-    (.rows[]? | select(.outcome=="created" or .outcome=="already_exists") | .idempotency_key)
-  ' "${STATE_PATH}" 2>/dev/null | sort -u > "${DONE_KEYS_FILE}" || true
+# v1.4.9 rec #5: cross-read both state files. Accept idempotency
+# keys from EITHER the shell driver's own state (this file) OR the
+# Python driver's canonical state at `live_api_response_<plat>.json`
+# (no F5 schema check on the foreign read; we just extract keys).
+# Together with the unified key format, this lets operators switch
+# drivers mid-engagement without re-creating issues.
+PYTHON_STATE_PATH="${WORKSPACE}/analysis/handoff/live_api_response_linear.json"
+for read_path in "${STATE_PATH}" "${PYTHON_STATE_PATH}"; do
+  if [ -f "${read_path}" ]; then
+    # v1.4.9 R1 MAJOR #3 + R2 NEW MAJOR fix: see jira driver. Use
+    # explicit null check (jq's `//` also defaults on `false`).
+    jq -r '
+      if (.platform == null or .platform == "linear") then
+        (.results[]? | select(.status=="created" or .status=="skipped") | .idempotency_key),
+        (.rows[]? | select(.outcome=="created" or .outcome=="already_exists") | .idempotency_key)
+      else
+        empty
+      end
+    ' "${read_path}" 2>/dev/null >> "${DONE_KEYS_FILE}" || true
+  fi
+done
+# Dedupe across both state files.
+if [ -s "${DONE_KEYS_FILE}" ]; then
+  sort -u "${DONE_KEYS_FILE}" -o "${DONE_KEYS_FILE}"
   done_count=$(wc -l < "${DONE_KEYS_FILE}" | tr -d ' ')
-  echo "[linear_import] prior state: ${done_count} already-succeeded row(s) will be skipped."
+  echo "[linear_import] prior state: ${done_count} already-succeeded row(s) will be skipped (read from shell + python state files)."
 fi
 
 is_already_done() {
@@ -185,8 +244,18 @@ fi
 
 while IFS=$'\t' read -r story_id title row_json; do
   [ -z "${story_id}" ] && continue
-  hash=$(printf '%s|%s' "${story_id}" "${title}" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-8)
-  idem_key="bsa-${story_id}-sh-${hash}"
+  # v1.4.9 rec #5: unified key format `bsa-{StoryID}-{canon_hash}`
+  # — same as Python backlog_live_apply.py:_make_idempotency_key.
+  # Removes the `-sh-{sha256-of-story-summary}` divergence so a
+  # workspace can switch between Python and shell drivers without
+  # re-creating issues.
+  if [ -n "${CANON_HASH}" ]; then
+    idem_key="bsa-${story_id}-${CANON_HASH}"
+  else
+    # Dry-run without canon-hash: build a placeholder key (won't be
+    # written anywhere; only used in [DRY-RUN] log).
+    idem_key="bsa-${story_id}-dryrun"
+  fi
 
   if is_already_done "${idem_key}"; then
     echo "  [SKIP] ${story_id}: already-created (idem=${idem_key})"
@@ -289,7 +358,14 @@ if os.path.isfile(prior_path):
         pass
 if not isinstance(prior, dict):
     prior = {"platform": platform, "results": []}
-prior.setdefault("platform", platform)
+# v1.4.9 R2 NEW MAJOR fix: discard prior rows when platform mismatches
+# (misplaced/poisoned file); force-set platform on writeback so
+# future runs trust their own state.
+prior_platform = prior.get("platform")
+if prior_platform is not None and prior_platform != platform:
+    prior = {"platform": platform, "results": []}
+else:
+    prior["platform"] = platform
 existing = prior.get("results")
 if not isinstance(existing, list):
     existing = []
