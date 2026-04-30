@@ -110,6 +110,23 @@ jobs:
           # docs/threat_model.md for the full coverage matrix.
           python3 scripts/security_audit.py
 
+  validate-crossrefs:
+    name: validate_crossrefs (no broken skill→file refs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run cross-reference validator (must produce 0 violations)
+        run: |
+          # v1.4.8 (closes lifecycle review rec #4): catches stale
+          # skill→file references on every commit. Stdlib-only;
+          # scans skills/**/*.md + top-level *.md + governance/*.md
+          # + docs/*.md for broken markdown link/image targets.
+          # node_modules/ + .git/ + __pycache__/ excluded.
+          python3 scripts/validate_crossrefs.py
+
   canon-hash:
     name: compute_canon_hash matches plugin.json
     runs-on: ubuntu-latest

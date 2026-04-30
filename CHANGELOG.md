@@ -4,6 +4,56 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.8] — 2026-04-30
+
+**Feature: `scripts/validate_crossrefs.py` cross-reference validator + CI gate (rec #4).**
+
+Closes lifecycle review **rec #4**. Pre-v1.4.8 stale skill→file references (typos, deleted scripts, renamed schemas) were silently shipped — only caught when an operator manually clicked a broken link in a SKILL.md. v1.4.8 adds a stdlib-only validator + CI gate that catches the common breakages on every commit:
+
+- Skill SKILL.md → `scripts/foo.py` after script renamed.
+- Skill → `governance/schemas/aXX.schema.json` (typo or schema removed).
+- Within-skill ref to `references/bar.md` that became dangling.
+- CHANGELOG / docs → repo-root paths that no longer exist.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3` (`scripts/validate_crossrefs.py` is governance tooling, not canon).
+
+### Added
+
+- **`scripts/validate_crossrefs.py`** — stdlib-only Python script. Parses markdown link `[text](path)` + image `![alt](path)` syntax + reference-style `[text][ref]` + `[ref]: path` definitions. Resolves targets:
+  - **Source-relative first** (default markdown convention). Catches intra-skill refs like `[scripts/foo.py](scripts/foo.py)` inside `skills/c4-plantuml-from-context/SKILL.md` resolving to `skills/c4-plantuml-from-context/scripts/foo.py` — the script lives under the skill, not at repo root.
+  - **Repo-root fallback** if first segment matches a known top-level dir (`skills/`, `scripts/`, `governance/`, etc.). Pass if EITHER candidate exists.
+  - Skips: external links (http/https/mailto/ftp/tel/git@), anchor-only (`#section`), explicit-relative `./foo` / `../foo` / `/foo` (source-relative only — no fallback).
+- **Code-block scrubbing** — `_strip_code_blocks()` blanks lines inside fenced ```` ``` ```` / ``~~~`` blocks AND replaces inline code spans `` `text` `` with same-length spaces. Without this, CHANGELOG entries showing `[text](url)` inside backticks as syntax illustration would false-positive.
+- **`_default_scan_paths()`** excludes vendored content paths (`node_modules/`, `.git/`, `__pycache__/`, `.pytest_cache/`, `.venv/`, `venv/`, `site-packages/`) from the default scan. Without this, the bundled `bpmn-js` / `playwright` `node_modules/` READMEs (which reference dev-only relative paths like `./resources/screencast.gif`) would dump 14+ false positives.
+- **CLI flags**:
+  * `--root REPO_ROOT` — defaults to parent of `scripts/` (works when invoked from any cwd).
+  * `--strict` (default) → exit 1 on any broken ref. `--no-strict` for diagnostic runs.
+  * `--paths PATH PATH ...` → limit scan to specific files (CI integration: `validate_crossrefs.py --paths $(git diff --name-only)`). Missing files silently skipped (deleted-in-PR case).
+- **`.github/workflows/ci.yml`** new `validate-crossrefs` job — runs `python3 scripts/validate_crossrefs.py` (default --strict) on every push + PR.
+- **16 new tests** in `tests/test_validate_crossrefs.py`: happy path, external skip, intra-skill source-relative resolution, repo-root fallback, broken inline link, broken image ref, --no-strict exit code, fenced-code-block skip, inline-code skip, reference-style validation, dot-relative + dotdot-relative resolution, --paths arg, missing-file silent skip, node_modules exclusion, real-repo regression guard.
+
+### Tests
+
+Total suite: **2217 passed** (was 2196 in v1.4.7 — +21 net new: 16 base coverage + 5 R1-fix verification).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 4 MAJOR + 2 MINOR. All 6 fixed (one of the MAJORs was a real failing case in this v1.4.8 commit's own CHANGELOG entry — the meta-irony):
+  - **MAJOR #1** multi-backtick inline code span: the original single-backtick regex missed the 2-backtick-span case (a span opened with two backticks, content containing a single backtick + a markdown-link-shaped substring, closed with two backticks) — the v1.4.8 CHANGELOG entry itself contained such a span, causing CI to FAIL on the very commit shipping the validator. Fix: replaced regex with `_strip_inline_code_spans()` state-machine scanner that handles N-backtick spans per CommonMark (opener of N backticks, closer of EXACTLY N backticks).
+  - **MAJOR #2** path resolution escapes repo root: `[link](../../../../etc/passwd)` resolved + `.exists()` could be used as a file-existence oracle for arbitrary system paths on the build machine. Fix: filter `_resolve_targets` candidates against `repo_root.resolve()`; out-of-tree targets silently skipped (out of scope for the validator).
+  - **MAJOR #3** `--paths` resolved against process cwd not `--root`: `validate_crossrefs.py --paths skills/foo.md` from `cd scripts/` resolved against scripts/ → file not found → silently skipped → exit 0 false-clean. Fix: relative `--paths` arguments are now resolved against `repo_root`.
+  - **MAJOR #4** `_LINK_RE` matched escaped brackets: `\[text\](url)` (markdown literal-bracket escape) was treated as a link. Fix: added `(?<!\\)` lookbehind before the optional `!?` image marker.
+  - **MINOR #1** URL encoding: `[link](path%20with%20spaces.md)` checked literal `%20` path. Fix: `urllib.parse.unquote()` before filesystem resolution.
+  - **MINOR #2** fragment anchor non-validation: documented as known scope limitation (would require parsing all heading slugs; staged for v2 if false negatives surface).
+- **5 new tests** for R1 fixes:
+  * test_multi_backtick_inline_code_span_skipped (MAJOR #1)
+  * test_link_escaping_repo_root_skipped (MAJOR #2)
+  * test_paths_relative_resolved_against_repo_root (MAJOR #3)
+  * test_escaped_brackets_not_treated_as_link (MAJOR #4)
+  * test_url_encoded_path_decoded (MINOR #1)
+- **R2**: REQUEST CHANGES — the R1 CHANGELOG entry itself reproduced the same multi-backtick edge case (CommonMark parses adjacent-equal-length backtick runs as empty spans, leaving inner content as plain text). Fix: rewrote the entry without literal `[t](u)` markdown-link-shaped substrings (described the pattern in prose). Real-repo scan: 0 violations.
+- **R3**: APPROVE — real-repo `validate_crossrefs.py` passes (0 violations across 143 files); `test_real_repo_passes_validator` passes; targeted scan found no other places with the same CommonMark adjacent-backtick gotcha.
+
 ## [v1.4.7] — 2026-04-30
 
 **Feature: `bsa materials` image + OCR support (rec #3 Phase 3 / final).**
