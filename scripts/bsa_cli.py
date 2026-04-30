@@ -1085,10 +1085,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         default=None,
         help=(
             "Directory containing source files to stage. Supported "
-            "extensions (v1.4.2): .pdf, .docx, .md/.markdown, .txt, "
-            ".xlsx, .csv, .tsv, .json, .graphql. Anything else is "
-            "reported as 'unsupported' and skipped. v1.4.3+: optional "
-            "when a manifest-maintenance flag is set "
+            "extensions (v1.4.5): .pdf, .docx, .md/.markdown, .txt, "
+            ".xlsx, .csv, .tsv, .json, .graphql, .pptx, .html/.htm. "
+            "Anything else is reported as 'unsupported' and skipped. "
+            "v1.4.3+: optional when a manifest-maintenance flag is set "
             "(--verify-manifest / --recreate-manifest / --prune-orphans)."
         ),
     )

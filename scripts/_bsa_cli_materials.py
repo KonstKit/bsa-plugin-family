@@ -75,6 +75,17 @@ _EXT_TO_KIND: dict[str, str] = {
     ".json": "json",
     ".tsv": "tsv",
     ".graphql": "text",
+    # v1.4.5 (closes lifecycle review rec #3 first half):
+    #   - pptx: presentations are common deliverables for stakeholder
+    #     reviews, customer pitches, and architecture walkthroughs.
+    #     python-pptx lazy-imported (matches the pdf/docx pattern).
+    #   - html / htm: web-exported documentation, one-page customer
+    #     portals, exported confluence pages. stdlib html.parser only
+    #     (no new dep) — extracts headings/paragraphs/lists/links into
+    #     analyst-grep-friendly markdown.
+    ".pptx": "pptx",
+    ".html": "html",
+    ".htm": "html",
 }
 
 # Per-file safety caps. The user is pointing this at arbitrary
@@ -265,6 +276,475 @@ def _convert_docx(path: Path) -> str:
                     parts.append("")  # blank line after table
                     break
     return "\n\n".join(parts).strip() + "\n"
+
+
+def _convert_pptx(path: Path) -> str:
+    """Extract text from a PPTX deck using python-pptx.
+
+    v1.4.5 (closes lifecycle review rec #3 first half). Output shape:
+    one H2 per VISIBLE slide ("## Slide N: <title>"), followed by
+    paragraph text from each text-bearing shape, followed by a
+    "Speaker notes" H3 if the slide carries notes. Tables in slides
+    render as " | " separated rows (matches the docx convention).
+
+    Skips slides marked hidden (`<p:sld show='0'>`); operator can
+    override by un-hiding in PowerPoint and re-staging.
+
+    `python-pptx` lazy-imported (matches pdf/docx pattern). Raises
+    `ConversionUnavailable` if the dep is missing; `ConversionFailed`
+    on per-file errors (corrupt zip, encrypted, etc.).
+    """
+    try:
+        from pptx import Presentation  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise ConversionUnavailable(
+            "python-pptx not installed. Install with `pip install "
+            "python-pptx` to convert PPTX (or convert externally to PDF "
+            "and re-stage)."
+        ) from exc
+    try:
+        prs = Presentation(str(path))
+    except Exception as exc:
+        raise ConversionFailed(
+            f"python-pptx failed on {path.name}: {exc}"
+        ) from exc
+
+    chunks: list[str] = []
+    visible_idx = 0
+    for raw_idx, slide in enumerate(prs.slides, start=1):
+        # Skip hidden slides — `<p:sld show="0">` in OOXML.
+        # `slide.element.attrib` is a dict-like; default-visible if
+        # attr absent. v1.4.5 R1 MAJOR #1 fix: OOXML booleans accept
+        # `0`/`1`/`false`/`true` (case-insensitive). Earlier code
+        # only matched `"0"` exactly, leaving `show="false"` decks
+        # leaking intentionally-hidden slides into staging.
+        try:
+            show_attr = (slide.element.attrib.get("show", "1") or "").lower()
+            if show_attr in ("0", "false"):
+                continue
+        except Exception:
+            pass  # attribute access shouldn't fail; defensive only
+        visible_idx += 1
+        # Title heuristic: first shape that has a non-empty text
+        # AND looks like a title placeholder.
+        title = ""
+        try:
+            ti = slide.shapes.title  # may return None
+            if ti is not None and ti.has_text_frame:
+                title = (ti.text_frame.text or "").strip().splitlines()[0:1]
+                title = title[0] if title else ""
+        except Exception:
+            pass
+        header_line = (
+            f"## Slide {visible_idx}: {title}" if title
+            else f"## Slide {visible_idx}"
+        )
+        body_parts: list[str] = []
+        for shape in slide.shapes:
+            # Skip the title shape we already used.
+            try:
+                if shape == slide.shapes.title:
+                    continue
+            except Exception:
+                pass
+            # Tables: render as pipe-separated rows.
+            # v1.4.5 R1 MINOR #6 fix: preserve intra-cell linebreaks
+            # via `<br>` rather than collapsing them to spaces — keeps
+            # multi-line bullet lists / paragraph breaks inside table
+            # cells visible to downstream analysts.
+            if getattr(shape, "has_table", False):
+                try:
+                    for row in shape.table.rows:
+                        cells = [
+                            (cell.text or "").strip().replace("\n", "<br>")
+                            for cell in row.cells
+                        ]
+                        body_parts.append(" | ".join(cells))
+                    body_parts.append("")
+                except Exception:
+                    pass
+                continue
+            # Text-bearing shapes.
+            if getattr(shape, "has_text_frame", False):
+                try:
+                    for para in shape.text_frame.paragraphs:
+                        text = "".join(run.text for run in para.runs).strip()
+                        if text:
+                            body_parts.append(text)
+                except Exception:
+                    pass
+        # Speaker notes (notes_slide may be absent on some decks).
+        notes_text = ""
+        try:
+            if slide.has_notes_slide:
+                notes_tf = slide.notes_slide.notes_text_frame
+                if notes_tf is not None:
+                    notes_text = (notes_tf.text or "").strip()
+        except Exception:
+            pass
+        slide_section = [header_line]
+        if body_parts:
+            slide_section.append("")
+            slide_section.extend(body_parts)
+        if notes_text:
+            slide_section.append("")
+            slide_section.append("### Speaker notes")
+            slide_section.append("")
+            slide_section.append(notes_text)
+        chunks.append("\n".join(slide_section))
+    if not chunks:
+        # All slides hidden OR empty deck — emit a single line so the
+        # staged file isn't 0 bytes (downstream tools that read the
+        # provenance comment expect SOME body).
+        return "_(no visible slides)_\n"
+    return "\n\n".join(chunks).strip() + "\n"
+
+
+def _convert_html(path: Path) -> str:
+    """Convert an HTML / HTM file to analyst-grep-friendly markdown.
+
+    v1.4.5 (closes lifecycle review rec #3 first half). Stdlib only
+    — no BeautifulSoup, no lxml. Uses `html.parser.HTMLParser` +
+    `html.unescape` for entity decoding. Encoding fallback
+    (utf-8 → latin-1) matches the csv extractor.
+
+    Conversion rules:
+      * `<script>`, `<style>` content stripped entirely.
+      * `<h1>`-`<h6>` → markdown `#`-`######` headers (blank lines
+        around).
+      * `<p>`, `<div>`, `<br>` → paragraph breaks.
+      * `<li>` → `- ` bullets (also `<ol>` items, simple flat list).
+      * `<a href="X">text</a>` → `[text](X)`.
+      * `<strong>`/`<b>` → `**text**`; `<em>`/`<i>` → `*text*`.
+      * `<code>` → `` `text` ``; `<pre>` → fenced ```` ``` ```` block.
+      * `<title>` → first H1 if no other H1 in body.
+      * Other tags stripped, content preserved.
+      * Whitespace normalized (multiple blank lines collapsed to one).
+
+    No size cap beyond `--max-mb` — operator's responsibility to
+    pre-trim mega-pages.
+    """
+    # v1.4.5 R1 MAJOR #2 fix: charset detection chain.
+    #   (1) UTF-8 / UTF-16 BOM if present.
+    #   (2) `<meta charset="X">` or
+    #       `<meta http-equiv="Content-Type" content="...; charset=X">`
+    #       sniffed from the first 1024 bytes (HTML5 prologue).
+    #   (3) utf-8 strict.
+    #   (4) cp1252 (Windows-1252) — covers smart quotes / em-dash /
+    #       trademark glyphs that latin-1 silently turns into control
+    #       characters. cp1252 is a strict superset of latin-1 for
+    #       most byte values; safer fallback for legacy web exports.
+    #   (5) latin-1 — final no-fail fallback.
+    raw_bytes = path.read_bytes()
+    text: Optional[str] = None
+    sniffed_codec: Optional[str] = None
+    # (1) BOM sniff.
+    if raw_bytes.startswith(b"\xef\xbb\xbf"):
+        sniffed_codec = "utf-8-sig"
+    elif raw_bytes.startswith((b"\xff\xfe", b"\xfe\xff")):
+        sniffed_codec = "utf-16"
+    # (2) <meta charset=...> sniff over first 1024 bytes via latin-1
+    # (which can decode any byte) so the regex finds ASCII tag content.
+    if sniffed_codec is None:
+        prologue = raw_bytes[:1024].decode("latin-1", errors="ignore").lower()
+        m = re.search(r'<meta[^>]+charset=["\']?([\w\-]+)', prologue)
+        if m:
+            sniffed_codec = m.group(1)
+    if sniffed_codec is not None:
+        try:
+            text = raw_bytes.decode(sniffed_codec)
+        except (UnicodeDecodeError, LookupError):
+            text = None  # fall through to ordered fallback chain
+    if text is None:
+        for codec in ("utf-8", "cp1252", "latin-1"):
+            try:
+                text = raw_bytes.decode(codec)
+                break
+            except UnicodeDecodeError:
+                continue
+    if text is None:
+        raise ConversionFailed(
+            f"could not decode {path.name} as utf-8 / cp1252 / "
+            f"latin-1; pre-convert externally before re-staging"
+        )
+    parser = _HTMLToMarkdown()
+    try:
+        parser.feed(text)
+        parser.close()
+    except Exception as exc:
+        raise ConversionFailed(
+            f"html.parser failed on {path.name}: {exc}"
+        ) from exc
+    return parser.render()
+
+
+class _HTMLToMarkdown:
+    """Stdlib-only HTML → markdown converter for `_convert_html`.
+
+    Push-based (HTMLParser-driven). Maintains a small state machine
+    for the active context (skip-script, in-pre, in-link, list-depth).
+    Output is built up in `_buf` then post-processed (whitespace
+    collapse, title-injection) by `render()`.
+
+    Not a fully-spec-compliant converter — covers the 80% of HTML
+    shapes that appear in real analyst inputs (Confluence exports,
+    one-page customer portals, MDN-style docs). Unsupported edge
+    cases (deeply nested tables, custom elements, MathML) degrade
+    gracefully to text-with-stripped-tags."""
+
+    # Block-level tags get a blank-line break after their close tag.
+    _BLOCK_TAGS = frozenset({
+        "p", "div", "section", "article", "header", "footer", "nav",
+        "main", "blockquote", "table", "tr",
+    })
+    # Headings — `_HEADING_TAGS[tag]` = level (1..6).
+    _HEADING_TAGS = {f"h{i}": i for i in range(1, 7)}
+    # Inline emphasis tags.
+    _EMPHASIS_OPEN = {"strong": "**", "b": "**", "em": "*", "i": "*"}
+    _CODE_OPEN = {"code": "`"}
+
+    def __init__(self) -> None:
+        from html.parser import HTMLParser  # lazy
+        self._buf: list[str] = []
+        self._skip_depth = 0       # >0 inside <script> / <style>
+        self._in_pre = 0           # >0 inside <pre>
+        self._link_href: Optional[str] = None
+        self._link_text_buf: Optional[list[str]] = None
+        self._list_stack: list[str] = []  # 'ul' | 'ol'
+        self._title_text: Optional[str] = None
+        self._in_title = 0
+        self._has_h1 = False
+        self._heading_level = 0    # >0 while inside hN
+
+        # Subclass HTMLParser via a lightweight inner class so we
+        # don't need a separate top-level class for the parser's
+        # callbacks (cleaner module surface).
+        outer = self
+
+        class _Parser(HTMLParser):
+            def handle_starttag(_self, tag: str, attrs: list) -> None:
+                outer._on_start(tag, dict(attrs))
+
+            def handle_endtag(_self, tag: str) -> None:
+                outer._on_end(tag)
+
+            def handle_startendtag(_self, tag: str, attrs: list) -> None:
+                # Self-closing tags: <br/>, <hr/>, <img/>.
+                outer._on_start(tag, dict(attrs))
+                outer._on_end(tag)
+
+            def handle_data(_self, data: str) -> None:
+                outer._on_data(data)
+
+            def handle_entityref(_self, name: str) -> None:
+                import html as _html_lib
+                outer._on_data(_html_lib.unescape(f"&{name};"))
+
+            def handle_charref(_self, name: str) -> None:
+                import html as _html_lib
+                outer._on_data(_html_lib.unescape(f"&#{name};"))
+
+        self._parser = _Parser(convert_charrefs=True)
+
+    # Forward a couple of HTMLParser methods so the caller doesn't
+    # need to know the inner-class wiring.
+    def feed(self, text: str) -> None:
+        self._parser.feed(text)
+
+    def close(self) -> None:
+        self._parser.close()
+
+    # ---- internal state machine -----------------------------------
+
+    def _on_start(self, tag: str, attrs: dict) -> None:
+        tag = tag.lower()
+        if tag in ("script", "style"):
+            self._skip_depth += 1
+            return
+        if self._skip_depth > 0:
+            return
+        if tag == "title":
+            self._in_title += 1
+            return
+        # v1.4.5 R1 MINOR #5 fix: ignore inline-tag markup while we're
+        # inside <title>. Otherwise <title>A <b>B</b> C</title> would
+        # leak `**...**` into _buf and fragment the title text.
+        if self._in_title > 0:
+            return
+        # v1.4.5 R1 MINOR #4 fix: a block-level tag (heading, p,
+        # div, ...) inside <a> is rare-but-valid HTML5. Flush the
+        # link first so the heading markup lands at body level
+        # rather than inside [text](href). We close the link with
+        # whatever text we collected so far (may be empty), then
+        # fall through to normal block handling.
+        if (
+            self._link_text_buf is not None
+            and (tag in self._HEADING_TAGS
+                 or tag in self._BLOCK_TAGS
+                 or tag == "pre"
+                 or tag == "li"
+                 or tag in ("ul", "ol"))
+        ):
+            # v1.4.5 R2 NEW MINOR fix: drop_empty=True so an empty
+            # link buf (heading-text hasn't accumulated yet) doesn't
+            # leak a stray `<href>` before the block-level markup.
+            self._flush_link(drop_empty=True)
+        if tag == "pre":
+            self._in_pre += 1
+            self._buf.append("\n\n```\n")
+            return
+        if tag == "br":
+            self._buf.append("\n")
+            return
+        if tag in self._HEADING_TAGS:
+            level = self._HEADING_TAGS[tag]
+            if level == 1:
+                self._has_h1 = True
+            self._buf.append("\n\n" + "#" * level + " ")
+            self._heading_level = level
+            return
+        if tag in ("ul", "ol"):
+            self._list_stack.append(tag)
+            self._buf.append("\n")
+            return
+        if tag == "li":
+            self._buf.append("\n- ")
+            return
+        if tag == "a":
+            self._link_href = attrs.get("href") or ""
+            self._link_text_buf = []
+            return
+        if tag in self._EMPHASIS_OPEN and self._heading_level == 0:
+            self._buf.append(self._EMPHASIS_OPEN[tag])
+            return
+        if tag in self._CODE_OPEN and self._in_pre == 0:
+            self._buf.append(self._CODE_OPEN[tag])
+            return
+        if tag in self._BLOCK_TAGS:
+            self._buf.append("\n\n")
+            return
+        # Unknown / inline / structural tag → no markup; data passes
+        # through.
+
+    def _flush_link(self, *, drop_empty: bool = False) -> None:
+        """v1.4.5 R1 MINOR #4 helper: emit the currently-open link
+        markup to _buf and reset the collection state. Called when
+        a block tag opens inside <a> (drop_empty=True so we don't
+        emit a stray `<href>` BEFORE the heading text has been
+        collected — that text is about to land at body level under
+        the heading marker), OR on </a> (drop_empty=False, preserves
+        the legacy `<href>` for href-only-no-text anchors).
+
+        Idempotent — no-op if no link is currently open."""
+        if self._link_text_buf is None:
+            return
+        text = "".join(self._link_text_buf).strip()
+        href = self._link_href or ""
+        if text and href:
+            self._buf.append(f"[{text}]({href})")
+        elif text:
+            self._buf.append(text)
+        elif href and not drop_empty:
+            self._buf.append(f"<{href}>")
+        # drop_empty=True + (no text) + (any href) → emit nothing.
+        # The block tag's content lands at body level immediately
+        # after this flush.
+        self._link_href = None
+        self._link_text_buf = None
+
+    def _on_end(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in ("script", "style"):
+            if self._skip_depth > 0:
+                self._skip_depth -= 1
+            return
+        if self._skip_depth > 0:
+            return
+        if tag == "title":
+            if self._in_title > 0:
+                self._in_title -= 1
+            return
+        # v1.4.5 R1 MINOR #5 fix: same gate as _on_start — close-tags
+        # inside <title> must not emit body-level markup.
+        if self._in_title > 0:
+            return
+        if tag == "pre":
+            if self._in_pre > 0:
+                self._in_pre -= 1
+                self._buf.append("\n```\n\n")
+            return
+        if tag in self._HEADING_TAGS:
+            self._buf.append("\n")
+            self._heading_level = 0
+            return
+        if tag in ("ul", "ol"):
+            if self._list_stack:
+                self._list_stack.pop()
+            self._buf.append("\n")
+            return
+        if tag == "li":
+            return
+        if tag == "a":
+            self._flush_link()
+            return
+        if tag in self._EMPHASIS_OPEN and self._heading_level == 0:
+            self._buf.append(self._EMPHASIS_OPEN[tag])
+            return
+        if tag in self._CODE_OPEN and self._in_pre == 0:
+            self._buf.append(self._CODE_OPEN[tag])
+            return
+        if tag in self._BLOCK_TAGS:
+            self._buf.append("\n\n")
+            return
+
+    def _on_data(self, data: str) -> None:
+        if self._skip_depth > 0:
+            return
+        if self._in_title > 0:
+            # v1.4.5 R1 MINOR #5 fix: concat raw (don't strip per
+            # fragment) so inter-tag whitespace is preserved
+            # (`<title>A <b>B</b> C</title>` → "A B C", not "AB C").
+            # render() does the final whitespace-normalize + strip.
+            if self._title_text is None:
+                self._title_text = data
+            else:
+                self._title_text = self._title_text + data
+            return
+        if self._in_pre > 0:
+            self._buf.append(data)
+            return
+        # Capture link text into a sub-buffer so we can render
+        # `[text](href)` on </a>.
+        if self._link_text_buf is not None:
+            self._link_text_buf.append(data)
+            return
+        # Collapse whitespace within text runs (multiple spaces /
+        # tabs / newlines → single space). Markdown structure relies
+        # on the explicit `\n` injections from tag handlers.
+        normalized = re.sub(r"[ \t\r\n]+", " ", data)
+        if normalized.strip():
+            self._buf.append(normalized)
+        elif self._buf and not self._buf[-1].endswith((" ", "\n")):
+            # Preserve a single space between adjacent inline runs.
+            self._buf.append(" ")
+
+    def render(self) -> str:
+        body = "".join(self._buf)
+        # Inject <title> as H1 if no <h1> present in body.
+        # v1.4.5 R1 MINOR #5 fix: normalize collected title here so
+        # inter-tag whitespace is preserved across fragment boundaries
+        # but multi-space runs collapse to single space (clean H1).
+        if self._title_text and not self._has_h1:
+            normalized_title = re.sub(
+                r"[ \t\r\n]+", " ", self._title_text
+            ).strip()
+            if normalized_title:
+                body = f"# {normalized_title}\n\n" + body
+        # Collapse runs of 3+ blank lines down to a single blank line
+        # (markdown convention — paragraph break is exactly one blank).
+        body = re.sub(r"\n{3,}", "\n\n", body)
+        # Strip leading/trailing whitespace; ensure trailing newline.
+        return body.strip() + "\n"
 
 
 def _read_text(path: Path) -> str:
@@ -1160,10 +1640,12 @@ def _render_draft_manifest(
         if p.skipped_reason is not None:
             continue
         # SourceType heuristic: "interview" anywhere in the slug → interview_transcript.
+        # v1.4.5: pptx → document (presentations); html → process_note
+        # (web exports / Confluence pages tend to be procedural).
         slug_lower = p.target.stem.lower()
         if "interview" in slug_lower or "transcript" in slug_lower:
             stype = "interview_transcript"
-        elif p.kind in ("pdf", "docx"):
+        elif p.kind in ("pdf", "docx", "pptx"):
             stype = "document"
         else:
             stype = "process_note"
@@ -1508,7 +1990,11 @@ def _recreate_manifest(workspace: Path) -> str:
     # Known kinds the staging path emits today. v1.4.3 Codex R1 MAJOR
     # #4 fix: validate kind so a corrupted/renamed file doesn't slip
     # in with `kind=evil` and confuse downstream type heuristics.
-    _known_kinds = {"pdf", "docx", "text", "xlsx", "csv", "tsv", "json"}
+    # v1.4.5 adds pptx + html.
+    _known_kinds = {
+        "pdf", "docx", "text", "xlsx", "csv", "tsv", "json",
+        "pptx", "html",
+    }
 
     for entry in sorted(inputs_dir.iterdir(), key=lambda p: p.name):
         if not entry.is_file():
@@ -1577,13 +2063,15 @@ def _recreate_manifest(workspace: Path) -> str:
             )
             continue
         # SourceType heuristic mirrors _render_draft_manifest.
+        # v1.4.5 keeps pptx in the "document" bucket; html lands as
+        # process_note (web exports are typically procedural docs).
         slug_lower = entry.stem.lower()
         if "interview" in slug_lower or "transcript" in slug_lower:
             stype = "interview_transcript"
-        elif kind in ("pdf", "docx"):
+        elif kind in ("pdf", "docx", "pptx"):
             stype = "document"
-        elif kind in ("xlsx", "csv", "tsv", "json"):
-            stype = "process_note"  # tabular / structured data
+        elif kind in ("xlsx", "csv", "tsv", "json", "html"):
+            stype = "process_note"  # tabular / structured data / web export
         else:
             stype = "process_note"
         title = entry.stem.split("_", 2)[-1] if "_" in entry.stem else entry.stem
@@ -2526,6 +3014,7 @@ def _convert_one(
 
     v1.4.1 adds xlsx + csv routing.
     v1.4.2 adds tsv + json routing (graphql goes through `text`).
+    v1.4.5 adds pptx + html routing.
 
     `max_rows_per_table` propagates the operator's --max-rows-per-table
     choice into tabular extractors (xlsx, csv, tsv).
@@ -2545,13 +3034,18 @@ def _convert_one(
         return _convert_tsv(p.src, max_rows=max_rows_per_table)
     if p.kind == "json":
         return _convert_json(p.src, max_chars=max_json_chars)
+    if p.kind == "pptx":
+        return _convert_pptx(p.src)
+    if p.kind == "html":
+        return _convert_html(p.src)
     raise ConversionFailed(f"unknown kind {p.kind!r} for {p.src.name}")
 
 
 def _count_kinds(plans: list[SourcePlan]) -> str:
     """Render 'PDF: 3, DOCX: 1, TXT/MD: 2, XLSX: 4, CSV: 7, TSV: 1, JSON: 5'
     for the preview header (v1.4.1: xlsx + csv added; v1.4.2: tsv +
-    json added; graphql falls under TXT/MD via the text kind)."""
+    json added; graphql falls under TXT/MD via the text kind;
+    v1.4.5 adds pptx + html)."""
     counts: dict[str, int] = {}
     for p in plans:
         if p.skipped_reason is not None:
@@ -2565,6 +3059,7 @@ def _count_kinds(plans: list[SourcePlan]) -> str:
             ("pdf", "PDF"), ("docx", "DOCX"), ("text", "TXT/MD"),
             ("xlsx", "XLSX"), ("csv", "CSV"),
             ("tsv", "TSV"), ("json", "JSON"),
+            ("pptx", "PPTX"), ("html", "HTML"),
         )
         if k in counts
     )
@@ -2758,10 +3253,15 @@ def _upsert_draft_manifest(
                 # Origin can change if the file was renamed under
                 # src_dir; SourceType heuristic re-runs against the
                 # new staged-file slug.
+                # v1.4.5 R1 MAJOR #3 fix: include `pptx` in the
+                # `document` bucket so a restaged PPTX row keeps its
+                # SourceType (was incorrectly demoted to `process_note`
+                # because the v1.4.5 kind addition wasn't threaded
+                # through this code path).
                 slug_lower = plan.target.stem.lower()
                 if "interview" in slug_lower or "transcript" in slug_lower:
                     stype = "interview_transcript"
-                elif plan.kind in ("pdf", "docx"):
+                elif plan.kind in ("pdf", "docx", "pptx"):
                     stype = "document"
                 else:
                     stype = "process_note"

@@ -4,6 +4,69 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.5] — 2026-04-30
+
+**Feature: `bsa materials` pptx + html support (Phase 1 of rec #3).**
+
+Closes the **first half** of lifecycle review **rec #3** (broaden source-format coverage). Two new extractors added; the remaining formats (eml/msg in v1.4.6, OCR for png/jpg/tiff in v1.4.7) follow incrementally to keep each release reviewable in one Codex round.
+
+Pre-v1.4.5 the materials staging path classified `.pptx` (PowerPoint decks — common stakeholder artefacts) and `.html` / `.htm` (Confluence exports, customer-portal one-pagers, MDN-style docs) as `unsupported`. Operators had to pre-convert externally (`libreoffice --convert-to pdf`, `pandoc -t markdown`, etc.), losing fidelity AND the bsa materials slug-collision / provenance-comment guarantees.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3` (`scripts/*.py` not in canon-globs).
+
+### Added
+
+- **`_convert_pptx(path) -> str`** in `scripts/_bsa_cli_materials.py` — uses `python-pptx` (lazy import; `ConversionUnavailable` if missing). Output: one `## Slide N: <title>` per VISIBLE slide (hidden slides skipped via `<p:sld show="0">` attribute), text from each shape's paragraphs, tables rendered as ` | ` separated rows, speaker notes appended in a separate `### Speaker notes` section. Empty deck or all-hidden case yields a `_(no visible slides)_` placeholder so the staged file isn't 0 bytes.
+- **`_convert_html(path) -> str`** — **stdlib only** (`html.parser` + `html.unescape`; no BeautifulSoup, no lxml dependency). Class `_HTMLToMarkdown` subclasses `HTMLParser` and emits markdown:
+  - `<h1>`-`<h6>` → markdown `#`-`######`.
+  - `<p>` / `<div>` / block tags → paragraph breaks.
+  - `<ul>` / `<ol>` / `<li>` → `- ` bullets.
+  - `<a href="X">text</a>` → `[text](X)`.
+  - `<strong>` / `<b>` → `**text**`; `<em>` / `<i>` → `*text*`.
+  - `<code>` → `` `text` ``; `<pre>` → fenced ```` ``` ```` block (whitespace preserved).
+  - `<title>` → first H1 if no `<h1>` present in body.
+  - `<script>` / `<style>` content stripped.
+  - Entities decoded via `html.unescape`.
+  - Encoding fallback (utf-8 → latin-1) matches csv extractor.
+- **Extension map**: `.pptx → "pptx"`, `.html → "html"`, `.htm → "html"`.
+- **22 new tests** in `tests/test_bsa_cli_materials_pptx_html.py`: extension map, pptx happy path, multi-slide order, hidden-skip, speaker notes, table rendering, ConversionUnavailable when dep missing, empty-deck placeholder, html happy path, script/style stripped, title-as-h1 fallback, title NOT used when h1 present, lists, pre/code preservation, encoding fallback, entity decoding, link rendering, emphasis, CLI dry-run + commit + .htm alias.
+
+### Changed
+
+- **`_convert_one`** dispatches the two new kinds.
+- **`_count_kinds`** preview adds `PPTX:` and `HTML:` labels.
+- **`_recreate_manifest`** known-kinds whitelist + SourceType heuristic recognize pptx (→ `document`) and html (→ `process_note`).
+- **`_render_draft_manifest`** SourceType heuristic recognizes pptx (→ `document`).
+- **`bsa materials` subcommand help** lists all 11 supported extensions (was 9).
+
+### Tests
+
+Total suite: **2158 passed** (was 2127 in v1.4.4 — +31 net new: 22 base coverage + 7 R1-fix verification + 2 R2-fix verification).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 3 MAJOR + 3 MINOR. All 6 fixed:
+  - **MAJOR #1** (`_convert_pptx` hidden-slide): OOXML booleans accept `0`/`1`/`false`/`true` (case-insensitive); v1.4.5's exact-match `show == "0"` skipped only the numeric form, leaking `show="false"` slides into staging. Fix: lowercase + `in {"0", "false"}`.
+  - **MAJOR #2** (`_convert_html` charset): code committed to UTF-8 → latin-1 fallback at read time, ignoring `<meta charset>` and BOM. cp1252 smart quotes / em-dashes / trademark glyphs decoded as control characters. Fix: charset detection chain — (1) UTF-8 BOM → utf-8-sig, (2) UTF-16 BOM → utf-16, (3) `<meta charset=...>` sniff over first 1024 bytes via latin-1 errors=ignore, (4) ordered fallback utf-8 → cp1252 → latin-1 (cp1252 covers Windows web exports; latin-1 is final no-fail catcher).
+  - **MAJOR #3** (`_upsert_draft_manifest` restage SourceType heuristic): the kind→stype mapping wasn't updated when v1.4.5 added `pptx`. A restaged PPTX row was demoted from `document` to `process_note`. Fix: include `"pptx"` in the document branch alongside pdf/docx.
+  - **MINOR #4** (`<a><h1>...</h1></a>`): block-level tag inside `<a>` produced an empty heading marker followed by a stray link. Fix: new `_flush_link()` helper called when a block-level / heading / pre / list tag opens inside `<a>` — closes the link first so the heading lands at body level.
+  - **MINOR #5** (`<title>A <b>B</b> C</title>`): inline-tag markup leaked into `_buf` (`****`) AND the title text concat lost inter-fragment whitespace (`AB C`). Fix: `_in_title > 0` gate in both `_on_start` and `_on_end` skips body-markup emission; `_on_data` concatenates raw fragments; `render()` normalizes whitespace once before the H1 injection.
+  - **MINOR #6** (PPTX intra-cell newlines): `cell.text.replace("\n", " ")` flattened multi-line cell content, losing list / paragraph boundaries. Fix: replace with `<br>` so downstream analysts see the structure.
+- **7 new tests** for R1 fixes:
+  * test_pptx_skips_show_false_attribute (MAJOR #1)
+  * test_html_respects_meta_charset_cp1252 (MAJOR #2)
+  * test_html_respects_utf8_bom (MAJOR #2)
+  * test_restage_pptx_preserves_document_sourcetype (MAJOR #3)
+  * test_html_heading_inside_link_renders_separately (MINOR #4)
+  * test_html_title_with_inline_tags_normalized (MINOR #5)
+  * test_pptx_table_preserves_intra_cell_newlines (MINOR #6)
+- **R2**: REQUEST CHANGES — 1 NEW MINOR. Fixed:
+  - **NEW MINOR**: `_flush_link()` called from the block-tag pre-flush path emitted a stray `<href>` when the link buffer was empty (heading text hadn't accumulated yet because the heading tag opened first). Fix: added `drop_empty: bool = False` param to `_flush_link()`. Pre-flush call sets `drop_empty=True` (heading content lands at body level instead of inside link markup); `</a>` close-flush keeps `drop_empty=False` to preserve the legacy `<href>` rendering for naked anchors with no inner text.
+- **2 new tests** for R2 fix:
+  * test_html_heading_inside_link_no_stray_href (NEW MINOR — verifies drop_empty path)
+  * test_html_link_with_no_text_but_href_still_renders_on_close (regression sanity — naked anchors still render via `</a>` path)
+- **R3**: APPROVE — R2 fix verified, no new issues. State reset after empty pre-flush is correct (subsequent `<a>` starts clean); legacy naked-anchor case via `</a>` still emits `<href>`.
+
 ## [v1.4.4] — 2026-04-29
 
 **Feature: `bsa materials` content-hash columns + `--restage-changed` + `--keep-raw` raw-bytes retention.**
