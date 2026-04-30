@@ -4,6 +4,65 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.6] — 2026-04-30
+
+**Feature: `bsa materials` eml + msg support (Phase 2 of rec #3 — email evidence).**
+
+Closes the **second half** of lifecycle review **rec #3**. Email is a primary BSA evidence class — stakeholder approvals, requirement clarifications, A51-route origin, vendor SLA threads — and pre-v1.4.6 operators had to manually copy email body+headers into .md files, losing fidelity (From/Date authority, attachment list, thread context). v1.4.6 adds two extractors that share the same output shape so downstream tooling sees a single email schema regardless of which client exported the email.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3`.
+
+### Added
+
+- **`_convert_eml(path) -> str`** in `scripts/_bsa_cli_materials.py` — **stdlib only** (`email` module + `email.policy.default` for proper MIME header decoding). RFC 822 / MIME format. Handles RFC 2047 encoded-word subjects (`=?UTF-8?B?...?=`), multipart messages (text/plain preferred, text/html fallback), attachment listing.
+- **`_convert_msg(path) -> str`** — `extract-msg` lazy-imported (matches pdf/docx/pptx pattern; `ConversionUnavailable` if missing). Outlook proprietary CFBF binary format. Adapts extract-msg's distinct attribute API (`.sender`, `.to`, `.subject`, `.body`, `.htmlBody`, `.attachments`) to the same shape `_convert_eml` produces.
+- **Unified email markdown shape** for both extractors:
+  ```
+  ## Email metadata
+  - **From**: ...
+  - **To**: ...
+  - **Cc**: ... (omitted when empty)
+  - **Date**: ...
+  - **Subject**: ...
+
+  ## Body
+  <text/plain preferred; text/html via _HTMLToMarkdown if no plain>
+
+  ## Attachments
+  - filename (mime, N bytes) ... (omitted entirely when no attachments)
+  ```
+- **v1.4.5 SYNERGY**: html-only email bodies route through the `_HTMLToMarkdown` converter added for the html extractor. Single conversion path = consistent markdown output regardless of whether the analyst stages a standalone .html OR an email with html body.
+- **Extension map**: `.eml → "eml"`, `.msg → "msg"`.
+- **`SourceType=email_thread`** — new distinct evidence class (was previously `process_note` for misc inputs). Recognized by all three SourceType heuristics: `_render_draft_manifest`, `_recreate_manifest`, `_upsert_draft_manifest` restage path.
+- **17 new tests** in `tests/test_bsa_cli_materials_eml_msg.py`: extension map, eml happy path, optional-headers omission, Cc inclusion, multipart text-preferred, html-only body via _HTMLToMarkdown, attachments listed + omitted, RFC 2047 encoded subject, malformed-handling, empty-body placeholder, msg ConversionUnavailable, msg renderer via mock (avoids needing real CFBF fixture), msg html-only body via _HTMLToMarkdown, CLI dry-run + commit + email_thread SourceType.
+
+### Changed
+
+- **`_convert_one`** dispatches the two new kinds.
+- **`_count_kinds`** preview adds `EML:` and `MSG:` labels.
+- **`_recreate_manifest`** known-kinds whitelist includes eml + msg; SourceType heuristic recognizes them as `email_thread`.
+- **`bsa materials` subcommand help** lists all 13 supported extensions (was 11).
+
+### Tests
+
+Total suite: **2180 passed** (was 2158 in v1.4.5 — +22 net new: 17 base coverage + 5 R1-fix verification).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 3 MAJOR + 2 MINOR. All 5 fixed:
+  - **MAJOR #1** (`_convert_msg` render exceptions): extract-msg attribute access (`.body`, `.htmlBody`, `.attachments`) could raise mid-render and the exception escaped as a raw `Exception`, aborting the whole `bsa materials` batch. Fix: wrapped the inner `_render_email_markdown_from_msg(...)` call in `try/except Exception → raise ConversionFailed(...)` while preserving the `finally: msg.close()` path. cmd_materials's per-file failure handler then catches it correctly.
+  - **MAJOR #2** (`_convert_eml` text/plain attachment misclassification): a part with `Content-Type: text/plain; name=note.txt` and NO `Content-Disposition` header was treated as the email body, suppressing the actual body that follows. Fix: classify as attachment whenever a filename is present AND the disposition isn't explicitly "inline" — regardless of content-type.
+  - **MAJOR #3** (`_convert_eml` inline-image-only blank body): an email whose only content was `<img src="cid:...">` rendered to empty markdown AND skipped the inline image from attachments → staged file had `## Body` blank with no record of WHAT the email carried. Fix: track `inline_media` separately from regular attachments; combine them into one `## Attachments` section with an `[inline]` marker on inline rows; if rendered HTML body is empty, emit the `_(no readable body)_` placeholder. Same fallback applied to msg renderer.
+  - **MINOR #1** (msg htmlBody UTF-8 BOM): `decode("utf-8")` left a stray U+FEFF (BOM) in the staged markdown when extract-msg's htmlBody bytes started with `\xef\xbb\xbf`. Fix: `decode("utf-8-sig")` swallows the BOM transparently.
+  - **MINOR #2** (markdown injection via embedded newlines): a malicious / malformed header value or attachment filename containing `\n` could inject extra markdown bullets / headings into the staged email block. Fix: new `_normalize_email_header_value()` helper collapses `[\r\n\t]+` and runs of whitespace into single space; applied to all metadata header values, source-name fallback, and attachment filenames in BOTH renderers.
+- **5 new tests** for R1 fixes:
+  * test_convert_msg_render_failure_raises_conversion_failed (MAJOR #1)
+  * test_convert_eml_text_plain_with_filename_is_attachment (MAJOR #2)
+  * test_convert_eml_inline_image_listed_under_attachments (MAJOR #3)
+  * test_convert_msg_html_body_strips_utf8_bom (MINOR #1)
+  * test_convert_eml_subject_with_newline_does_not_inject_markdown (MINOR #2)
+- **R2**: APPROVE — all 5 R1 fixes verified at the named code lines, no new issues found. Inline `text/plain; filename=` correctly NOT classified as attachment, mixed regular+inline media renders single combined section, normalization strips after collapse, CRLF collapses to one space, whitespace-only Subject elides cleanly.
+
 ## [v1.4.5] — 2026-04-30
 
 **Feature: `bsa materials` pptx + html support (Phase 1 of rec #3).**

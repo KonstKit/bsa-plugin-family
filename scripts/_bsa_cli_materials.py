@@ -86,6 +86,16 @@ _EXT_TO_KIND: dict[str, str] = {
     ".pptx": "pptx",
     ".html": "html",
     ".htm": "html",
+    # v1.4.6 (closes lifecycle review rec #3 second half): email
+    # evidence is a primary BSA source class (stakeholder approvals,
+    # requirement clarifications, A51 origin, vendor SLA threads).
+    #   - eml: RFC 822 / MIME — stdlib `email` only.
+    #   - msg: Outlook proprietary CFBF — `extract-msg` lazy-imported.
+    # Both extractors share the same output shape (metadata block +
+    # body + attachments list) so downstream tooling sees one schema
+    # regardless of which client exported the email.
+    ".eml": "eml",
+    ".msg": "msg",
 }
 
 # Per-file safety caps. The user is pointing this at arbitrary
@@ -745,6 +755,347 @@ class _HTMLToMarkdown:
         body = re.sub(r"\n{3,}", "\n\n", body)
         # Strip leading/trailing whitespace; ensure trailing newline.
         return body.strip() + "\n"
+
+
+def _convert_eml(path: Path) -> str:
+    """Convert an .eml (RFC 822 / MIME) email into the unified
+    bsa-materials email markdown shape.
+
+    v1.4.6 (closes lifecycle review rec #3 second half). Stdlib only
+    (`email` + `email.policy.default` for MIME header decoding).
+
+    Output:
+      ## Email metadata
+      - **From**: ...
+      - **To**: ...
+      - **Cc**: ... (omitted when empty)
+      - **Date**: ...
+      - **Subject**: ...
+
+      ## Body
+      <text/plain part if present, else text/html via _HTMLToMarkdown>
+
+      ## Attachments
+      - filename (mime-type, N bytes)
+      - ... (omitted entirely when no attachments)
+
+    Body part selection: prefer text/plain (operator-authored), fall
+    back to text/html (rendered). Other body types degrade to a
+    `[unsupported body content-type: X]` placeholder so the row in
+    the manifest still has a meaningful body excerpt.
+
+    Headers are decoded via `email.policy.default` which handles
+    RFC 2047 `=?UTF-8?B?...?=` / `=?ISO-8859-1?Q?...?=` encoded-word
+    syntax. Date is preserved as the raw header (no normalization)
+    so freshness_audit can parse it via dateutil if installed.
+
+    Attachments are LISTED ONLY (filename + content-type + size).
+    The bytes are NOT extracted — operator opts in by manually
+    extracting via their email client if the attachment IS the
+    evidence. Default-off matches --keep-raw's storage discipline."""
+    import email as _email_mod
+    from email.policy import default as _email_policy
+    try:
+        with path.open("rb") as fh:
+            msg = _email_mod.message_from_binary_file(
+                fh, policy=_email_policy
+            )
+    except Exception as exc:
+        raise ConversionFailed(
+            f"email parser failed on {path.name}: {exc}"
+        ) from exc
+    return _render_email_markdown(msg, path.name)
+
+
+def _convert_msg(path: Path) -> str:
+    """Convert an Outlook .msg (Compound File Binary Format) email
+    into the unified bsa-materials email markdown shape.
+
+    v1.4.6. `extract-msg` lazy-imported (matches pdf/docx/pptx
+    pattern); raises `ConversionUnavailable` when missing.
+
+    Re-uses the same metadata/body/attachments output shape as
+    `_convert_eml` so downstream tooling sees ONE schema regardless
+    of which client exported the email. Body part selection prefers
+    plain over html (matches eml convention)."""
+    try:
+        import extract_msg  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise ConversionUnavailable(
+            "extract-msg not installed. Install with `pip install "
+            "extract-msg` to convert Outlook .msg files (or convert "
+            "externally to .eml via your mail client and re-stage)."
+        ) from exc
+    try:
+        msg = extract_msg.openMsg(str(path))
+    except Exception as exc:
+        raise ConversionFailed(
+            f"extract-msg failed on {path.name}: {exc}"
+        ) from exc
+    # Build a minimal dict-shape compatible with _render_email_markdown's
+    # consumer interface (header lookup + body part walk). We adapt
+    # extract-msg's distinct attribute API to the email-module shape
+    # so a single renderer covers both formats.
+    # v1.4.6 R1 MAJOR #1 fix: wrap render-time exceptions so a
+    # malformed .msg surfaces as ConversionFailed (matching the
+    # cmd_materials per-file failure path) instead of escaping as
+    # an arbitrary exception that aborts the whole batch.
+    try:
+        try:
+            out = _render_email_markdown_from_msg(msg, path.name)
+        except Exception as exc:
+            raise ConversionFailed(
+                f"extract-msg render failed on {path.name}: {exc}"
+            ) from exc
+    finally:
+        try:
+            msg.close()
+        except Exception:
+            pass
+    return out
+
+
+def _normalize_email_header_value(value: str) -> str:
+    """Header / filename variant — collapses ALL line-breaks AND
+    runs of whitespace into a single space. Used for `**From**:` etc.
+    + attachment filenames where a multi-line value would spoof
+    markdown structure."""
+    if not value:
+        return ""
+    cleaned = re.sub(r"[\r\n\t ]+", " ", value)
+    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+
+def _render_email_markdown(msg, source_name: str) -> str:
+    """Shared renderer for stdlib `email.Message`. Returns the
+    metadata + body + attachments markdown block."""
+    parts: list[str] = ["## Email metadata", ""]
+    # Stdlib email.policy.default returns Header objects whose str()
+    # gives the decoded text. Empty header → empty string.
+    header_lines: list[tuple[str, str]] = []
+    for label, hdr in (
+        ("From", "From"), ("To", "To"), ("Cc", "Cc"),
+        ("Bcc", "Bcc"), ("Date", "Date"), ("Subject", "Subject"),
+    ):
+        raw = msg.get(hdr)
+        if raw is None:
+            continue
+        text = _normalize_email_header_value(str(raw).strip())
+        if text:
+            header_lines.append((label, text))
+    if not header_lines:
+        # Defensive — at minimum we want SOMETHING in the metadata
+        # block so downstream evidence-binding has anchors.
+        header_lines.append(
+            ("Source", _normalize_email_header_value(source_name))
+        )
+    for label, text in header_lines:
+        parts.append(f"- **{label}**: {text}")
+    parts.append("")
+
+    # Body — walk MIME parts, prefer text/plain.
+    plain_body: Optional[str] = None
+    html_body: Optional[str] = None
+    # v1.4.6 R1 MAJOR #3 tracking: list inline images (Content-
+    # Disposition: inline + filename) so an image-only email's
+    # staged body still records WHAT was attached, even if the
+    # rendered HTML body collapses to nothing.
+    attachments: list[tuple[str, str, int]] = []  # (filename, ctype, size)
+    inline_media: list[tuple[str, str, int]] = []  # same shape
+    for part in msg.walk():
+        ctype = part.get_content_type()
+        # Skip multipart containers (no leaf content).
+        if part.is_multipart():
+            continue
+        disp = (part.get_content_disposition() or "").lower()
+        fname = part.get_filename()
+        # v1.4.6 R1 MAJOR #2 fix: a part with a filename + no
+        # explicit "inline" disposition is an attachment regardless
+        # of content-type. Real-world MIME like
+        # `Content-Type: text/plain; name=note.txt` (no Content-
+        # Disposition header) would otherwise be misclassified as
+        # the email body, suppressing the actual body that follows.
+        is_attachment = (
+            disp == "attachment"
+            or (fname and disp != "inline")
+        )
+        if is_attachment:
+            try:
+                payload = part.get_payload(decode=True) or b""
+            except Exception:
+                payload = b""
+            attachments.append((fname or "(unnamed)", ctype, len(payload)))
+            continue
+        # v1.4.6 R1 MAJOR #3: inline media (image/*, application/*
+        # with disposition=inline) tracked separately so they
+        # appear in the attachments section with an [inline] marker.
+        if disp == "inline" and not ctype.startswith("text/"):
+            try:
+                payload = part.get_payload(decode=True) or b""
+            except Exception:
+                payload = b""
+            inline_media.append(
+                (fname or f"(inline {ctype})", ctype, len(payload))
+            )
+            continue
+        # Inline body parts (text/plain or text/html, no filename).
+        if ctype == "text/plain" and plain_body is None:
+            try:
+                plain_body = part.get_content()
+            except Exception:
+                # Fallback for malformed MIME — get raw payload.
+                payload = part.get_payload(decode=True) or b""
+                plain_body = payload.decode("utf-8", errors="replace")
+        elif ctype == "text/html" and html_body is None:
+            try:
+                html_body = part.get_content()
+            except Exception:
+                payload = part.get_payload(decode=True) or b""
+                html_body = payload.decode("utf-8", errors="replace")
+
+    parts.append("## Body")
+    parts.append("")
+    rendered: Optional[str] = None
+    if plain_body is not None and plain_body.strip():
+        rendered = plain_body.rstrip()
+    elif html_body is not None and html_body.strip():
+        # v1.4.6 SYNERGY with v1.4.5: route html-body emails through
+        # the same _HTMLToMarkdown converter the html extractor uses.
+        # Single conversion path = consistent output regardless of
+        # whether the analyst stages a standalone .html OR an email
+        # with html body.
+        h = _HTMLToMarkdown()
+        h.feed(html_body)
+        h.close()
+        rendered_html = h.render().rstrip()
+        # v1.4.6 R1 MAJOR #3 fix: if HTML rendered to empty (e.g.,
+        # body was only `<img src="cid:...">`), fall through to the
+        # placeholder so the staged file makes the empty-body
+        # situation explicit. Inline media list (below) records
+        # what WAS in the email even though the body collapsed.
+        if rendered_html.strip():
+            rendered = rendered_html
+    if rendered is not None:
+        parts.append(rendered)
+    else:
+        parts.append("_(no readable body — encrypted, malformed, or "
+                     "empty multipart)_")
+    parts.append("")
+
+    # v1.4.6 R1 MAJOR #3 fix: combine attachments + inline_media into
+    # a single Attachments section so an inline-image-only email
+    # always has a record of WHAT it carried (4-tuple includes
+    # is_inline flag for the [inline] marker).
+    attach_rows: list[tuple[str, str, int, bool]] = [
+        (fname, ctype, size, False) for fname, ctype, size in attachments
+    ] + [
+        (fname, ctype, size, True) for fname, ctype, size in inline_media
+    ]
+    if attach_rows:
+        parts.append("## Attachments")
+        parts.append("")
+        for fname, ctype, size, is_inline in attach_rows:
+            inline_tag = " [inline]" if is_inline else ""
+            safe_fname = _normalize_email_header_value(fname)
+            parts.append(
+                f"- {safe_fname} ({ctype}, {size} bytes){inline_tag}"
+            )
+        parts.append("")
+    return "\n".join(parts).rstrip() + "\n"
+
+
+def _render_email_markdown_from_msg(msg, source_name: str) -> str:
+    """Shared renderer for `extract_msg.Message`. Adapts the distinct
+    attribute API to the same metadata/body/attachments output shape
+    `_render_email_markdown` produces for stdlib email.Message."""
+    parts: list[str] = ["## Email metadata", ""]
+    header_lines: list[tuple[str, str]] = []
+    for label, getter in (
+        ("From", "sender"), ("To", "to"), ("Cc", "cc"),
+        ("Date", "date"), ("Subject", "subject"),
+    ):
+        raw = getattr(msg, getter, None)
+        if raw is None:
+            continue
+        # v1.4.6 R1 MINOR #2 fix: normalize embedded newlines /
+        # tabs to single space so a malicious header can't spoof
+        # extra markdown bullets/headings into the staged block.
+        text = _normalize_email_header_value(str(raw).strip())
+        if text:
+            header_lines.append((label, text))
+    if not header_lines:
+        header_lines.append(
+            ("Source", _normalize_email_header_value(source_name))
+        )
+    for label, text in header_lines:
+        parts.append(f"- **{label}**: {text}")
+    parts.append("")
+
+    parts.append("## Body")
+    parts.append("")
+    body = (getattr(msg, "body", "") or "").strip()
+    # v1.4.6 R1 MINOR #1 fix: utf-8-sig swallows a leading BOM.
+    # extract-msg's htmlBody is documented as Optional[bytes]; some
+    # Outlook versions emit a UTF-8 BOM at the top of the html part.
+    # Without -sig, the BOM survives as a stray U+FEFF in the staged
+    # markdown.
+    html_body = (getattr(msg, "htmlBody", None) or b"")
+    if isinstance(html_body, bytes):
+        try:
+            html_body = html_body.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            html_body = html_body.decode("latin-1", errors="replace")
+    if body:
+        parts.append(body.rstrip())
+    elif html_body and html_body.strip():
+        h = _HTMLToMarkdown()
+        h.feed(html_body)
+        h.close()
+        rendered_html = h.render().rstrip()
+        # v1.4.6 R1 MAJOR #3 parity: empty-render → placeholder.
+        if rendered_html.strip():
+            parts.append(rendered_html)
+        else:
+            parts.append("_(no readable body — encrypted, malformed, or "
+                         "empty)_")
+    else:
+        parts.append("_(no readable body — encrypted, malformed, or "
+                     "empty)_")
+    parts.append("")
+
+    attachments = list(getattr(msg, "attachments", []) or [])
+    if attachments:
+        parts.append("## Attachments")
+        parts.append("")
+        for att in attachments:
+            fname = (
+                getattr(att, "longFilename", None)
+                or getattr(att, "shortFilename", None)
+                or "(unnamed)"
+            )
+            data = getattr(att, "data", b"") or b""
+            size = len(data) if isinstance(data, (bytes, bytearray)) else 0
+            # extract-msg attachments don't carry MIME content-type
+            # directly; we synthesize from the file extension.
+            ext = ""
+            if fname and "." in fname:
+                ext = fname.rsplit(".", 1)[-1].lower()
+            ctype_guess = {
+                "pdf": "application/pdf",
+                "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "gif": "image/gif",
+                "txt": "text/plain",
+                "csv": "text/csv",
+            }.get(ext, "application/octet-stream")
+            safe_fname = _normalize_email_header_value(fname)
+            parts.append(f"- {safe_fname} ({ctype_guess}, {size} bytes)")
+        parts.append("")
+    return "\n".join(parts).rstrip() + "\n"
 
 
 def _read_text(path: Path) -> str:
@@ -1642,9 +1993,13 @@ def _render_draft_manifest(
         # SourceType heuristic: "interview" anywhere in the slug → interview_transcript.
         # v1.4.5: pptx → document (presentations); html → process_note
         # (web exports / Confluence pages tend to be procedural).
+        # v1.4.6: eml/msg → email_thread (distinct evidence class —
+        # stakeholder approvals, requirement clarifications, etc.).
         slug_lower = p.target.stem.lower()
         if "interview" in slug_lower or "transcript" in slug_lower:
             stype = "interview_transcript"
+        elif p.kind in ("eml", "msg"):
+            stype = "email_thread"
         elif p.kind in ("pdf", "docx", "pptx"):
             stype = "document"
         else:
@@ -1990,10 +2345,10 @@ def _recreate_manifest(workspace: Path) -> str:
     # Known kinds the staging path emits today. v1.4.3 Codex R1 MAJOR
     # #4 fix: validate kind so a corrupted/renamed file doesn't slip
     # in with `kind=evil` and confuse downstream type heuristics.
-    # v1.4.5 adds pptx + html.
+    # v1.4.5 adds pptx + html. v1.4.6 adds eml + msg (email evidence).
     _known_kinds = {
         "pdf", "docx", "text", "xlsx", "csv", "tsv", "json",
-        "pptx", "html",
+        "pptx", "html", "eml", "msg",
     }
 
     for entry in sorted(inputs_dir.iterdir(), key=lambda p: p.name):
@@ -2065,9 +2420,12 @@ def _recreate_manifest(workspace: Path) -> str:
         # SourceType heuristic mirrors _render_draft_manifest.
         # v1.4.5 keeps pptx in the "document" bucket; html lands as
         # process_note (web exports are typically procedural docs).
+        # v1.4.6: eml/msg → email_thread (matches the staging path).
         slug_lower = entry.stem.lower()
         if "interview" in slug_lower or "transcript" in slug_lower:
             stype = "interview_transcript"
+        elif kind in ("eml", "msg"):
+            stype = "email_thread"
         elif kind in ("pdf", "docx", "pptx"):
             stype = "document"
         elif kind in ("xlsx", "csv", "tsv", "json", "html"):
@@ -3038,6 +3396,10 @@ def _convert_one(
         return _convert_pptx(p.src)
     if p.kind == "html":
         return _convert_html(p.src)
+    if p.kind == "eml":
+        return _convert_eml(p.src)
+    if p.kind == "msg":
+        return _convert_msg(p.src)
     raise ConversionFailed(f"unknown kind {p.kind!r} for {p.src.name}")
 
 
@@ -3060,6 +3422,7 @@ def _count_kinds(plans: list[SourcePlan]) -> str:
             ("xlsx", "XLSX"), ("csv", "CSV"),
             ("tsv", "TSV"), ("json", "JSON"),
             ("pptx", "PPTX"), ("html", "HTML"),
+            ("eml", "EML"), ("msg", "MSG"),
         )
         if k in counts
     )
@@ -3258,9 +3621,12 @@ def _upsert_draft_manifest(
                 # SourceType (was incorrectly demoted to `process_note`
                 # because the v1.4.5 kind addition wasn't threaded
                 # through this code path).
+                # v1.4.6: same fix forward for eml/msg → email_thread.
                 slug_lower = plan.target.stem.lower()
                 if "interview" in slug_lower or "transcript" in slug_lower:
                     stype = "interview_transcript"
+                elif plan.kind in ("eml", "msg"):
+                    stype = "email_thread"
                 elif plan.kind in ("pdf", "docx", "pptx"):
                     stype = "document"
                 else:
