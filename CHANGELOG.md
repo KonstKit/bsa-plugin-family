@@ -4,6 +4,57 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.10] — 2026-04-30
+
+**Feature: `bsa workspace {snapshot|restore|bundle}` subcommands (rec #6).**
+
+Closes lifecycle review **rec #6** (workspace state operations). Three operator-driven actions for rolling back, sharing, and transferring BSA workspaces:
+
+- **`bsa workspace snapshot`** — full-state dump (analysis/) to a timestamped tar.gz under `<workspace>/snapshots/`. Includes runtime markers, `.bak` files, lock files — suitable for rollback before a risky promote. Excludes `raw/` by default (large) unless `--include-raw`.
+- **`bsa workspace restore --from PATH [--force]`** — unpack a snapshot back into a workspace. Refuses to overwrite an existing `analysis/` unless `--force` (defends in-progress work). Validates archive members against path-traversal / absolute-path / unsafe-symlink attacks BEFORE extraction.
+- **`bsa workspace bundle [--minimal]`** — pack workspace for transfer / sharing. Drops ephemeral state (`.bsa_materials.lock`, `source_manifest.csv.bak.*`, `runtime/`, `raw/`, `__pycache__`). With `--minimal` also drops `proposals/` (canonical-only bundle suitable for handoff to a downstream operator who will re-run discovery + main-cycle).
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3` (`scripts/_bsa_cli_workspace.py` is operator tooling, not canon).
+
+### Added
+
+- **`scripts/_bsa_cli_workspace.py`** — new module. Stdlib-only (`tarfile`). Three pure helpers: `_snapshot(workspace, output, include_raw)`, `_restore(workspace, source_path, force)`, `_bundle(workspace, output, minimal)`. Plus `cmd_workspace(args)` dispatcher. All write paths atomic (tempfile + os.replace).
+- **Path-traversal hardening** in `_restore`: validates EVERY archive member before extraction. Rejects:
+  - Absolute paths (`/foo`, `C:\foo`).
+  - Parent-traversal (`..` in any path segment).
+  - Unsafe symlinks/hardlinks (absolute or escaping target).
+- **`bsa workspace` argparse subparser** in `scripts/bsa_cli.py` with three sub-actions (snapshot/restore/bundle), each with focused flags.
+- **18 new tests** in `tests/test_bsa_cli_workspace.py`: snapshot happy path, raw exclusion + inclusion, full-state pinning (.bak / runtime / lock present), custom output path, non-workspace exit-2, restore round-trip, refuse-overwrite without --force, --force clears existing, traversal/absolute/unsafe-symlink rejection, missing-source exit-2, bundle ephemeral-state exclusion, bundle --minimal proposals exclusion, bundle custom output, CLI no-action exit-2, CLI -h exit-0.
+
+### Tests
+
+Total suite: **2251 passed** (was 2224 in v1.4.9 — +27 net new: 18 base coverage + 7 R1-fix verification + 2 R2-fix verification).
+
+### Codex Review
+
+- **R1**: REQUEST CHANGES — 4 MAJOR + 3 MINOR. All 7 fixed:
+  - **MAJOR #1** (restore --force not atomic): `--force` did `shutil.rmtree(analysis_dir)` BEFORE `tar.extractall`. A mid-extract failure (corrupt archive) left the workspace half-cleared. Fix: extract to a same-filesystem staging dir FIRST, then atomic-swap `analysis/` via `os.rename` (existing → backup, staged → analysis), then purge backup on success. On any failure, restore the backup. Same-fs requirement is enforced by placing staging dir inside `<workspace>/.bsa_restore_staging.<rand>`.
+  - **MAJOR #2** (restore accepts arbitrary relative members): a crafted archive could write `.git/hooks/post-commit`, `scripts/backdoor.py`, etc. under the workspace root. Fix: every member's first path segment MUST be exactly `analysis` (not just relative-non-traversing).
+  - **MAJOR #3** (tar type filter incomplete): only symlinks/hardlinks were target-checked; FIFOs / block devices / char devices / unknown types were silently extracted. Fix: explicit allowlist `{REGTYPE, AREGTYPE, DIRTYPE, SYMTYPE, LNKTYPE}` — anything else rejected.
+  - **MAJOR #4** (path validation incomplete): POSIX absolute-path / parent-traversal checks were correct but missed Windows-native paths (`C:\foo`, `\\server\share`, backslash-as-separator), NUL bytes, empty names. Fix: centralized `_validate_archive_path(name, kind)` covers POSIX absolute, Windows drive-letter, backslash, UNC, parent-traversal, NUL, empty/whitespace. Applied to BOTH member names AND link targets.
+  - **MINOR #1** (bundle over-excludes `runtime` segment): segment-based match `seg == "runtime"` would silently drop unrelated subdirectories like `analysis/proposals/stage1/runtime/foo` if they ever existed. Fix: match only the canonical ephemeral prefixes — `analysis/runtime/` AND `analysis/discovery/runtime/`.
+  - **MINOR #2** (filename collision on second-precision timestamp): two snapshots in the same UTC second silently clobbered each other via `os.replace`. Fix: microsecond-precision timestamp + `_allocate_unique_path` counter retry (up to 64 attempts).
+  - **MINOR #3** (`--output` inside `analysis/` could include the in-progress `.tmp` archive in its own walk): silent recursion. Fix: skip `tmp_path.resolve()` and `out_path.resolve()` paths in the file-walk loop.
+- **7 new tests** for R1 fixes:
+  * test_restore_atomic_force_preserves_existing_on_failure (MAJOR #1)
+  * test_restore_rejects_member_outside_analysis_dir (MAJOR #2)
+  * test_restore_rejects_disallowed_member_types (MAJOR #3)
+  * test_restore_rejects_backslash_member (MAJOR #4)
+  * test_restore_rejects_drive_letter_member (MAJOR #4)
+  * test_bundle_does_not_overmatch_runtime_segment (MINOR #1)
+  * test_snapshot_collision_safe_filenames (MINOR #2)
+- **R2**: REQUEST CHANGES — 1 NEW MAJOR. Fixed:
+  - **NEW MAJOR**: type allowlist included SYMTYPE/LNKTYPE → an archive could ship `analysis` itself as a SYMTYPE with link target `.` (workspace root). The `_validate_archive_path` accepted `.` as a valid relative path → restore would create `analysis -> .` inside workspace, escaping the boundary AND creating a self-referential infinite loop. Two-layer fix: (a) reject the root `analysis` member when it's not a directory (`if member.name == "analysis" and not member.isdir(): raise`); (b) reject any link target that's `.`, `./`, or empty (self-referential); (c) post-extract defense-in-depth `staged_analysis.is_dir() and not staged_analysis.is_symlink()` check before swap.
+- **2 new tests** for R2 fix:
+  * test_restore_rejects_root_analysis_as_symlink (NEW MAJOR — root-level boundary escape)
+  * test_restore_rejects_self_ref_link_target (NEW MAJOR — `.` as link target inside members)
+- **R3**: APPROVE — R2 fix verified at three layers (root-`analysis`-not-dir reject, link-target self-ref reject, post-extract is_dir-not-symlink check). `TarInfo.isdir()` correctly distinguishes DIRTYPE from SYMTYPE/REGTYPE; `Path("./").parts == ()` correctly catches the dot-slash case; check-to-rename race not a real regression given private staging dir.
+
 ## [v1.4.9] — 2026-04-30
 
 **Feature: unified idempotency between Python + shell import drivers (rec #5).**

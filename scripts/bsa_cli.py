@@ -1254,6 +1254,94 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     p_mat.set_defaults(func=cmd_materials)
 
+    # v1.4.10 (closes lifecycle review rec #6): workspace
+    # snapshot/restore/bundle subcommands. Stdlib-only (tarfile).
+    from scripts._bsa_cli_workspace import cmd_workspace as _cmd_workspace
+    p_ws = subparsers.add_parser(
+        "workspace",
+        help=(
+            "Workspace state operations: snapshot (full dump), "
+            "restore (unpack snapshot), bundle (transfer-ready). "
+            "v1.4.10 — closes lifecycle review rec #6."
+        ),
+    )
+    p_ws_sub = p_ws.add_subparsers(
+        dest="ws_action", required=True, metavar="{snapshot,restore,bundle}",
+    )
+    # --- snapshot ----
+    p_ws_snap = p_ws_sub.add_parser(
+        "snapshot",
+        help=(
+            "Dump the WHOLE workspace state (analysis/) to a "
+            "timestamped tar.gz under <workspace>/snapshots/. "
+            "Includes runtime markers, .bak files, lock files — "
+            "full state suitable for rollback. Excludes raw/ unless "
+            "--include-raw."
+        ),
+    )
+    p_ws_snap.add_argument(
+        "--output", "-o", default=None,
+        help=(
+            "Override output path. Default: "
+            "<workspace>/snapshots/snapshot-<UTC>.tar.gz"
+        ),
+    )
+    p_ws_snap.add_argument(
+        "--include-raw", action="store_true",
+        help=(
+            "Include analysis/proposals/stage1/raw/ in the snapshot. "
+            "Default: skip (raw originals can be heavy on call-data "
+            "engagements)."
+        ),
+    )
+    # --- restore ----
+    p_ws_restore = p_ws_sub.add_parser(
+        "restore",
+        help=(
+            "Unpack a snapshot tar.gz back into the workspace. "
+            "Refuses if workspace already has analysis/ unless "
+            "--force. Validates archive members against path-"
+            "traversal attacks before extraction."
+        ),
+    )
+    p_ws_restore.add_argument(
+        "--from", dest="from_path", required=True,
+        help="Path to the snapshot tar.gz to restore.",
+    )
+    p_ws_restore.add_argument(
+        "--force", action="store_true",
+        help=(
+            "Overwrite existing analysis/ in the target workspace. "
+            "Default: refuse (defends in-progress work)."
+        ),
+    )
+    # --- bundle ----
+    p_ws_bundle = p_ws_sub.add_parser(
+        "bundle",
+        help=(
+            "Pack workspace for transfer / sharing — drops ephemeral "
+            "state (.bsa_materials.lock, .bak files, runtime/, raw/, "
+            "__pycache__). With --minimal also drops proposals/ "
+            "(canonical-only)."
+        ),
+    )
+    p_ws_bundle.add_argument(
+        "--output", "-o", default=None,
+        help=(
+            "Override output path. Default: "
+            "<workspace>/snapshots/bundle-<UTC>[-minimal].tar.gz"
+        ),
+    )
+    p_ws_bundle.add_argument(
+        "--minimal", action="store_true",
+        help=(
+            "Also exclude analysis/proposals/* — produces a canonical-"
+            "only bundle suitable for handoff to a downstream operator "
+            "who will re-run discovery + main-cycle from canonical."
+        ),
+    )
+    p_ws.set_defaults(func=_cmd_workspace)
+
     args = parser.parse_args(argv)
     return args.func(args)
 
