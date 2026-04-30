@@ -431,5 +431,77 @@ def test_url_encoded_path_decoded(tmp_path: Path) -> None:
     assert res.returncode == 0
 
 
+# ---- v1.4.11 hotfix — default-scan coverage gap ---------------------
+
+
+def test_default_scan_includes_commands_md(tmp_path: Path) -> None:
+    """v1.4.11 hotfix: pre-fix `_default_scan_paths()` only recursed
+    `skills/**/*.md` + top-level + ONE level of governance/docs.
+    `commands/*.md` was completely missed → CI gate false-clean for
+    7 command files in this repo. Pin: a broken link in
+    `commands/<foo>.md` MUST be flagged."""
+    repo = _make_fake_repo(tmp_path)
+    (repo / "commands").mkdir()
+    (repo / "commands" / "bsa-stage.md").write_text(
+        "[broken-link](missing.md)\n", encoding="utf-8",
+    )
+    res = _run(f"--root={repo}")
+    assert res.returncode == 1, (
+        f"v1.4.11 must scan commands/*.md; got: {res.stdout!r}"
+    )
+    assert "commands/bsa-stage.md" in res.stdout
+    assert "missing.md" in res.stdout
+
+
+def test_default_scan_includes_nested_docs(tmp_path: Path) -> None:
+    """v1.4.11 hotfix: pre-fix only scanned `docs/*.md` (one level).
+    `docs/retros/sprint.md`, `docs/cookbook/*.md` (19 files in this
+    repo) were missed. Pin: a broken link in `docs/<sub>/foo.md`
+    MUST be flagged."""
+    repo = _make_fake_repo(tmp_path)
+    (repo / "docs" / "retros").mkdir()
+    (repo / "docs" / "retros" / "sprint.md").write_text(
+        "[broken](missing.md)\n", encoding="utf-8",
+    )
+    res = _run(f"--root={repo}")
+    assert res.returncode == 1, (
+        f"v1.4.11 must scan docs/<sub>/*.md; got: {res.stdout!r}"
+    )
+    assert "docs/retros/sprint.md" in res.stdout
+
+
+def test_default_scan_includes_nested_governance(tmp_path: Path) -> None:
+    """v1.4.11 hotfix: same gap for `governance/<sub>/*.md`.
+    No nested governance docs exist in the repo today, but the
+    coverage symmetry matters for future additions."""
+    repo = _make_fake_repo(tmp_path)
+    (repo / "governance" / "retros").mkdir()
+    (repo / "governance" / "retros" / "review.md").write_text(
+        "[broken](missing.md)\n", encoding="utf-8",
+    )
+    res = _run(f"--root={repo}")
+    assert res.returncode == 1
+    assert "governance/retros/review.md" in res.stdout
+
+
+def test_default_scan_still_excludes_node_modules_in_new_dirs(
+    tmp_path: Path,
+) -> None:
+    """v1.4.11 hotfix: extending recursion to commands/docs/governance
+    must NOT also pick up vendored content (node_modules/) inside
+    those dirs."""
+    repo = _make_fake_repo(tmp_path)
+    nm = repo / "docs" / "node_modules" / "vendored"
+    nm.mkdir(parents=True)
+    (nm / "README.md").write_text(
+        "[broken-internal](does-not-exist)\n", encoding="utf-8",
+    )
+    res = _run(f"--root={repo}")
+    assert res.returncode == 0, (
+        f"node_modules in newly-recursed dirs must still be excluded; "
+        f"got: {res.stdout!r}"
+    )
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

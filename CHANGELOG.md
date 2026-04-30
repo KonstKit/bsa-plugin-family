@@ -4,6 +4,46 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.11] — 2026-04-30
+
+**Hotfix: `validate_crossrefs.py` default-scan coverage gap (v1.4.8 P1 follow-up).**
+
+Codex-flagged P1 (confidence 0.99) coverage hole in v1.4.8: `_default_scan_paths()` only recursed `skills/**/*.md` + top-level `*.md` + ONE level of `governance/*.md` and `docs/*.md`. The CI `validate-crossrefs` job called the validator with that default set — so broken markdown links in:
+- `commands/*.md` (**7 files** in this repo: bsa-audit / bsa-dev-handoff / bsa-handoff / bsa-promote / bsa-stage / bsa-start / bsa-status)
+- `docs/cookbook/*.md` + `docs/retros/*.md` + any future nested docs (**19 files** today)
+- Any future nested `governance/<sub>/*.md`
+
+…were never validated. CI gate was false-clean for 26 files. Reproduced via temp-repo with broken refs in `commands/bsa-stage.md` + `docs/retros/sprint.md`: pre-fix scan returned 0 violations / scanned 1 file.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3`.
+
+### Changed
+
+- **`scripts/validate_crossrefs.py:_default_scan_paths()`** now recurses ALL operator-facing markdown trees with the same vendored-path exclusion list (`node_modules/`, `.git/`, `__pycache__/`, `.pytest_cache/`, `.venv/`, `venv/`, `site-packages/`):
+  - `skills/**/*.md` (was: same — unchanged)
+  - `commands/**/*.md` (was: NOT scanned — coverage gap)
+  - `docs/**/*.md` (was: one level only — missed 19 files)
+  - `governance/**/*.md` (was: one level only — symmetry fix for future nested additions)
+  - top-level `*.md` (unchanged: README / CHANGELOG / INSTALL / CONTRIBUTING / SECURITY)
+
+### Added
+
+- **4 regression-guard tests** in `tests/test_validate_crossrefs.py`:
+  * test_default_scan_includes_commands_md (commands/*.md scanned)
+  * test_default_scan_includes_nested_docs (docs/<sub>/*.md scanned)
+  * test_default_scan_includes_nested_governance (governance/<sub>/*.md scanned)
+  * test_default_scan_still_excludes_node_modules_in_new_dirs (node_modules/ inside newly-recursed dirs still excluded)
+
+### Tests
+
+Total suite: **2255 passed** (was 2251 in v1.4.10 — +4 net new for coverage-gap regression guards).
+
+Real-repo scan: **143 → 169 files scanned** (+26: 7 commands + 19 nested docs). 0 violations — the unscanned files happened to be clean, but CI gate was structurally false-clean before this fix.
+
+### Codex Review
+
+_Inherits the v1.4.8 R3 APPROVE — this hotfix is a coverage extension of the same validator with no logic change to parsing / resolution / strictness._
+
 ## [v1.4.10] — 2026-04-30
 
 **Feature: `bsa workspace {snapshot|restore|bundle}` subcommands (rec #6).**
