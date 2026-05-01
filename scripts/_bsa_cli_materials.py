@@ -140,6 +140,62 @@ class ConversionFailed(RuntimeError):
     on this specific file (corrupt PDF, encrypted DOCX, etc.)."""
 
 
+# v1.4.13 audit P2 #1 fix: shared truncation footer template + helper.
+# `--max-output-chars` was previously applied AFTER `_convert_one`
+# returned the full body — a small zip-bomb-style pptx that decompresses
+# to hundreds of MB still forced the extractor to build + join the full
+# string before truncation. The streaming-aware extractors (pptx, html,
+# eml, msg) now stop accumulating once cumulative output crosses the
+# cap and emit this footer in-line. Pdf/docx/image still rely on the
+# post-conversion safety net (their library-side parse already
+# materializes the document in memory regardless).
+_OUTPUT_CAP_FOOTER_TEMPLATE = (
+    "\n\n_[bsa materials: body truncated at {cap:,} chars by "
+    "--max-output-chars; raise the cap (default 5_000_000) OR pre-trim "
+    "the source]_\n"
+)
+
+
+def _output_cap_footer(cap: int) -> str:
+    """Render the canonical truncation footer used by streaming
+    extractors AND by the post-conversion safety net in cmd_materials.
+
+    Single source of truth so `_plan_conversions` can parse the cap
+    value back out of staged files (v1.4.13 audit P2 #2 fix —
+    --restage-changed must detect when the operator raises the cap)."""
+    return _OUTPUT_CAP_FOOTER_TEMPLATE.format(cap=cap)
+
+
+# Regex used by `_plan_conversions` to recover the cap a previously-
+# staged file was truncated at. Match BOTH the streaming variant
+# (emitted from inside the extractor) AND the post-conversion variant
+# (emitted from cmd_materials) — both render via `_output_cap_footer`
+# so a single pattern suffices. The cap is captured with optional `_`
+# digit separators (Python int format(cap, ',') uses comma; we accept
+# either comma or `_` separators for robustness across Python versions).
+_OUTPUT_CAP_FOOTER_RE = re.compile(
+    r"_\[bsa materials: body truncated at ([\d,_]+) chars by "
+    r"--max-output-chars;"
+)
+# Likewise for the OCR-page cap footer rendered inside `_convert_image`.
+_OCR_PAGE_CAP_FOOTER_RE = re.compile(
+    r"_\[bsa materials: OCR truncated — (\d+) of (\d+) pages NOT "
+    r"processed \(cap=--ocr-max-pages=(\d+)\)\."
+)
+
+
+def _parse_int_with_separators(s: str) -> Optional[int]:
+    """Parse '5,000,000' or '5_000_000' or '5000000' → int. Returns
+    None on failure so callers can fall back to a default."""
+    cleaned = s.replace(",", "").replace("_", "")
+    if not cleaned.isdigit():
+        return None
+    try:
+        return int(cleaned)
+    except ValueError:
+        return None
+
+
 @dataclass
 class SourcePlan:
     """One planned conversion. Holds what we'd do at --commit time."""
@@ -303,7 +359,9 @@ def _convert_docx(path: Path) -> str:
     return "\n\n".join(parts).strip() + "\n"
 
 
-def _convert_pptx(path: Path) -> str:
+def _convert_pptx(
+    path: Path, *, max_output_chars: Optional[int] = None
+) -> str:
     """Extract text from a PPTX deck using python-pptx.
 
     v1.4.5 (closes lifecycle review rec #3 first half). Output shape:
@@ -318,6 +376,13 @@ def _convert_pptx(path: Path) -> str:
     `python-pptx` lazy-imported (matches pdf/docx pattern). Raises
     `ConversionUnavailable` if the dep is missing; `ConversionFailed`
     on per-file errors (corrupt zip, encrypted, etc.).
+
+    v1.4.13 audit P2 #1 fix: when `max_output_chars` is set, stop
+    appending slides once the cumulative chunk size crosses the cap
+    and emit the canonical truncation footer in-line. Pre-fix, a
+    small crafted pptx that decompressed to hundreds of MB of text
+    forced the extractor to build the full body BEFORE the post-
+    conversion safety net trimmed it.
     """
     try:
         from pptx import Presentation  # type: ignore[import-not-found]
@@ -335,8 +400,18 @@ def _convert_pptx(path: Path) -> str:
         ) from exc
 
     chunks: list[str] = []
+    chunks_size = 0  # v1.4.13: cumulative size for streaming cap.
+    truncated_during_extraction = False
     visible_idx = 0
     for raw_idx, slide in enumerate(prs.slides, start=1):
+        # v1.4.13 audit P2 #1 fix: stop accumulating when cap reached
+        # BETWEEN slides.
+        if (
+            max_output_chars is not None
+            and chunks_size >= max_output_chars
+        ):
+            truncated_during_extraction = True
+            break
         # Skip hidden slides — `<p:sld show="0">` in OOXML.
         # `slide.element.attrib` is a dict-like; default-visible if
         # attr absent. v1.4.5 R1 MAJOR #1 fix: OOXML booleans accept
@@ -416,16 +491,47 @@ def _convert_pptx(path: Path) -> str:
             slide_section.append("### Speaker notes")
             slide_section.append("")
             slide_section.append(notes_text)
-        chunks.append("\n".join(slide_section))
+        slide_chunk = "\n".join(slide_section)
+        # v1.4.13 R2 NEW MAJOR #1 fix: cap WITHIN a single slide too.
+        # Pre-fix, between-slide check caught only multi-slide overflow;
+        # a single oversized slide (e.g., a 200MB-text shape from an
+        # exfiltrated dump) still emitted full body. Clip the slide
+        # chunk to the remaining budget if needed.
+        if max_output_chars is not None:
+            remaining = max_output_chars - chunks_size
+            # Reserve 2 chars for the "\n\n" join overhead between
+            # this chunk and any prior chunks.
+            join_overhead = 2 if chunks else 0
+            effective_room = remaining - join_overhead
+            if effective_room <= 0:
+                # No room — don't even append. Mark truncated and stop.
+                truncated_during_extraction = True
+                break
+            if len(slide_chunk) > effective_room:
+                slide_chunk = slide_chunk[:effective_room]
+                truncated_during_extraction = True
+        chunks.append(slide_chunk)
+        chunks_size += len(slide_chunk) + 2  # account for "\n\n" join
+        # If we just clipped, no point looking at more slides.
+        if truncated_during_extraction:
+            break
     if not chunks:
         # All slides hidden OR empty deck — emit a single line so the
         # staged file isn't 0 bytes (downstream tools that read the
         # provenance comment expect SOME body).
         return "_(no visible slides)_\n"
-    return "\n\n".join(chunks).strip() + "\n"
+    body = "\n\n".join(chunks).strip() + "\n"
+    if truncated_during_extraction and max_output_chars is not None:
+        body = (
+            body.rstrip()
+            + _output_cap_footer(max_output_chars)
+        )
+    return body
 
 
-def _convert_html(path: Path) -> str:
+def _convert_html(
+    path: Path, *, max_output_chars: Optional[int] = None
+) -> str:
     """Convert an HTML / HTM file to analyst-grep-friendly markdown.
 
     v1.4.5 (closes lifecycle review rec #3 first half). Stdlib only
@@ -460,7 +566,20 @@ def _convert_html(path: Path) -> str:
     #       characters. cp1252 is a strict superset of latin-1 for
     #       most byte values; safer fallback for legacy web exports.
     #   (5) latin-1 — final no-fail fallback.
-    raw_bytes = path.read_bytes()
+    # v1.4.13 audit P1 #1 fix: a per-file OSError (permission denied,
+    # vanished file, EIO on a flaky FS) used to escape `_convert_html`
+    # because `path.read_bytes()` was OUTSIDE the extractor's try/except.
+    # The CLI outer loop only caught `ConversionFailed`/`Unavailable`,
+    # so an unreadable .html aborted the entire batch with a traceback
+    # — no `source_manifest.csv` written, orphan staged files left
+    # behind. Wrap the read in try/except OSError → ConversionFailed
+    # so the outer loop demotes the failure to a per-file skip.
+    try:
+        raw_bytes = path.read_bytes()
+    except OSError as exc:
+        raise ConversionFailed(
+            f"could not read {path.name}: {exc}"
+        ) from exc
     text: Optional[str] = None
     sniffed_codec: Optional[str] = None
     # (1) BOM sniff.
@@ -492,7 +611,10 @@ def _convert_html(path: Path) -> str:
             f"could not decode {path.name} as utf-8 / cp1252 / "
             f"latin-1; pre-convert externally before re-staging"
         )
-    parser = _HTMLToMarkdown()
+    # v1.4.13 audit P2 #1 fix: pass cap into the parser so accumulation
+    # stops at the cap rather than building the full body first and
+    # truncating after.
+    parser = _HTMLToMarkdown(max_output_chars=max_output_chars)
     try:
         parser.feed(text)
         parser.close()
@@ -528,7 +650,9 @@ class _HTMLToMarkdown:
     _EMPHASIS_OPEN = {"strong": "**", "b": "**", "em": "*", "i": "*"}
     _CODE_OPEN = {"code": "`"}
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, max_output_chars: Optional[int] = None
+    ) -> None:
         from html.parser import HTMLParser  # lazy
         self._buf: list[str] = []
         self._skip_depth = 0       # >0 inside <script> / <style>
@@ -540,6 +664,13 @@ class _HTMLToMarkdown:
         self._in_title = 0
         self._has_h1 = False
         self._heading_level = 0    # >0 while inside hN
+        # v1.4.13 audit P2 #1 fix: streaming-cap fields. `_buf_size`
+        # tracks the cumulative length of strings appended to `_buf`
+        # so we can short-circuit further data appends once the cap
+        # is hit. `_truncated` triggers the footer in render().
+        self._max_output_chars: Optional[int] = max_output_chars
+        self._buf_size = 0
+        self._truncated = False
 
         # Subclass HTMLParser via a lightweight inner class so we
         # don't need a separate top-level class for the parser's
@@ -626,37 +757,37 @@ class _HTMLToMarkdown:
             self._flush_link(drop_empty=True)
         if tag == "pre":
             self._in_pre += 1
-            self._buf.append("\n\n```\n")
+            self._emit("\n\n```\n")
             return
         if tag == "br":
-            self._buf.append("\n")
+            self._emit("\n")
             return
         if tag in self._HEADING_TAGS:
             level = self._HEADING_TAGS[tag]
             if level == 1:
                 self._has_h1 = True
-            self._buf.append("\n\n" + "#" * level + " ")
+            self._emit("\n\n" + "#" * level + " ")
             self._heading_level = level
             return
         if tag in ("ul", "ol"):
             self._list_stack.append(tag)
-            self._buf.append("\n")
+            self._emit("\n")
             return
         if tag == "li":
-            self._buf.append("\n- ")
+            self._emit("\n- ")
             return
         if tag == "a":
             self._link_href = attrs.get("href") or ""
             self._link_text_buf = []
             return
         if tag in self._EMPHASIS_OPEN and self._heading_level == 0:
-            self._buf.append(self._EMPHASIS_OPEN[tag])
+            self._emit(self._EMPHASIS_OPEN[tag])
             return
         if tag in self._CODE_OPEN and self._in_pre == 0:
-            self._buf.append(self._CODE_OPEN[tag])
+            self._emit(self._CODE_OPEN[tag])
             return
         if tag in self._BLOCK_TAGS:
-            self._buf.append("\n\n")
+            self._emit("\n\n")
             return
         # Unknown / inline / structural tag → no markup; data passes
         # through.
@@ -676,11 +807,11 @@ class _HTMLToMarkdown:
         text = "".join(self._link_text_buf).strip()
         href = self._link_href or ""
         if text and href:
-            self._buf.append(f"[{text}]({href})")
+            self._emit(f"[{text}]({href})")
         elif text:
-            self._buf.append(text)
+            self._emit(text)
         elif href and not drop_empty:
-            self._buf.append(f"<{href}>")
+            self._emit(f"<{href}>")
         # drop_empty=True + (no text) + (any href) → emit nothing.
         # The block tag's content lands at body level immediately
         # after this flush.
@@ -706,16 +837,16 @@ class _HTMLToMarkdown:
         if tag == "pre":
             if self._in_pre > 0:
                 self._in_pre -= 1
-                self._buf.append("\n```\n\n")
+                self._emit("\n```\n\n")
             return
         if tag in self._HEADING_TAGS:
-            self._buf.append("\n")
+            self._emit("\n")
             self._heading_level = 0
             return
         if tag in ("ul", "ol"):
             if self._list_stack:
                 self._list_stack.pop()
-            self._buf.append("\n")
+            self._emit("\n")
             return
         if tag == "li":
             return
@@ -723,14 +854,61 @@ class _HTMLToMarkdown:
             self._flush_link()
             return
         if tag in self._EMPHASIS_OPEN and self._heading_level == 0:
-            self._buf.append(self._EMPHASIS_OPEN[tag])
+            self._emit(self._EMPHASIS_OPEN[tag])
             return
         if tag in self._CODE_OPEN and self._in_pre == 0:
-            self._buf.append(self._CODE_OPEN[tag])
+            self._emit(self._CODE_OPEN[tag])
             return
         if tag in self._BLOCK_TAGS:
-            self._buf.append("\n\n")
+            self._emit("\n\n")
             return
+
+    def _emit(self, s: str) -> bool:
+        """v1.4.13 audit P2 #1 fix: cap-aware append into `_buf`.
+
+        Returns False once the streaming cap (`_max_output_chars`)
+        is reached; subsequent calls are silent no-ops so the parser
+        finishes without growing the body further. `render()` checks
+        `_truncated` to decide whether to emit the cap footer."""
+        if self._truncated:
+            return False
+        if self._max_output_chars is None:
+            self._buf.append(s)
+            self._buf_size += len(s)
+            return True
+        room = self._max_output_chars - self._buf_size
+        if room <= 0:
+            self._truncated = True
+            return False
+        if len(s) > room:
+            self._buf.append(s[:room])
+            self._buf_size = self._max_output_chars
+            self._truncated = True
+            return False
+        self._buf.append(s)
+        self._buf_size += len(s)
+        return True
+
+    @staticmethod
+    def _normalize_unicode_ws(data: str) -> str:
+        """Collapse runs of any Unicode whitespace (ASCII space/tab/CR/
+        LF, NBSP U+00A0, en/em/punctuation/narrow/medium math/
+        ideographic spaces) into a single ASCII space. Then strip
+        zero-width separators (U+200B..U+200D + BOM U+FEFF) entirely.
+
+        v1.4.12 audit MINOR #1 originally inlined this in `_on_data`
+        only; v1.4.13 audit P3 fix extracts so the title-fragment and
+        link-text buffers ALSO get normalized before they're flushed.
+        Pre-fix, `<title>Hello&nbsp;World</title>` rendered an H1 with
+        a literal NBSP, and `<a>Hello&nbsp;World</a>` kept the NBSP
+        inside the link text — both visible to analyst grep, defeating
+        the advertised consistency fix."""
+        normalized = re.sub(
+            "[ \t\r\n  -   　]+",
+            " ",
+            data,
+        )
+        return re.sub("[​-‍﻿]", "", normalized)
 
     def _on_data(self, data: str) -> None:
         if self._skip_depth > 0:
@@ -740,41 +918,37 @@ class _HTMLToMarkdown:
             # fragment) so inter-tag whitespace is preserved
             # (`<title>A <b>B</b> C</title>` → "A B C", not "AB C").
             # render() does the final whitespace-normalize + strip.
+            # v1.4.13 audit P3 fix: pre-normalize each fragment so
+            # NBSP / em-space survive only as ASCII space — render()'s
+            # post-normalizer is ASCII-only.
+            fragment = self._normalize_unicode_ws(data)
             if self._title_text is None:
-                self._title_text = data
+                self._title_text = fragment
             else:
-                self._title_text = self._title_text + data
+                self._title_text = self._title_text + fragment
             return
         if self._in_pre > 0:
-            self._buf.append(data)
+            self._emit(data)
             return
         # Capture link text into a sub-buffer so we can render
         # `[text](href)` on </a>.
+        # v1.4.13 audit P3 fix: normalize before buffering so the
+        # rendered `[text](href)` doesn't keep raw NBSP / em-space
+        # inside the visible link label.
         if self._link_text_buf is not None:
-            self._link_text_buf.append(data)
+            self._link_text_buf.append(self._normalize_unicode_ws(data))
             return
-        # Collapse whitespace within text runs (multiple spaces /
-        # tabs / newlines → single space). Markdown structure relies
-        # on the explicit `\n` injections from tag handlers.
-        # v1.4.12 audit MINOR #1 fix: also normalize Unicode whitespace
-        # (NBSP  , en/em/punctuation spaces  - , narrow
-        # NBSP  , medium math space  , ideographic space
-        # 　) AND strip zero-width separators (​-‍,
-        # ﻿) outside <pre>. ASCII-only collapse let NBSP /
-        # em-space survive into the staged markdown, hurting analyst
-        # grep consistency.
-        normalized = re.sub(
-            r"[ \t\r\n  -   　]+",
-            " ",
-            data,
-        )
-        # Strip zero-width separators entirely (no replacement).
-        normalized = re.sub(r"[​-‍﻿]", "", normalized)
+        # Collapse whitespace within text runs AND normalize Unicode
+        # whitespace + strip zero-width separators outside <pre>.
+        # v1.4.12 audit MINOR #1: original inline impl. v1.4.13 audit
+        # P3 fix: shared via `_normalize_unicode_ws` helper so the
+        # title and link-text branches above use the SAME logic.
+        normalized = self._normalize_unicode_ws(data)
         if normalized.strip():
-            self._buf.append(normalized)
+            self._emit(normalized)
         elif self._buf and not self._buf[-1].endswith((" ", "\n")):
             # Preserve a single space between adjacent inline runs.
-            self._buf.append(" ")
+            self._emit(" ")
 
     def render(self) -> str:
         body = "".join(self._buf)
@@ -792,10 +966,22 @@ class _HTMLToMarkdown:
         # (markdown convention — paragraph break is exactly one blank).
         body = re.sub(r"\n{3,}", "\n\n", body)
         # Strip leading/trailing whitespace; ensure trailing newline.
-        return body.strip() + "\n"
+        result = body.strip() + "\n"
+        # v1.4.13 audit P2 #1 fix: emit truncation footer if streaming
+        # cap was reached during accumulation. Pre-fix, truncation was
+        # only applied in cmd_materials AFTER the full body had been
+        # built — defeating the memory/resource-protection claim for
+        # zip-bomb-style HTML inputs.
+        if self._truncated and self._max_output_chars is not None:
+            result = result.rstrip() + _output_cap_footer(
+                self._max_output_chars
+            )
+        return result
 
 
-def _convert_eml(path: Path) -> str:
+def _convert_eml(
+    path: Path, *, max_output_chars: Optional[int] = None
+) -> str:
     """Convert an .eml (RFC 822 / MIME) email into the unified
     bsa-materials email markdown shape.
 
@@ -842,10 +1028,14 @@ def _convert_eml(path: Path) -> str:
         raise ConversionFailed(
             f"email parser failed on {path.name}: {exc}"
         ) from exc
-    return _render_email_markdown(msg, path.name)
+    return _render_email_markdown(
+        msg, path.name, max_output_chars=max_output_chars
+    )
 
 
-def _convert_msg(path: Path) -> str:
+def _convert_msg(
+    path: Path, *, max_output_chars: Optional[int] = None
+) -> str:
     """Convert an Outlook .msg (Compound File Binary Format) email
     into the unified bsa-materials email markdown shape.
 
@@ -880,7 +1070,9 @@ def _convert_msg(path: Path) -> str:
     # an arbitrary exception that aborts the whole batch.
     try:
         try:
-            out = _render_email_markdown_from_msg(msg, path.name)
+            out = _render_email_markdown_from_msg(
+                msg, path.name, max_output_chars=max_output_chars
+            )
         except Exception as exc:
             raise ConversionFailed(
                 f"extract-msg render failed on {path.name}: {exc}"
@@ -904,9 +1096,19 @@ def _normalize_email_header_value(value: str) -> str:
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
 
-def _render_email_markdown(msg, source_name: str) -> str:
+def _render_email_markdown(
+    msg, source_name: str, *, max_output_chars: Optional[int] = None
+) -> str:
     """Shared renderer for stdlib `email.Message`. Returns the
-    metadata + body + attachments markdown block."""
+    metadata + body + attachments markdown block.
+
+    v1.4.13 audit P2 #1 fix: when `max_output_chars` is set, cap the
+    body section (the variable-length part) by truncating it before
+    appending the attachments block + footer. The header / attachments
+    blocks are bounded by their input size so caps there are
+    redundant; bounding the body alone keeps the high-signal
+    evidence-binding sections (sender, recipients, attachment list)
+    intact even when the body is huge."""
     parts: list[str] = ["## Email metadata", ""]
     # Stdlib email.policy.default returns Header objects whose str()
     # gives the decoded text. Empty header → empty string.
@@ -958,9 +1160,75 @@ def _render_email_markdown(msg, source_name: str) -> str:
         "text/vcard": "vcard",
     }
     consumed_as_body: set[int] = set()  # id() of parts used as body
+    # v1.4.13 audit P1 #2 fix: forwarded-email handling. A
+    # `message/rfc822` MIME part with `Content-Disposition: attachment`
+    # (or with a filename — typical of "Forward as attachment" exports)
+    # IS a leaf-of-record for evidence purposes — the analyst needs
+    # the .eml filename, the `message/rfc822` content-type marker, and
+    # the inner email's container metadata. Pre-fix, `msg.walk()` saw
+    # the rfc822 container as multipart and `continue`'d past it,
+    # then walked its children — so a forwarded `forwarded.eml` lost
+    # its filename / type / size and the inner email's text/plain leaf
+    # was misclassified as a generic part with no provenance back to
+    # the forwarded container.
+    #
+    # Fix shape:
+    #   1. Pre-scan to find rfc822 multipart containers presented as
+    #      attachments. Record them as attachments (filename, type,
+    #      serialized-size) AND collect every descendant id() into
+    #      `forwarded_descendants` so the main walk skips them
+    #      (otherwise the inner text/plain would still leak into the
+    #      outer email's `other_parts` bucket).
+    #   2. Main loop skips parts in `forwarded_descendants`.
+    forwarded_descendants: set[int] = set()
+    for container in msg.walk():
+        if container.get_content_type() != "message/rfc822":
+            continue
+        if not container.is_multipart():
+            continue
+        c_disp = (container.get_content_disposition() or "").lower()
+        c_fname = container.get_filename()
+        if not (c_disp == "attachment" or c_fname):
+            # Inline-rendered rfc822 (rare but valid — e.g., quoted
+            # forward inside multipart/related). Don't intercept;
+            # let the main walk treat its children normally.
+            continue
+        # Compute size by serializing the inner email payload. The
+        # email package gives us `get_payload()` which returns a
+        # list of inner Message objects for rfc822 containers.
+        size = 0
+        try:
+            inner = container.get_payload()
+            if isinstance(inner, list):
+                for m in inner:
+                    try:
+                        size += len(m.as_bytes())
+                    except Exception:
+                        pass
+        except Exception:
+            size = 0
+        attachments.append(
+            (
+                c_fname or "(forwarded message).eml",
+                "message/rfc822",
+                size,
+            )
+        )
+        # Mark every descendant of this rfc822 container so the main
+        # walk doesn't double-count its children.
+        for desc in container.walk():
+            if desc is not container:
+                forwarded_descendants.add(id(desc))
+
     for part in msg.walk():
         ctype = part.get_content_type()
-        # Skip multipart containers (no leaf content).
+        # v1.4.13 audit P1 #2: skip parts inside an rfc822 attachment
+        # we already recorded above.
+        if id(part) in forwarded_descendants:
+            continue
+        # Skip multipart containers (no leaf content). The rfc822-
+        # attachment case above already accounted for those that
+        # carry container metadata worth preserving.
         if part.is_multipart():
             continue
         disp = (part.get_content_disposition() or "").lower()
@@ -1031,6 +1299,7 @@ def _render_email_markdown(msg, source_name: str) -> str:
     parts.append("## Body")
     parts.append("")
     rendered: Optional[str] = None
+    body_truncated = False
     if plain_body is not None and plain_body.strip():
         rendered = plain_body.rstrip()
     elif html_body is not None and html_body.strip():
@@ -1039,7 +1308,10 @@ def _render_email_markdown(msg, source_name: str) -> str:
         # Single conversion path = consistent output regardless of
         # whether the analyst stages a standalone .html OR an email
         # with html body.
-        h = _HTMLToMarkdown()
+        # v1.4.13 audit P2 #1 fix: thread the body cap into the inner
+        # html→markdown pass so a 200MB-body email doesn't materialize
+        # the full body before truncation.
+        h = _HTMLToMarkdown(max_output_chars=max_output_chars)
         h.feed(html_body)
         h.close()
         rendered_html = h.render().rstrip()
@@ -1050,12 +1322,27 @@ def _render_email_markdown(msg, source_name: str) -> str:
         # what WAS in the email even though the body collapsed.
         if rendered_html.strip():
             rendered = rendered_html
+    # v1.4.13 audit P2 #1 fix: cap the plain-text body inline so a
+    # crafted email with a 500MB plain-text part doesn't materialize
+    # the entire body string in `rendered` before truncation. The
+    # html-body branch above already streams via _HTMLToMarkdown so
+    # only the plain-text path needs explicit truncation here.
+    if (
+        rendered is not None
+        and max_output_chars is not None
+        and len(rendered) > max_output_chars
+    ):
+        rendered = rendered[:max_output_chars].rstrip()
+        body_truncated = True
     if rendered is not None:
         parts.append(rendered)
     else:
         parts.append("_(no readable body — encrypted, malformed, or "
                      "empty multipart)_")
     parts.append("")
+    if body_truncated and max_output_chars is not None:
+        parts.append(_output_cap_footer(max_output_chars).strip())
+        parts.append("")
 
     # v1.4.6 R1 MAJOR #3 fix: combine attachments + inline_media into
     # a single Attachments section so an inline-image-only email
@@ -1086,10 +1373,15 @@ def _render_email_markdown(msg, source_name: str) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
-def _render_email_markdown_from_msg(msg, source_name: str) -> str:
+def _render_email_markdown_from_msg(
+    msg, source_name: str, *, max_output_chars: Optional[int] = None
+) -> str:
     """Shared renderer for `extract_msg.Message`. Adapts the distinct
     attribute API to the same metadata/body/attachments output shape
-    `_render_email_markdown` produces for stdlib email.Message."""
+    `_render_email_markdown` produces for stdlib email.Message.
+
+    v1.4.13 audit P2 #1 fix: cap the body section when
+    `max_output_chars` is set. Symmetry with `_render_email_markdown`."""
     parts: list[str] = ["## Email metadata", ""]
     header_lines: list[tuple[str, str]] = []
     for label, getter in (
@@ -1127,10 +1419,20 @@ def _render_email_markdown_from_msg(msg, source_name: str) -> str:
             html_body = html_body.decode("utf-8-sig")
         except UnicodeDecodeError:
             html_body = html_body.decode("latin-1", errors="replace")
+    body_truncated = False
     if body:
-        parts.append(body.rstrip())
+        body_text = body.rstrip()
+        # v1.4.13 audit P2 #1 fix: cap the plain-text body inline.
+        if (
+            max_output_chars is not None
+            and len(body_text) > max_output_chars
+        ):
+            body_text = body_text[:max_output_chars].rstrip()
+            body_truncated = True
+        parts.append(body_text)
     elif html_body and html_body.strip():
-        h = _HTMLToMarkdown()
+        # v1.4.13 audit P2 #1 fix: thread cap into _HTMLToMarkdown.
+        h = _HTMLToMarkdown(max_output_chars=max_output_chars)
         h.feed(html_body)
         h.close()
         rendered_html = h.render().rstrip()
@@ -1144,6 +1446,9 @@ def _render_email_markdown_from_msg(msg, source_name: str) -> str:
         parts.append("_(no readable body — encrypted, malformed, or "
                      "empty)_")
     parts.append("")
+    if body_truncated and max_output_chars is not None:
+        parts.append(_output_cap_footer(max_output_chars).strip())
+        parts.append("")
 
     attachments = list(getattr(msg, "attachments", []) or [])
     if attachments:
@@ -1407,12 +1712,25 @@ def _convert_image(
 
 
 def _read_text(path: Path) -> str:
-    """Read MD/TXT verbatim with a tolerant encoding fallback."""
+    """Read MD/TXT verbatim with a tolerant encoding fallback.
+
+    v1.4.13 audit P1 #1 fix: wrap reads in OSError → ConversionFailed
+    so an unreadable .md/.txt becomes a per-file skip instead of
+    bringing down the whole `bsa materials` batch."""
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         # Fall back to latin-1 so we never crash on byte-stream input.
-        return path.read_text(encoding="latin-1")
+        try:
+            return path.read_text(encoding="latin-1")
+        except OSError as exc:
+            raise ConversionFailed(
+                f"could not read {path.name}: {exc}"
+            ) from exc
+    except OSError as exc:
+        raise ConversionFailed(
+            f"could not read {path.name}: {exc}"
+        ) from exc
 
 
 def _convert_xlsx(path: Path, max_rows_per_table: int = _DEFAULT_MAX_ROWS_PER_TABLE) -> str:
@@ -2052,6 +2370,8 @@ def _plan_conversions(
     restage_changed: bool = False,
     ocr_enabled: bool = False,
     ocr_lang: str = "eng",
+    max_output_chars: Optional[int] = None,
+    ocr_max_pages: Optional[int] = None,
 ) -> list[SourcePlan]:
     """Build a list of SourcePlan, assigning fresh source IDs.
 
@@ -2131,7 +2451,16 @@ def _plan_conversions(
                 # changed" — operator's --ocr flag is the trigger.
                 # Also force when ocr_enabled and the staged file
                 # uses a DIFFERENT lang tag (operator switched langs).
+                # v1.4.13 audit P2 #2 fix: also detect cap-CHANGES.
+                # If the staged body shows a `--max-output-chars` OR
+                # `--ocr-max-pages` truncation footer with a smaller
+                # cap than the operator now requests, force restage so
+                # the un-truncated content gets re-extracted. Pre-fix,
+                # `--restage-changed --max-output-chars=1000` after a
+                # `--max-output-chars=100` stage was a no-op because
+                # ContentHash matched.
                 ocr_backfill_needed = False
+                cap_increase_needed = False
                 if ocr_enabled and kind == "image":
                     existing_slug = existing.get("slug") or slug
                     sid = existing["SourceID"]
@@ -2165,10 +2494,63 @@ def _plan_conversions(
                             )
                             if m_lang and m_lang.group(1) != ocr_lang:
                                 ocr_backfill_needed = True
+                        # v1.4.13 audit P2 #2 fix (image branch):
+                        # detect ocr-max-pages cap increase.
+                        if (
+                            ocr_max_pages is not None
+                            and existing_body
+                        ):
+                            m_pages = _OCR_PAGE_CAP_FOOTER_RE.search(
+                                existing_body
+                            )
+                            if m_pages:
+                                try:
+                                    prior_cap = int(m_pages.group(3))
+                                except ValueError:
+                                    prior_cap = ocr_max_pages
+                                if ocr_max_pages > prior_cap:
+                                    cap_increase_needed = True
+                # v1.4.13 audit P2 #2 fix (all kinds): detect
+                # max-output-chars cap increase. Reads any kind's
+                # staged file (not just images).
+                if (
+                    not cap_increase_needed
+                    and max_output_chars is not None
+                ):
+                    existing_slug = existing.get("slug") or slug
+                    sid = existing["SourceID"]
+                    sid_digits = sid.removeprefix("S-")
+                    existing_target = (
+                        inputs_dir
+                        / f"source_{sid_digits}_{existing_slug}.md"
+                    )
+                    if existing_target.is_file():
+                        try:
+                            existing_body = existing_target.read_text(
+                                encoding="utf-8"
+                            )
+                        except OSError:
+                            existing_body = ""
+                        if existing_body:
+                            m_cap = _OUTPUT_CAP_FOOTER_RE.search(
+                                existing_body
+                            )
+                            if m_cap:
+                                prior_cap = (
+                                    _parse_int_with_separators(
+                                        m_cap.group(1)
+                                    )
+                                )
+                                if (
+                                    prior_cap is not None
+                                    and max_output_chars > prior_cap
+                                ):
+                                    cap_increase_needed = True
                 if (
                     stored_hash
                     and stored_hash == current_hash
                     and not ocr_backfill_needed
+                    and not cap_increase_needed
                 ):
                     # Unchanged — skip cleanly. Use existing SID +
                     # slug to keep the displayed plan readable.
@@ -3277,12 +3659,22 @@ def cmd_materials(args: argparse.Namespace) -> int:
     # v1.4.7 R2 NEW MAJOR fix: also thread --ocr-lang so the planner
     # can detect a lang SWITCH (eng → rus) and force restage even
     # when the source bytes are unchanged.
+    # v1.4.13 audit P2 #2 fix: hoist cap settings up here (was: in the
+    # writer block below, after the planner ran) so we can pass them
+    # into `_plan_conversions` for cap-change detection on otherwise-
+    # unchanged sources.
+    max_output_chars_for_plan = int(
+        getattr(args, "max_output_chars", 5_000_000)
+    )
+    ocr_max_pages_for_plan = int(getattr(args, "ocr_max_pages", 50))
     plans = _plan_conversions(
         supported, inputs_dir, manifest_path, src_dir,
         force=bool(args.force),
         restage_changed=restage_changed_mode,
         ocr_enabled=bool(getattr(args, "ocr", False)),
         ocr_lang=str(getattr(args, "ocr_lang", "eng")),
+        max_output_chars=max_output_chars_for_plan,
+        ocr_max_pages=ocr_max_pages_for_plan,
     )
 
     # 3. Render preview.
@@ -3467,10 +3859,13 @@ def cmd_materials(args: argparse.Namespace) -> int:
     # that decompresses to 500MB of text) OR an OCR pass on a 100-
     # page TIFF could blow up the staged .md size. Apply a generic
     # truncation footer after every _convert_one call.
-    max_output_chars = int(getattr(args, "max_output_chars", 5_000_000))
+    # v1.4.13 audit P2 #2 fix: re-use the planner-side hoisted values
+    # so cap-change detection in `_plan_conversions` and the writer's
+    # post-conversion safety net see the SAME number.
+    max_output_chars = max_output_chars_for_plan
     # v1.4.12 audit MAJOR #3 fix: OCR per-call timeout + page cap.
     ocr_timeout_sec = int(getattr(args, "ocr_timeout_sec", 60))
-    ocr_max_pages = int(getattr(args, "ocr_max_pages", 50))
+    ocr_max_pages = ocr_max_pages_for_plan
     inputs_dir.mkdir(parents=True, exist_ok=True)
     written: list[SourcePlan] = []
     failed: list[tuple[SourcePlan, str]] = []
@@ -3498,27 +3893,57 @@ def cmd_materials(args: argparse.Namespace) -> int:
                 ocr_lang=ocr_lang,
                 ocr_timeout_sec=ocr_timeout_sec,
                 ocr_max_pages=ocr_max_pages,
+                # v1.4.13 audit P2 #1 fix: pass cap into streaming
+                # extractors so they short-circuit accumulation rather
+                # than building the full body before the post-loop trim.
+                max_output_chars=max_output_chars,
             )
             # v1.4.12 audit MAJOR #1 fix: truncate at max_output_chars.
             # Applies uniformly to ALL extractor outputs (csv/tsv/json
             # have their own internal caps; this is the safety net for
-            # pptx/html/eml/msg/image where decompressed/OCR output is
-            # unbounded by source size).
+            # pdf/docx/image where the source library materializes the
+            # full doc in memory regardless of our cap).
+            # v1.4.13 audit P2 #1 fix: streaming-aware extractors
+            # (pptx/html/eml/msg) now also enforce the cap during
+            # accumulation.
+            # v1.4.13 R2 NEW MAJOR #2 fix: detect cap-aware extractors
+            # by the presence of the canonical truncation footer; skip
+            # post-trim in that case. Pre-fix, an EML with a body
+            # cap-trimmed to 200 chars + ~100 attachment lines (~5KB)
+            # tripped this check (total > cap=200) and the blind
+            # `content[:cap]` chop discarded the Attachments section,
+            # destroying the email-evidence completeness fix from
+            # v1.4.12 audit MAJOR #2. Streaming extractors are
+            # responsible for emitting structurally-coherent output
+            # (body capped, attachments preserved); when they signal
+            # via the footer, trust that contract.
             if len(content) > max_output_chars:
-                truncated_at = max_output_chars
-                content = (
-                    content[:truncated_at].rstrip()
-                    + "\n\n_[bsa materials: body truncated at "
-                    f"{truncated_at:,} chars by --max-output-chars; "
-                    f"raise the cap (default 5_000_000) OR pre-trim "
-                    f"the source]_\n"
-                )
+                if _OUTPUT_CAP_FOOTER_RE.search(content):
+                    # Streaming extractor already enforced the cap.
+                    # Total exceeds cap because of bounded structural
+                    # sections (attachments table, headers, etc.) that
+                    # carry per-leaf evidence value. Leave alone.
+                    pass
+                else:
+                    # Non-streaming extractor (pdf/docx/image) — apply
+                    # blind post-trim with the canonical footer.
+                    content = (
+                        content[:max_output_chars].rstrip()
+                        + _output_cap_footer(max_output_chars)
+                    )
         except ConversionUnavailable as exc:
             unavailable_seen.add(p.kind)
             failed.append((p, f"unavailable: {exc}"))
             continue
         except ConversionFailed as exc:
             failed.append((p, f"conversion failed: {exc}"))
+            continue
+        except OSError as exc:
+            # v1.4.13 audit P1 #1 defense-in-depth: any extractor that
+            # forgets to wrap its own read_bytes() / read_text() falls
+            # through to here. Demote to per-file failure so the rest
+            # of the batch (and the manifest write) still completes.
+            failed.append((p, f"read failed: {exc}"))
             continue
         # Wrap each converted file with a small header so downstream
         # consumers (and humans diffing inputs/) can trace provenance
@@ -3799,6 +4224,7 @@ def _convert_one(
     ocr_lang: str = "eng",
     ocr_timeout_sec: int = 60,
     ocr_max_pages: int = 50,
+    max_output_chars: Optional[int] = None,
 ) -> str:
     """Dispatch by kind. Pure helper for cmd_materials.
 
@@ -3815,6 +4241,12 @@ def _convert_one(
     `ocr_enabled` + `ocr_lang` propagate the operator's --ocr +
     --ocr-lang into the image extractor (default off; metadata-only
     body when OCR not requested).
+    `max_output_chars` (v1.4.13 audit P2 #1 fix) propagates into
+    streaming-aware extractors (pptx, html, eml, msg) so they stop
+    accumulating once the cap is reached. Pdf/docx/image/csv/tsv/
+    json/xlsx have library-driven extraction or their own internal
+    caps; for those, the cap is enforced as a post-conversion safety
+    net by `cmd_materials`.
     Non-applicable kinds ignore the flags."""
     if p.kind == "pdf":
         return _convert_pdf(p.src)
@@ -3831,13 +4263,13 @@ def _convert_one(
     if p.kind == "json":
         return _convert_json(p.src, max_chars=max_json_chars)
     if p.kind == "pptx":
-        return _convert_pptx(p.src)
+        return _convert_pptx(p.src, max_output_chars=max_output_chars)
     if p.kind == "html":
-        return _convert_html(p.src)
+        return _convert_html(p.src, max_output_chars=max_output_chars)
     if p.kind == "eml":
-        return _convert_eml(p.src)
+        return _convert_eml(p.src, max_output_chars=max_output_chars)
     if p.kind == "msg":
-        return _convert_msg(p.src)
+        return _convert_msg(p.src, max_output_chars=max_output_chars)
     if p.kind == "image":
         return _convert_image(
             p.src,

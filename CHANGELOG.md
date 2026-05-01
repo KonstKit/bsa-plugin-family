@@ -4,6 +4,56 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.13] — 2026-05-01
+
+**Hotfix: third-pass external audit findings on v1.4.5..v1.4.12 extractor surface.**
+
+External Codex review (post-v1.4.12, scope `git diff v1.4.10..v1.4.12`) flagged 5 issues — 2 P1 + 2 P2 + 1 P3 — that the v1.4.12 self-audit missed. All 5 closed in this hotfix.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3` (extractor + planner changes only; no canon-globs touched).
+
+### Changed
+
+- **`scripts/_bsa_cli_materials.py:_convert_html`** — wrap `path.read_bytes()` in `try/except OSError → ConversionFailed` (P1 #1). Pre-fix, an unreadable `.html` (permission denied, vanished file, EIO) raised an OSError outside the per-file `try/except` in `cmd_materials`, aborting the entire batch with a Python traceback BEFORE the manifest landed — orphan staged file from the partial batch left behind.
+- **`scripts/_bsa_cli_materials.py:_read_text`** — same OSError → ConversionFailed wrap so unreadable `.md`/`.txt` becomes a per-file skip (parity with `_convert_html`, `_convert_json`).
+- **`scripts/_bsa_cli_materials.py:cmd_materials`** writer loop — added `except OSError` defense in depth around `_convert_one`. Catches ANY extractor that forgets to wrap its own reads (future-proof).
+- **`scripts/_bsa_cli_materials.py:_render_email_markdown`** — pre-scan MIME tree for `message/rfc822` containers presented as attachments (`Content-Disposition: attachment` OR carry filename). Record container as attachment with serialized inner-message size. Mark all descendant parts; main MIME walk skips them so the inner email's text/plain doesn't leak into the host email's body or appear as a generic `(unnamed text/plain)` part with no provenance back to the rfc822 container (P1 #2). Pre-fix, a `forwarded.eml` attachment lost its filename, `message/rfc822` content-type marker, AND its size from the staged record — a textbook evidence-fidelity loss for forwarded threads.
+- **`scripts/_bsa_cli_materials.py:_HTMLToMarkdown`** — new `_emit(s)` cap-aware appender + `_max_output_chars` / `_buf_size` / `_truncated` fields (P2 #1). `_buf.append(...)` calls inside the parser route through `_emit` which short-circuits past the cap. `render()` emits the canonical truncation footer if `_truncated`.
+- **`scripts/_bsa_cli_materials.py:_convert_pptx`** — `chunks_size` cumulative tracker; loop break + footer once `max_output_chars` reached (P2 #1).
+- **`scripts/_bsa_cli_materials.py:_render_email_markdown` + `_render_email_markdown_from_msg`** — cap the body section (plain-text path: inline truncate; html-body path: cap threaded into `_HTMLToMarkdown`). Header / attachment blocks remain bounded by their input size (cap there is redundant) (P2 #1).
+- **`scripts/_bsa_cli_materials.py:_convert_one` + `cmd_materials`** — thread `max_output_chars` through to streaming-aware extractors (pptx/html/eml/msg). Pdf/docx/image keep the post-conversion safety net (their library-side parse already materializes the doc in memory; the cap is enforced after `_convert_one` returns).
+- **`scripts/_bsa_cli_materials.py:_plan_conversions`** — new `max_output_chars` + `ocr_max_pages` kwargs. Hash-skip branch now ALSO peeks at the staged file body for truncation footers (`_OUTPUT_CAP_FOOTER_RE`, `_OCR_PAGE_CAP_FOOTER_RE`); if the recorded prior cap is LOWER than the new request, force restage (P2 #2). One-sided check: lowering the cap on an unchanged source skips (the old body is still valid evidence under the new cap; restaging would discard analyst-curated sidecar state for no analytical gain).
+- **`scripts/_bsa_cli_materials.py:_HTMLToMarkdown._normalize_unicode_ws`** — extracted as a `@staticmethod` (was inlined in `_on_data` body branch only). Now called from THREE branches: title-collect (pre-normalize each fragment so `<title>Hello&nbsp;World</title>` renders an H1 with ASCII space), link-buffer (so `<a>Hello&nbsp;World</a>` rendered link text contains ASCII space), AND the body branch (unchanged behavior — same regex, just shared) (P3).
+- **`scripts/_bsa_cli_materials.py`** module-level — added `_OUTPUT_CAP_FOOTER_TEMPLATE` + `_output_cap_footer(cap)` (single source of truth for the truncation footer used by streaming extractors AND the post-conversion safety net), plus `_OUTPUT_CAP_FOOTER_RE` / `_OCR_PAGE_CAP_FOOTER_RE` / `_parse_int_with_separators` for the planner's cap-recovery parsing.
+
+### Added
+
+- **11 regression-guard tests** in `tests/test_bsa_cli_materials_audit_v1_4_13.py`:
+  * `test_unreadable_html_does_not_abort_batch` — chmod 000 on `z.html`, batch with readable `a.md`. Asserts: no traceback in stderr, manifest written with `a.md` row, `z.html` surfaces in "Failed" stdout section.
+  * `test_unreadable_md_does_not_abort_batch` — symmetry for `_read_text`.
+  * `test_eml_forwarded_rfc822_attachment_listed` — host email + `message/rfc822` attachment with inner email. Asserts: `forwarded.eml` + `message/rfc822` present in Attachments, inner email body NOT leaking into host body.
+  * `test_html_streaming_cap_truncates_during_accumulation` — 200 paragraphs + cap=300. Asserts footer present + len(out) < 800 (full accumulation would be ~2000+).
+  * `test_pptx_streaming_cap_truncates_during_accumulation` — 20-slide deck + cap=200.
+  * `test_eml_plain_body_streaming_cap` — 10K-char body + cap=200.
+  * `test_restage_changed_detects_max_output_chars_increase` — stage with cap=100 (truncates) → restage with cap=10000 → assert body grew.
+  * `test_restage_changed_skips_when_cap_lowered` — inverse direction; mtime unchanged.
+  * `test_html_title_normalizes_nbsp` — NBSP in `<title>` → ASCII space in `# H1`.
+  * `test_html_link_text_normalizes_nbsp` — NBSP in `<a>text</a>` → ASCII space in `[text](href)`.
+  * `test_html_title_em_space_normalized` — em-space (U+2003) in title parity.
+
+### Tests
+
+Total suite: **2840 passed** (was 2826 in v1.4.12 — +14 net new for the third-pass audit fixes: 11 for the original 5 findings + 3 for R2 NEW MAJOR fixes).
+
+### Codex Review
+
+Triggered by external Codex review verdict (post-v1.4.12) that explicitly did NOT confirm "all замечания закрыты" — listed 5 open findings: 2 P1 (HTML read-error escape, forwarded rfc822 attachment loss) + 2 P2 (cap-after-materialize, cap-change idempotency) + 1 P3 (title/link normalization gap).
+
+- **R1 (external audit)**: REQUEST CHANGES — 5 findings closed. R1 then surfaced 2 NEW MAJOR issues introduced by the streaming-cap fix:
+  - **NEW MAJOR #1** (PPTX between-slide-only check): `_convert_pptx` only checked the cap BETWEEN slides — a single oversized slide bypassed the cap. Fix: `effective_room = remaining - join_overhead` per-slide; clip the slide_chunk in-place when it exceeds the budget; mark truncated + break.
+  - **NEW MAJOR #2** (post-conversion safety net dropped attachments): `cmd_materials`'s blind `content[:max_output_chars]` chop fired after the streaming EML renderer had already produced a coherent body+footer+Attachments structure — the chop deleted the Attachments rows. Fix: detect cap-aware extractors via `_OUTPUT_CAP_FOOTER_RE.search(content)`; when the footer is present, the streaming extractor's structurally-coherent output is trusted (post-trim skipped). Non-streaming kinds (pdf/docx/image) fall back to blind trim with the canonical footer as before.
+- **R2 (manual self-review)**: APPROVE. Codex CLI was unresponsive on this round (3 invocations all hung 25+ min without output — confirmed an infrastructure issue, not a review-content issue). Self-review walked through both R2 NEW MAJOR fixes line-by-line + edge cases (first-slide vs subsequent-slide overhead, exactly-fits boundary, footer always emitted, regex matches both streaming and post-trim variants, pdf/docx/image still get blind trim). 3 dedicated regression tests cover the R2 fixes (`test_pptx_streaming_cap_clips_oversized_single_slide` for #1; `test_eml_capped_body_keeps_attachments_after_safety_net` + `test_html_capped_body_not_double_trimmed` for #2). Per the self-review checklist in MEMORY (impact-analysis / cross-schema / edge-case / layer-overlap / reach-equality), all five passes clean.
+
 ## [v1.4.12] — 2026-04-30
 
 **Hotfix: second-pass audit findings on v1.4.5..v1.4.7 extractor surface.**
