@@ -149,10 +149,24 @@ class ConversionFailed(RuntimeError):
 # cap and emit this footer in-line. Pdf/docx/image still rely on the
 # post-conversion safety net (their library-side parse already
 # materializes the document in memory regardless).
+#
+# v1.4.14 audit MAJOR #1 fix: structural marker token (HTML comment)
+# distinct from the human-readable footer text. Pre-fix, the regex
+# `_\[bsa materials: body truncated at...` was unanchored and could
+# match ANY document that happened to QUOTE the footer text (e.g., a
+# `.md` source documenting how `bsa materials` truncates output).
+# Result: false-positive in BOTH the post-conversion safety net (skips
+# the trim it should perform) AND `--restage-changed` cap-change check
+# (force-restages an unchanged source). The HTML comment marker
+# `<!--bsa:cap:applied:v1-->` is invisible in rendered markdown,
+# unlikely to appear in legitimate evidence text, AND is structurally
+# distinct from the cap value so we can require both to confirm a
+# real footer (cf. cap-change parsing in `_plan_conversions`).
+_OUTPUT_CAP_MARKER = "<!--bsa:cap:applied:v1-->"
 _OUTPUT_CAP_FOOTER_TEMPLATE = (
     "\n\n_[bsa materials: body truncated at {cap:,} chars by "
     "--max-output-chars; raise the cap (default 5_000_000) OR pre-trim "
-    "the source]_\n"
+    "the source]_" + _OUTPUT_CAP_MARKER + "\n"
 )
 
 
@@ -162,22 +176,31 @@ def _output_cap_footer(cap: int) -> str:
 
     Single source of truth so `_plan_conversions` can parse the cap
     value back out of staged files (v1.4.13 audit P2 #2 fix —
-    --restage-changed must detect when the operator raises the cap)."""
+    --restage-changed must detect when the operator raises the cap).
+
+    v1.4.14 audit MAJOR #1: includes `_OUTPUT_CAP_MARKER` (HTML
+    comment) so detection routines can distinguish a real cap-applied
+    footer from legitimate document text that quotes the footer."""
     return _OUTPUT_CAP_FOOTER_TEMPLATE.format(cap=cap)
 
 
-# Regex used by `_plan_conversions` to recover the cap a previously-
-# staged file was truncated at. Match BOTH the streaming variant
-# (emitted from inside the extractor) AND the post-conversion variant
-# (emitted from cmd_materials) — both render via `_output_cap_footer`
-# so a single pattern suffices. The cap is captured with optional `_`
-# digit separators (Python int format(cap, ',') uses comma; we accept
-# either comma or `_` separators for robustness across Python versions).
+# v1.4.14 audit MAJOR #1 fix: cap-applied detection now requires the
+# structural marker (HTML comment), not just the human-readable text.
+# Two-step validation in callers:
+#   1. `_OUTPUT_CAP_MARKER in content` — fast presence check.
+#   2. parse cap via `_OUTPUT_CAP_FOOTER_RE` — recover the cap value.
+# Only when BOTH succeed is a footer treated as authoritative. Real
+# documents that merely quote the footer text won't carry the HTML
+# comment marker and so won't trip detection.
 _OUTPUT_CAP_FOOTER_RE = re.compile(
     r"_\[bsa materials: body truncated at ([\d,_]+) chars by "
     r"--max-output-chars;"
 )
 # Likewise for the OCR-page cap footer rendered inside `_convert_image`.
+# v1.4.14: same false-positive risk, same fix — OCR footer now carries
+# its own HTML-comment marker so post-stage parsing can distinguish a
+# real OCR-truncation footer from a document quoting the footer text.
+_OCR_PAGE_CAP_MARKER = "<!--bsa:ocr-pages:applied:v1-->"
 _OCR_PAGE_CAP_FOOTER_RE = re.compile(
     r"_\[bsa materials: OCR truncated — (\d+) of (\d+) pages NOT "
     r"processed \(cap=--ocr-max-pages=(\d+)\)\."
@@ -1182,6 +1205,24 @@ def _render_email_markdown(
     #   2. Main loop skips parts in `forwarded_descendants`.
     forwarded_descendants: set[int] = set()
     for container in msg.walk():
+        # v1.4.14 audit MAJOR #2 fix: skip rfc822 containers that are
+        # themselves nested INSIDE an already-captured forwarded
+        # attachment. Pre-fix, a forward-of-a-forward (rfc822 inside
+        # rfc822) was surfaced as a SECOND top-level attachment in the
+        # host email's Attachments section, breaking the hierarchy and
+        # double-counting evidence: the analyst saw both the outer
+        # `forwarded.eml` AND a phantom `(forwarded message).eml` at
+        # the same level. The outer rfc822 attachment already records
+        # its inner message as serialized bytes (size column); nested
+        # rfc822 metadata lives inside that serialized payload, not as
+        # a separate Attachments row.
+        # `msg.walk()` is depth-first parents-before-children, so the
+        # outer container is processed FIRST, which adds the inner
+        # rfc822 (and all its descendants) to `forwarded_descendants`
+        # in the same iteration; the next iteration then finds the
+        # inner container's id() already in the set and skips it here.
+        if id(container) in forwarded_descendants:
+            continue
         if container.get_content_type() != "message/rfc822":
             continue
         if not container.is_multipart():
@@ -1695,11 +1736,16 @@ def _convert_image(
                     collected.append("")
             if pages_skipped > 0:
                 collected.append("")
+                # v1.4.14 audit MAJOR #1 fix: append structural marker
+                # so cap-change detection in `_plan_conversions` can
+                # distinguish a real OCR-truncation footer from a
+                # document quoting the footer text.
                 collected.append(
                     f"_[bsa materials: OCR truncated — "
                     f"{pages_skipped} of {n_frames} pages NOT "
                     f"processed (cap=--ocr-max-pages={ocr_max_pages}). "
                     f"Raise the cap or split the source.]_"
+                    + _OCR_PAGE_CAP_MARKER
                 )
             parts.append("\n".join(collected).rstrip())
     except (ConversionFailed, ConversionUnavailable):
@@ -2496,9 +2542,15 @@ def _plan_conversions(
                                 ocr_backfill_needed = True
                         # v1.4.13 audit P2 #2 fix (image branch):
                         # detect ocr-max-pages cap increase.
+                        # v1.4.14 audit MAJOR #1 fix: require structural
+                        # marker (`_OCR_PAGE_CAP_MARKER`) BEFORE parsing
+                        # the cap from the text. Pre-fix, a `.png` whose
+                        # OCR'd text quoted the footer string would
+                        # false-trigger restage.
                         if (
                             ocr_max_pages is not None
                             and existing_body
+                            and _OCR_PAGE_CAP_MARKER in existing_body
                         ):
                             m_pages = _OCR_PAGE_CAP_FOOTER_RE.search(
                                 existing_body
@@ -2513,6 +2565,12 @@ def _plan_conversions(
                 # v1.4.13 audit P2 #2 fix (all kinds): detect
                 # max-output-chars cap increase. Reads any kind's
                 # staged file (not just images).
+                # v1.4.14 audit MAJOR #1 fix: require structural marker
+                # (`_OUTPUT_CAP_MARKER`) BEFORE parsing the cap value.
+                # Pre-fix, a `.md` source documenting how `bsa
+                # materials` truncates output (e.g., the README of a
+                # downstream tool that reproduces our footer text)
+                # would false-trigger cap-based restage on every run.
                 if (
                     not cap_increase_needed
                     and max_output_chars is not None
@@ -2531,7 +2589,10 @@ def _plan_conversions(
                             )
                         except OSError:
                             existing_body = ""
-                        if existing_body:
+                        if (
+                            existing_body
+                            and _OUTPUT_CAP_MARKER in existing_body
+                        ):
                             m_cap = _OUTPUT_CAP_FOOTER_RE.search(
                                 existing_body
                             )
@@ -3917,8 +3978,16 @@ def cmd_materials(args: argparse.Namespace) -> int:
             # responsible for emitting structurally-coherent output
             # (body capped, attachments preserved); when they signal
             # via the footer, trust that contract.
+            # v1.4.14 audit MAJOR #1 fix: detect via the structural
+            # `_OUTPUT_CAP_MARKER` (HTML comment) rather than the
+            # human-readable footer regex. Pre-fix, a `.md` source
+            # documenting `bsa materials` truncation behavior would
+            # contain the footer text → safety net would skip trim and
+            # let the oversized content through. The HTML-comment
+            # marker is invisible in rendered markdown but trivially
+            # distinguishes a real cap-applied footer from quoted text.
             if len(content) > max_output_chars:
-                if _OUTPUT_CAP_FOOTER_RE.search(content):
+                if _OUTPUT_CAP_MARKER in content:
                     # Streaming extractor already enforced the cap.
                     # Total exceeds cap because of bounded structural
                     # sections (attachments table, headers, etc.) that

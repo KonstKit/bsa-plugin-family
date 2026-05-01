@@ -4,6 +4,39 @@ All notable changes to the BSA Plugin Family. Format follows [Keep a Changelog](
 
 Canon policy version (orthogonal measurement): `<semver>+hash:<sha256-prefix>`, computed from policy state (see [governance/immutable_invariants.md](governance/immutable_invariants.md) and Sprint 3 canon hash scheme).
 
+## [v1.4.14] — 2026-05-01
+
+**Hotfix: fourth-pass external Codex audit findings on v1.4.13.**
+
+External Codex R3 review (post-v1.4.13, run `git diff v1.4.12..v1.4.13`) flagged 2 MAJOR that the v1.4.13 self-review missed. Both closed in this hotfix.
+
+**Tag target**: this commit. **Canon policy version**: unchanged at `1.4.0+hash:5938f3d3`.
+
+### Changed
+
+- **`scripts/_bsa_cli_materials.py:_OUTPUT_CAP_FOOTER_TEMPLATE`** — appended `_OUTPUT_CAP_MARKER = "<!--bsa:cap:applied:v1-->"` (HTML comment) to the canonical truncation footer (MAJOR #1). Pre-fix, `_OUTPUT_CAP_FOOTER_RE.search(content)` was unanchored — a `.md` source documenting how `bsa materials` truncates output (e.g., a downstream tool's README quoting the footer text) would (a) bypass the post-conversion safety net in `cmd_materials` (oversized content slipped through) AND (b) force false cap-based restages on every `--restage-changed` run (planner parsed a "prior cap" out of the quoted text). The HTML comment is invisible in rendered markdown but trivially distinguishes a real cap-applied footer from quoted text. Same fix applied to the OCR-page truncation footer via `_OCR_PAGE_CAP_MARKER = "<!--bsa:ocr-pages:applied:v1-->"`.
+- **`scripts/_bsa_cli_materials.py:cmd_materials`** post-conversion safety net — switched from `_OUTPUT_CAP_FOOTER_RE.search(content)` to `_OUTPUT_CAP_MARKER in content`. The marker is the structural signal; the regex-based parsing is now used only to recover the cap value when both the marker AND the regex match (cf. `_plan_conversions` cap-change detection).
+- **`scripts/_bsa_cli_materials.py:_plan_conversions`** cap-change detection (3 sites) — both `--max-output-chars` and `--ocr-max-pages` checks now require the structural marker (`_OUTPUT_CAP_MARKER` or `_OCR_PAGE_CAP_MARKER`) BEFORE parsing the cap value. Real documents that quote the footer text won't trip false restages.
+- **`scripts/_bsa_cli_materials.py:_render_email_markdown`** forwarded-rfc822 pre-scan — added `if id(container) in forwarded_descendants: continue` at the top of the pre-scan loop (MAJOR #2). Pre-fix, a forward-of-a-forward (rfc822 attachment whose inner email itself carried another rfc822 attachment) was surfaced as a SECOND top-level Attachments row, breaking hierarchy and double-counting evidence — the analyst saw both `forwarded.eml` AND a phantom `(forwarded message).eml` at the same level. `msg.walk()` is depth-first parents-before-children, so the outer container is processed FIRST, adds inner rfc822 (and ALL its descendants — including the nested rfc822 container itself) to `forwarded_descendants` in the same iteration; the next iteration finds the inner container's `id()` already in the set and skips it. Nested rfc822 metadata lives inside the outer's serialized `as_bytes()` payload (size column reflects it), preserving evidence completeness without flattening hierarchy.
+
+### Added
+
+- **5 regression-guard tests** in `tests/test_bsa_cli_materials_audit_v1_4_14.py`:
+  * `test_md_quoting_footer_text_is_NOT_treated_as_cap_applied` — `.md` body QUOTING the footer text but lacking the marker. Asserts post-conversion safety net APPLIED trim (marker now present in staged file because of the genuine post-trim).
+  * `test_restage_unchanged_doc_quoting_footer_does_not_force_restage` — unchanged source containing footer text. Asserts mtime unchanged across `--restage-changed --max-output-chars=20000` after initial stage with `=10000`.
+  * `test_real_truncation_still_carries_marker` — sanity: when truncation IS legitimate, the marker IS in the staged file.
+  * `test_eml_nested_rfc822_does_not_flatten_into_top_level` — host email + outer rfc822 attachment + inner rfc822 attachment. Asserts EXACTLY ONE rfc822 row in top-level Attachments (the outer); inner `nested.eml` filename NOT in output; inner body NOT leaking.
+  * `test_eml_two_separate_rfc822_attachments_both_listed` — inverse-direction sanity: two SIBLING rfc822 attachments at same level both recorded.
+
+### Tests
+
+Total suite: **2845 passed** (was 2840 in v1.4.13 — +5 net new for the fourth-pass audit fixes).
+
+### Codex Review
+
+- **R1 (external audit on v1.4.13)** — REQUEST CHANGES — 2 MAJOR (footer false-positive on quoted text + nested rfc822 flattening). Both closed in v1.4.14.
+- **R2 (manual self-review)** — APPROVE. Codex CLI unresponsive on this round (1+ hour hang, Sleep state, no output — same infrastructure issue that affected v1.4.13 R2/R3 attempts; one R3 attempt eventually returned via a different invocation pattern but R2 retries did not). Self-review walked through both MAJOR fixes line-by-line + edge cases (3-level nested forwards via `msg.walk()` depth-first parents-first ordering; copy-pasted pre-truncated `.md` carrying real marker → safety-net correctly treats as already-capped; sibling rfc822 forwards both recorded because skip-set is per-outer-container). 5 dedicated regression tests cover both fixes including pre-fix-fail / post-fix-pass assertions.
+
 ## [v1.4.13] — 2026-05-01
 
 **Hotfix: third-pass external audit findings on v1.4.5..v1.4.12 extractor surface.**
