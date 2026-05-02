@@ -600,7 +600,11 @@ def test_convert_eml_inline_image_listed_under_attachments(
     out = _convert_eml(p)
     assert "## Attachments" in out
     assert "screenshot.png" in out
-    assert "[inline]" in out
+    # v1.4.15 audit P1 fix: when the inline part also carries a
+    # `Content-ID` header, the rendered tag now also names the cid
+    # so the HTML→image binding is preserved end-to-end. Pre-fix the
+    # rendered tag was `[inline]` only; the cid value was discarded.
+    assert "[inline cid:img1]" in out
     # Body should fall back to placeholder since rendered HTML is empty.
     body_section_start = out.index("## Body")
     body_section_end = out.index("## Attachments")

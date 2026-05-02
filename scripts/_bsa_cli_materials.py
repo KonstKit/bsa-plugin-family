@@ -206,6 +206,49 @@ _OCR_PAGE_CAP_FOOTER_RE = re.compile(
     r"processed \(cap=--ocr-max-pages=(\d+)\)\."
 )
 
+# v1.4.15 audit P2 fix (codex round 7 of fix #3): cap on the PPTX
+# title-placeholder run buffer. The title shape's first paragraph
+# is streamed run-by-run instead of materializing the whole text
+# frame via `text_frame.text`; this constant bounds the run-pieces
+# buffer when an adversarial deck embeds a 200MB title placeholder.
+# 200 chars covers any reasonable slide title (which usually fits a
+# single H2 line) while bounding peak conversion-time memory.
+_PPTX_TITLE_RUN_CAP = 200
+
+# v1.4.15 audit P1 fix (codex round 10 of fix #3): hard cap on
+# `_HTMLToMarkdown._title_text` accumulator. Real-world HTML
+# `<title>` elements are short (usually <80 chars). Capping the
+# accumulator at this constant bounds peak conversion-time memory
+# regardless of `--max-output-chars`. Pre-fix, the title cap was
+# `_max_output_chars` itself; with cap=100 + 5KB `<title>` + visible
+# body, render-time title-injection prepended the full 100-char
+# title and starved the body section. Render now dynamically
+# trims this accumulator output to fit AFTER the body content so
+# body always gets priority under tight caps (codex round 10 P1).
+_HTML_TITLE_ACCUMULATOR_CAP = 200
+
+# v1.4.15 audit P1 fix (codex round 11 of fix #3): the set of
+# extractor kinds that thread `max_output_chars` into a streaming
+# truncation path AND emit `_OUTPUT_CAP_MARKER` themselves whenever
+# real source content is dropped. The cmd_materials post-conversion
+# safety net uses this set to decide whether to blind-chop content
+# that exceeds the cap.
+#
+# Pre-fix, the safety net inferred "non-streaming, blind-chop" from
+# marker absence alone. That broke a legitimate case: a cap-aware
+# extractor whose body content fits the cap exactly emits NO marker
+# (correctly — no truncation occurred), but structural sections
+# (email Attachments, headers) push total content past the cap. The
+# safety net then blind-chopped from the front and dropped the
+# Attachments — undoing the email-evidence completeness fix from
+# v1.4.12 audit MAJOR #2 in the boundary case.
+#
+# Post-fix, kind-aware: cap-aware extractors NEVER get blind-chopped
+# (they own the marker contract); non-cap-aware extractors
+# (pdf/docx/image/text/csv/tsv/json/xlsx) still get blind-chop on
+# overflow as the operator-visible safety net.
+_CAP_AWARE_EXTRACTOR_KINDS = frozenset({"pptx", "html", "eml", "msg"})
+
 
 def _parse_int_with_separators(s: str) -> Optional[int]:
     """Parse '5,000,000' or '5_000_000' or '5000000' → int. Returns
@@ -424,7 +467,23 @@ def _convert_pptx(
 
     chunks: list[str] = []
     chunks_size = 0  # v1.4.13: cumulative size for streaming cap.
+    # v1.4.15 audit P2 fix (codex round 14 of fix #3): split the
+    # dual-purpose `truncated_during_extraction` flag into two
+    # signals so a single-slide title-source-drop doesn't stop the
+    # whole deck. Pre-fix, the title accumulator branches set
+    # `truncated_during_extraction=True` to surface the marker, but
+    # the same flag also drove the slide-loop `break` at the bottom
+    # — meaning an oversized title in slide 1 silently dropped
+    # slides 2..N even when there was plenty of `max_output_chars`
+    # room remaining. Post-fix:
+    #   * `truncated_during_extraction` — body budget exhausted;
+    #     stop processing further slides AND emit marker.
+    #   * `marker_required` — source content was dropped at THIS
+    #     slide (e.g., title accumulator capped); emit marker, but
+    #     CONTINUE to subsequent slides.
+    # Footer emission below ORs the two.
     truncated_during_extraction = False
+    marker_required = False
     visible_idx = 0
     for raw_idx, slide in enumerate(prs.slides, start=1):
         # v1.4.13 audit P2 #1 fix: stop accumulating when cap reached
@@ -450,12 +509,71 @@ def _convert_pptx(
         visible_idx += 1
         # Title heuristic: first shape that has a non-empty text
         # AND looks like a title placeholder.
+        # v1.4.15 audit P2 fix (codex round 7 of fix #3): stream
+        # the title placeholder's first paragraph runs instead of
+        # materializing the whole text frame via
+        # `ti.text_frame.text`. Title is the first line of the
+        # first paragraph; everything else is ignored. Capped at
+        # `_PPTX_TITLE_RUN_CAP` chars to bound peak memory across
+        # the run-pieces buffer when an adversarial deck embeds a
+        # 200MB title placeholder.
         title = ""
         try:
             ti = slide.shapes.title  # may return None
             if ti is not None and ti.has_text_frame:
-                title = (ti.text_frame.text or "").strip().splitlines()[0:1]
-                title = title[0] if title else ""
+                first_para_pieces: list[str] = []
+                first_para_size = 0
+                try:
+                    first_para = next(iter(ti.text_frame.paragraphs), None)
+                except Exception:
+                    first_para = None
+                if first_para is not None:
+                    try:
+                        runs_iter = first_para.runs
+                    except Exception:
+                        runs_iter = []
+                    # v1.4.15 audit P3 fix (codex round 16 of fix #3):
+                    # `_PPTX_TITLE_RUN_CAP` is a memory safety net
+                    # paired with the cap-marker contract; in no-cap
+                    # mode the marker path doesn't fire. Skip the
+                    # title cap entirely when caller passed
+                    # `max_output_chars=None` so the helper default
+                    # is "uncapped" rather than "silently capped at
+                    # 200 chars without marker".
+                    title_cap_active = max_output_chars is not None
+                    for run in runs_iter:
+                        try:
+                            rt = run.text or ""
+                        except Exception:
+                            rt = ""
+                        if not rt:
+                            continue
+                        if not title_cap_active:
+                            first_para_pieces.append(rt)
+                            first_para_size += len(rt)
+                            continue
+                        room = _PPTX_TITLE_RUN_CAP - first_para_size
+                        if room <= 0:
+                            # Source title text dropped — marker
+                            # required (codex round 14 of fix #3),
+                            # but DO NOT stop the slide loop: title
+                            # is per-slide metadata; subsequent
+                            # slides still have body budget left.
+                            marker_required = True
+                            break
+                        if len(rt) > room:
+                            first_para_pieces.append(rt[:room])
+                            marker_required = True
+                            break
+                        first_para_pieces.append(rt)
+                        first_para_size += len(rt)
+                joined = "".join(first_para_pieces).strip()
+                if joined:
+                    # Title = first line of the joined first-paragraph
+                    # text (multi-line title placeholders exist; we
+                    # want the leading line for the H2 header).
+                    first_line = joined.splitlines()[0:1]
+                    title = first_line[0].strip() if first_line else ""
         except Exception:
             pass
         header_line = (
@@ -463,7 +581,38 @@ def _convert_pptx(
             else f"## Slide {visible_idx}"
         )
         body_parts: list[str] = []
+        # v1.4.15 audit P2 fix (codex round 4 narrowed claim):
+        # per-paragraph / per-table-row / per-run budget for the
+        # current slide bounds the ACCUMULATION across `body_parts`
+        # — pre-fix, a text_frame with 200MB of small paragraphs
+        # accumulated the whole frame into `body_parts` before the
+        # slide-chunk cap kicked in. The budget tracking below stops
+        # appending once cumulative size crosses `slide_budget`.
+        # SCOPE: this bounds list-accumulation peak memory, NOT the
+        # one-at-a-time element materialization inside python-pptx
+        # (a single huge `cell.text` / `run.text` / notes paragraph
+        # is still allocated in full before we slice — bounded only
+        # by the source deck file size). See `--max-output-chars`
+        # help text for the full remaining boundary.
+        body_parts_size = 0
+        if max_output_chars is not None:
+            join_overhead = 2 if chunks else 0
+            slide_budget: Optional[int] = (
+                max_output_chars - chunks_size - join_overhead
+                - len(header_line) - 1  # header + "\n"
+            )
+        else:
+            slide_budget = None
+        slide_budget_exhausted = False
+
+        def _slide_room_left() -> Optional[int]:
+            if slide_budget is None:
+                return None
+            return slide_budget - body_parts_size
+
         for shape in slide.shapes:
+            if slide_budget_exhausted:
+                break
             # Skip the title shape we already used.
             try:
                 if shape == slide.shapes.title:
@@ -482,29 +631,173 @@ def _convert_pptx(
                             (cell.text or "").strip().replace("\n", "<br>")
                             for cell in row.cells
                         ]
-                        body_parts.append(" | ".join(cells))
-                    body_parts.append("")
+                        row_text = " | ".join(cells)
+                        room = _slide_room_left()
+                        if room is not None and room <= 0:
+                            slide_budget_exhausted = True
+                            truncated_during_extraction = True
+                            break
+                        if room is not None and len(row_text) > room:
+                            body_parts.append(row_text[:room])
+                            body_parts_size += room
+                            slide_budget_exhausted = True
+                            truncated_during_extraction = True
+                            break
+                        body_parts.append(row_text)
+                        body_parts_size += len(row_text) + 1
+                    if not slide_budget_exhausted:
+                        body_parts.append("")
+                        body_parts_size += 1
                 except Exception:
                     pass
                 continue
             # Text-bearing shapes.
+            # v1.4.15 audit P2 fix (codex round 4 narrowed claim):
+            # iterate paragraph runs (not the full `para.text`) so a
+            # paragraph carrying many small runs doesn't materialize
+            # the whole frame string before we slice. Pre-fix, codex
+            # round 1 of fix #3 flagged that `text = "".join(run.text
+            # for run in para.runs).strip()` materialized the entire
+            # paragraph before the budget check.
+            # SCOPE: per-run iteration bounds the JOIN+CONCAT step
+            # (we never build the full paragraph string when the
+            # budget is hit), but a single huge `run.text` value is
+            # still materialized in full by python-pptx before this
+            # code sees it (we then slice). That's the documented
+            # remaining boundary in `--max-output-chars` help.
             if getattr(shape, "has_text_frame", False):
                 try:
                     for para in shape.text_frame.paragraphs:
-                        text = "".join(run.text for run in para.runs).strip()
-                        if text:
-                            body_parts.append(text)
+                        room = _slide_room_left()
+                        if room is not None and room <= 0:
+                            slide_budget_exhausted = True
+                            truncated_during_extraction = True
+                            break
+                        # Build paragraph text with a per-run budget
+                        # so a single huge run gets clipped early.
+                        run_pieces: list[str] = []
+                        run_pieces_size = 0
+                        ran_out = False
+                        try:
+                            runs_iter = para.runs
+                        except Exception:
+                            runs_iter = []
+                        for run in runs_iter:
+                            try:
+                                rt = run.text or ""
+                            except Exception:
+                                rt = ""
+                            if not rt:
+                                continue
+                            if room is None:
+                                run_pieces.append(rt)
+                                run_pieces_size += len(rt)
+                                continue
+                            remaining_run_room = room - run_pieces_size
+                            if remaining_run_room <= 0:
+                                ran_out = True
+                                break
+                            if len(rt) > remaining_run_room:
+                                run_pieces.append(rt[:remaining_run_room])
+                                run_pieces_size += remaining_run_room
+                                ran_out = True
+                                break
+                            run_pieces.append(rt)
+                            run_pieces_size += len(rt)
+                        text = "".join(run_pieces).strip()
+                        if not text:
+                            if ran_out:
+                                slide_budget_exhausted = True
+                                truncated_during_extraction = True
+                                break
+                            continue
+                        body_parts.append(text)
+                        body_parts_size += len(text) + 1
+                        if ran_out:
+                            slide_budget_exhausted = True
+                            truncated_during_extraction = True
+                            break
                 except Exception:
                     pass
         # Speaker notes (notes_slide may be absent on some decks).
-        notes_text = ""
+        # v1.4.15 audit P2 fix (codex round 4 narrowed claim):
+        # iterate `notes_tf.paragraphs` / `para.runs` instead of
+        # reading `notes_tf.text`, so notes accumulation across many
+        # paragraphs is bounded by the remaining slide budget. Codex
+        # round 2 of fix #3 flagged that the prior `notes_tf.text`
+        # materialization defeated the bound.
+        # SCOPE: same as the in-shape loop above — bounds the join
+        # step across paragraphs, but a single huge `nrun.text` value
+        # is still materialized by python-pptx before we slice.
+        notes_overhead_text = "\n\n### Speaker notes\n\n"
+        notes_header_overhead = len(notes_overhead_text)
+        notes_pieces: list[str] = []
+        notes_size = 0
         try:
             if slide.has_notes_slide:
                 notes_tf = slide.notes_slide.notes_text_frame
                 if notes_tf is not None:
-                    notes_text = (notes_tf.text or "").strip()
+                    notes_room = _slide_room_left()
+                    if notes_room is not None:
+                        effective_notes_room = (
+                            notes_room - notes_header_overhead
+                        )
+                    else:
+                        effective_notes_room = None
+                    if (
+                        effective_notes_room is not None
+                        and effective_notes_room <= 0
+                    ):
+                        truncated_during_extraction = True
+                        slide_budget_exhausted = True
+                    else:
+                        ran_out_notes = False
+                        for npara in notes_tf.paragraphs:
+                            if ran_out_notes:
+                                break
+                            try:
+                                runs_iter = npara.runs
+                            except Exception:
+                                runs_iter = []
+                            para_pieces: list[str] = []
+                            para_size = 0
+                            for nrun in runs_iter:
+                                try:
+                                    rt = nrun.text or ""
+                                except Exception:
+                                    rt = ""
+                                if not rt:
+                                    continue
+                                if effective_notes_room is None:
+                                    para_pieces.append(rt)
+                                    para_size += len(rt)
+                                    continue
+                                remaining = (
+                                    effective_notes_room
+                                    - notes_size - para_size
+                                )
+                                if remaining <= 0:
+                                    ran_out_notes = True
+                                    break
+                                if len(rt) > remaining:
+                                    para_pieces.append(rt[:remaining])
+                                    para_size += remaining
+                                    ran_out_notes = True
+                                    break
+                                para_pieces.append(rt)
+                                para_size += len(rt)
+                            if para_pieces:
+                                joined = "".join(para_pieces)
+                                notes_pieces.append(joined)
+                                # +1 for paragraph separator.
+                                notes_size += len(joined) + 1
+                            if ran_out_notes:
+                                truncated_during_extraction = True
+                                slide_budget_exhausted = True
+                                break
         except Exception:
             pass
+        notes_text = "\n".join(notes_pieces).strip()
         slide_section = [header_line]
         if body_parts:
             slide_section.append("")
@@ -544,7 +837,14 @@ def _convert_pptx(
         # provenance comment expect SOME body).
         return "_(no visible slides)_\n"
     body = "\n\n".join(chunks).strip() + "\n"
-    if truncated_during_extraction and max_output_chars is not None:
+    # v1.4.15 audit P2 fix (codex round 14 of fix #3): emit footer
+    # on EITHER body-budget exhaustion (extraction stopped) OR
+    # source-content drop within a still-processing slide (e.g.,
+    # title accumulator cap). The two flags are independent.
+    if (
+        (truncated_during_extraction or marker_required)
+        and max_output_chars is not None
+    ):
         body = (
             body.rstrip()
             + _output_cap_footer(max_output_chars)
@@ -694,6 +994,39 @@ class _HTMLToMarkdown:
         self._max_output_chars: Optional[int] = max_output_chars
         self._buf_size = 0
         self._truncated = False
+        # v1.4.15 audit P2 fix (codex round 12 of fix #3): track
+        # title-accumulator truncation separately from `_truncated`.
+        # `_HTML_TITLE_ACCUMULATOR_CAP` silently truncates `<title>`
+        # source text in `_on_data()` to bound peak memory; pre-fix,
+        # that drop was invisible to analysts because no marker was
+        # emitted. Post-fix, `render()` consults this flag and sets
+        # `_truncated=True` IF (and only if) the title is actually
+        # injected into output (i.e., `_has_h1` is False AND the
+        # dynamic title room is positive). When `_has_h1` suppresses
+        # title injection, the accumulator drop is irrelevant
+        # (analyst sees the body's <h1> instead) and the marker does
+        # NOT fire — a marker for a title the analyst never sees
+        # would be misleading.
+        self._title_truncated_at_input = False
+        # v1.4.15 audit P2 fix (codex round 13 of fix #3): same
+        # silent-source-drop pattern existed for the link-text
+        # accumulator (`_link_text_buf` in `_on_data`). When fragment
+        # was dropped or trimmed against `_max_output_chars`, no
+        # marker fired unless `_flush_link` later trimmed for the
+        # `[text](href)` overhead. Without an `href`, the elif-text-
+        # only branch emits the (already-truncated) text and never
+        # marks. Per-link flag reset on `<a>` open so the marker
+        # only fires when THIS specific link's source text was
+        # dropped (not a prior `<a>`'s).
+        self._link_text_truncated_at_input = False
+        # v1.4.15 audit P3 fix (codex round 19 of fix #3): track
+        # `_link_text_buf` cumulative length incrementally so the
+        # capped-mode room calculation costs O(1) per fragment
+        # (instead of O(N) `sum(len(s) for s in ...)` across all
+        # buffered fragments). Pre-fix, many small fragments inside
+        # one `<a>` led to O(N²) total work in capped mode. Reset
+        # on `<a>` open and on every `_flush_link` cleanup path.
+        self._link_text_buf_size = 0
 
         # Subclass HTMLParser via a lightweight inner class so we
         # don't need a separate top-level class for the parser's
@@ -802,6 +1135,14 @@ class _HTMLToMarkdown:
         if tag == "a":
             self._link_href = attrs.get("href") or ""
             self._link_text_buf = []
+            # v1.4.15 audit P2 fix (codex round 13 of fix #3): reset
+            # per-link source-drop flag so a prior `<a>` truncation
+            # does not falsely mark the current one.
+            self._link_text_truncated_at_input = False
+            # v1.4.15 audit P3 fix (codex round 19 of fix #3): reset
+            # per-link incremental buffer size so the room calc
+            # starts fresh.
+            self._link_text_buf_size = 0
             return
         if tag in self._EMPHASIS_OPEN and self._heading_level == 0:
             self._emit(self._EMPHASIS_OPEN[tag])
@@ -824,22 +1165,121 @@ class _HTMLToMarkdown:
         the heading marker), OR on </a> (drop_empty=False, preserves
         the legacy `<href>` for href-only-no-text anchors).
 
-        Idempotent — no-op if no link is currently open."""
+        Idempotent — no-op if no link is currently open.
+
+        v1.4.15 audit P1 fix (codex round 8 of fix #3): reserve
+        markdown link overhead BEFORE emitting `[text](href)`. The
+        previous round bounded `_link_text_buf` accumulation but
+        `_emit` would still chop the formatted link string mid-way,
+        losing the closing `](href)` and breaking the markdown
+        anchor shape. Now we shrink visible link text by the
+        overhead `[](href)` (4 chars + len(href)) so the entire
+        formatted link fits within the remaining buffer room. If
+        even an empty-text link can't fit (`<href>` form), we drop
+        it entirely (mark `_truncated`) rather than emit a partial
+        anchor that downstream markdown renderers would mis-parse.
+        """
         if self._link_text_buf is None:
+            # v1.4.15 audit P3 fix (codex round 15 of fix #3):
+            # uniform cleanup invariant — `_link_text_truncated_at_input`
+            # MUST be False on every `_flush_link` exit. Pre-fix,
+            # this no-open-link early-return left the flag whatever
+            # it was. Normal parser flow keeps it unreachable today,
+            # but the strong invariant prevents future code paths
+            # from observing stale state.
+            self._link_text_truncated_at_input = False
+            self._link_text_buf_size = 0  # round 19 cleanup invariant
             return
         text = "".join(self._link_text_buf).strip()
         href = self._link_href or ""
+        # v1.4.15 audit P1 fix: shrink text by the markdown anchor
+        # overhead so the formatted output `[text](href)` fits in the
+        # remaining buffer room. Without this, `_emit` chops the
+        # formatted string and drops `](href)`.
+        # v1.4.15 audit P1 fix (codex round 9 of fix #3): when we
+        # trim visible link text to fit within remaining buffer room,
+        # MUST set `_truncated=True`. Pre-fix, a single trimmed link
+        # could silently drop characters and `render()` would not
+        # emit the canonical cap footer (no marker → restage-changed
+        # cap-bump detection broken AND analysts can't tell the
+        # output was truncated). Note ordering: `_truncated=True` is
+        # set AFTER `_emit` so the trimmed link actually lands in
+        # `_buf` (`_emit` short-circuits when `_truncated` is True).
+        defer_truncated = False
+        if (
+            text
+            and href
+            and self._max_output_chars is not None
+            and not self._truncated
+        ):
+            remaining = self._max_output_chars - self._buf_size
+            overhead = len(f"[]({href})")  # `[`+`]`+`(`+href+`)` = 4+len(href)
+            if remaining <= overhead:
+                # Cannot fit even an empty-text link without breaking
+                # the anchor shape. Stop emitting; mark truncation.
+                # v1.4.15 audit P2 fix (codex round 14 of fix #3):
+                # also reset `_link_text_truncated_at_input` here
+                # so the cleanup invariant ("flag is False after
+                # `_flush_link` returns, no matter the path") holds
+                # uniformly. Without this, a future code path that
+                # checks the flag outside `_flush_link` would see
+                # stale truthy state from the prior link.
+                self._truncated = True
+                self._link_href = None
+                self._link_text_buf = None
+                self._link_text_truncated_at_input = False
+                self._link_text_buf_size = 0  # round 19 cleanup invariant
+                return
+            visible_room = remaining - overhead
+            if len(text) > visible_room:
+                text = text[:visible_room]
+                defer_truncated = True
+        # v1.4.15 audit P2 fix (codex round 13 of fix #3): note
+        # whether THIS link's accumulator dropped source text in
+        # `_on_data`. If yes AND we end up emitting the link
+        # contents below (any branch — text+href, text-only, or
+        # href-only-no-text), promote to `_truncated=True` AFTER
+        # `_emit` so the marker fires. Without this, an `<a>`
+        # without `href` carrying 5KB of text + cap=200 would
+        # silently emit 200 chars and zero markers (codex round 13
+        # repro: `<a>L*5000</a>` @ cap=200).
+        text_was_input_truncated = self._link_text_truncated_at_input
+        emitted_link = False
         if text and href:
             self._emit(f"[{text}]({href})")
+            emitted_link = True
         elif text:
             self._emit(text)
+            emitted_link = True
         elif href and not drop_empty:
+            # `<href>` shape: ensure it fits whole or drop.
+            if (
+                self._max_output_chars is not None
+                and not self._truncated
+            ):
+                remaining = self._max_output_chars - self._buf_size
+                if remaining < len(href) + 2:  # `<` + href + `>`
+                    self._truncated = True
+                    self._link_href = None
+                    self._link_text_buf = None
+                    self._link_text_truncated_at_input = False
+                    self._link_text_buf_size = 0  # round 19 cleanup invariant
+                    return
             self._emit(f"<{href}>")
+            emitted_link = True
+        if defer_truncated:
+            self._truncated = True
+        # Any link content actually emitted with prior accumulator
+        # truncation → mark for cap-marker emission.
+        if emitted_link and text_was_input_truncated:
+            self._truncated = True
         # drop_empty=True + (no text) + (any href) → emit nothing.
         # The block tag's content lands at body level immediately
         # after this flush.
         self._link_href = None
         self._link_text_buf = None
+        self._link_text_truncated_at_input = False
+        self._link_text_buf_size = 0  # round 19 cleanup invariant
 
     def _on_end(self, tag: str) -> None:
         tag = tag.lower()
@@ -944,7 +1384,67 @@ class _HTMLToMarkdown:
             # v1.4.13 audit P3 fix: pre-normalize each fragment so
             # NBSP / em-space survive only as ASCII space — render()'s
             # post-normalizer is ASCII-only.
+            # v1.4.15 audit P1 fix (codex round 5 → 6 → 10 redesign):
+            # bound `_title_text` length INDEPENDENTLY of `_buf_size`
+            # AND independently of `_max_output_chars`. Use a hard
+            # constant `_HTML_TITLE_ACCUMULATOR_CAP` (200 chars) — real
+            # `<title>` elements are short, and bounding the
+            # accumulator at the full `_max_output_chars` (round 6
+            # design) let a 5KB `<title>` accumulate up to the entire
+            # body budget under tight caps and starve the visible
+            # body during render-time title-injection (codex round 10
+            # P1). Render now dynamically trims this accumulator
+            # output to fit AFTER the body content so body always
+            # gets priority. The constant cap is also memory-friendly:
+            # title accumulator can never exceed 200 chars regardless
+            # of `--max-output-chars`.
+            # v1.4.15 audit P3 fix (codex round 16 of fix #3): the
+            # `_HTML_TITLE_ACCUMULATOR_CAP` is a memory safety net
+            # that pairs with the cap-marker contract — a caller
+            # passing `_max_output_chars=None` explicitly opted out
+            # of any cap, AND the marker path only fires when a cap
+            # exists. Hard-applying the title cap in no-cap mode
+            # silently truncated 5KB+ titles to 200 chars without
+            # any signal. Skip the accumulator cap entirely when
+            # the caller is in no-cap mode (memory growth becomes
+            # the caller's problem — they explicitly asked for it).
+            # v1.4.15 audit P3 fix (codex round 17 of fix #3): split
+            # the two modes BEFORE normalization so capped-mode
+            # already-full short-circuit returns without paying the
+            # regex-normalize cost on a fragment that will be
+            # dropped anyway. Pre-fix (round 16 v1) interleaved the
+            # normalization with the cap check, weakening the
+            # capped-mode memory/CPU safety property.
+            if self._max_output_chars is None:
+                fragment = self._normalize_unicode_ws(data)
+                if self._title_text is None:
+                    self._title_text = fragment
+                else:
+                    self._title_text = self._title_text + fragment
+                return
+            # Capped mode below — short-circuit BEFORE normalization
+            # for already-full and zero-room cases.
+            existing = (
+                len(self._title_text)
+                if self._title_text is not None else 0
+            )
+            if existing >= _HTML_TITLE_ACCUMULATOR_CAP:
+                # Source title text was already capped on a prior
+                # fragment; this fragment is dropped entirely. No
+                # need to normalize — `_title_truncated_at_input`
+                # alone surfaces the loss via render() marker.
+                self._title_truncated_at_input = True
+                return
+            room = _HTML_TITLE_ACCUMULATOR_CAP - existing
+            if room <= 0:
+                self._title_truncated_at_input = True
+                return
             fragment = self._normalize_unicode_ws(data)
+            if len(fragment) > room:
+                fragment = fragment[:room]
+                # Only PART of this fragment fit; the rest is dropped
+                # source text. Mark for marker emission in render().
+                self._title_truncated_at_input = True
             if self._title_text is None:
                 self._title_text = fragment
             else:
@@ -958,8 +1458,60 @@ class _HTMLToMarkdown:
         # v1.4.13 audit P3 fix: normalize before buffering so the
         # rendered `[text](href)` doesn't keep raw NBSP / em-space
         # inside the visible link label.
+        # v1.4.15 audit P1 fix (codex round 7 of fix #3): bound
+        # `_link_text_buf` accumulation against `_max_output_chars`
+        # so a `<a>...</a>` body carrying many small text fragments
+        # can't grow the buffer beyond the cap before `_flush_link`
+        # joins it. The previous round closed `<title>`; the same
+        # bypass class existed for link text. (A single huge
+        # fragment is still materialized once before we slice — the
+        # documented "single-element materialization" remaining
+        # boundary.)
         if self._link_text_buf is not None:
-            self._link_text_buf.append(self._normalize_unicode_ws(data))
+            if self._truncated:
+                return
+            # v1.4.15 audit P3 fix (codex round 18 of fix #3): mirror
+            # the round-17 title-branch split — short-circuit BEFORE
+            # `_normalize_unicode_ws` for already-full and zero-room
+            # fragments so capped-mode never pays the regex cost on
+            # data that will be dropped immediately. Pre-fix, the
+            # round-7 link-text bound normalized first and only then
+            # checked the buffer; a `<a>{'A'*10}<span>{'B'*50000}</span></a>`
+            # with cap=10 still ran `_normalize_unicode_ws` on the
+            # 50KB fragment before dropping. No data loss but a
+            # capped-mode CPU/allocation gap analogous to the title
+            # one just closed.
+            if self._max_output_chars is None:
+                fragment = self._normalize_unicode_ws(data)
+                self._link_text_buf.append(fragment)
+                # `_link_text_buf_size` is unused in no-cap mode but
+                # kept consistent for cheap debuggability.
+                self._link_text_buf_size += len(fragment)
+                return
+            # Capped mode below — short-circuit BEFORE normalization
+            # for already-full and zero-room cases.
+            # v1.4.15 audit P3 fix (codex round 19 of fix #3): use
+            # incremental `_link_text_buf_size` instead of
+            # `sum(len(s) for s in self._link_text_buf)` so the
+            # capped-mode room calc is O(1) per fragment instead of
+            # O(N) across all buffered fragments. Many tiny fragments
+            # inside a single `<a>` previously cost O(N²) total.
+            room = self._max_output_chars - self._link_text_buf_size
+            if room <= 0:
+                # Source link text being dropped — record so
+                # `_flush_link` can mark `_truncated=True` when
+                # actually emitting (round 13 of fix #3: silent
+                # source drop must surface to the analyst).
+                self._link_text_truncated_at_input = True
+                return
+            fragment = self._normalize_unicode_ws(data)
+            if len(fragment) > room:
+                self._link_text_buf.append(fragment[:room])
+                self._link_text_buf_size += room
+                self._link_text_truncated_at_input = True
+                return
+            self._link_text_buf.append(fragment)
+            self._link_text_buf_size += len(fragment)
             return
         # Collapse whitespace within text runs AND normalize Unicode
         # whitespace + strip zero-width separators outside <pre>.
@@ -974,27 +1526,91 @@ class _HTMLToMarkdown:
             self._emit(" ")
 
     def render(self) -> str:
-        body = "".join(self._buf)
-        # Inject <title> as H1 if no <h1> present in body.
-        # v1.4.5 R1 MINOR #5 fix: normalize collected title here so
-        # inter-tag whitespace is preserved across fragment boundaries
-        # but multi-space runs collapse to single space (clean H1).
+        # v1.4.15 audit P1 fix (codex round 10 of fix #3): body-priority
+        # title injection. Pre-fix, title was prepended unconditionally
+        # and the resulting overflow truncated from the FRONT of the
+        # combined string — a long `<title>` could starve the visible
+        # body even when body fit under the cap. Now we strip body
+        # first, then dynamically size the title-injection to fit in
+        # whatever room remains AFTER body. If body alone fills the
+        # cap, title is dropped entirely. Any dynamic title trim
+        # (or full drop) sets `_truncated=True` so the cap marker
+        # still emits — the cmd_materials safety net then preserves
+        # adjacent structural sections (Attachments) instead of
+        # blind-chopping.
+        body_only = "".join(self._buf).strip()
+        title_md = ""
         if self._title_text and not self._has_h1:
+            # v1.4.5 R1 MINOR #5 fix: normalize title across fragment
+            # boundaries (multi-space → single space, then strip).
             normalized_title = re.sub(
                 r"[ \t\r\n]+", " ", self._title_text
             ).strip()
             if normalized_title:
-                body = f"# {normalized_title}\n\n" + body
+                if self._max_output_chars is not None:
+                    # Title-injection overhead: "# " (2) + "\n\n" (2).
+                    title_overhead = 4
+                    available_for_title = (
+                        self._max_output_chars
+                        - len(body_only)
+                        - title_overhead
+                    )
+                    if available_for_title <= 0:
+                        # Body alone fills (or exceeds) the cap; drop
+                        # title entirely. Mark truncation so the
+                        # cap-marker emission below preserves the
+                        # safety-net contract.
+                        normalized_title = ""
+                        self._truncated = True
+                    elif len(normalized_title) > available_for_title:
+                        normalized_title = normalized_title[
+                            :available_for_title
+                        ]
+                        self._truncated = True
+                if normalized_title:
+                    title_md = f"# {normalized_title}\n\n"
+                    # v1.4.15 audit P2 fix (codex round 12 of fix #3):
+                    # if the title was input-truncated by the
+                    # `_HTML_TITLE_ACCUMULATOR_CAP` (silent drop in
+                    # `_on_data`) AND we are now actually injecting
+                    # the title into output, the analyst is seeing
+                    # PARTIAL source title text — emit the cap marker
+                    # so the loss is visible. This is independent of
+                    # the dynamic-trim path above (which fires when
+                    # body crowds out title room). When `_has_h1`
+                    # suppresses title injection entirely, this
+                    # branch is unreachable and accumulator
+                    # truncation stays silent (correctly — the
+                    # analyst never saw the title regardless of cap).
+                    if self._title_truncated_at_input:
+                        self._truncated = True
+        body_with_title = title_md + body_only
         # Collapse runs of 3+ blank lines down to a single blank line
         # (markdown convention — paragraph break is exactly one blank).
-        body = re.sub(r"\n{3,}", "\n\n", body)
-        # Strip leading/trailing whitespace; ensure trailing newline.
-        result = body.strip() + "\n"
+        body_with_title = re.sub(r"\n{3,}", "\n\n", body_with_title)
+        composed = body_with_title.strip()
+        # v1.4.15 audit P3 fix (codex round 10 of fix #3): cap-check
+        # against `len(composed)` (BEFORE adding the structural
+        # trailing newline) so a body whose visible content is
+        # exactly `_max_output_chars` chars does not get a false cap
+        # marker just because `composed + "\n"` would be cap+1 chars.
+        # Pre-fix, `_HTMLToMarkdown(max_output_chars=100)` on
+        # `'A'*100` returned all 100 A's PLUS the marker — weakening
+        # marker semantics and triggering unnecessary cap-change
+        # restaging.
+        if (
+            self._max_output_chars is not None
+            and len(composed) > self._max_output_chars
+        ):
+            composed = composed[:self._max_output_chars].rstrip()
+            self._truncated = True
+        result = composed + "\n"
         # v1.4.13 audit P2 #1 fix: emit truncation footer if streaming
-        # cap was reached during accumulation. Pre-fix, truncation was
-        # only applied in cmd_materials AFTER the full body had been
-        # built — defeating the memory/resource-protection claim for
-        # zip-bomb-style HTML inputs.
+        # cap was reached during accumulation, OR if title trimming /
+        # final cap-check above set `_truncated`. Pre-v1.4.13 the
+        # truncation was only applied in cmd_materials AFTER the full
+        # body had been built — defeating the memory/resource-
+        # protection claim for zip-bomb-style HTML inputs.
         if self._truncated and self._max_output_chars is not None:
             result = result.rstrip() + _output_cap_footer(
                 self._max_output_chars
@@ -1119,6 +1735,56 @@ def _normalize_email_header_value(value: str) -> str:
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
 
+# v1.4.15 audit P1 fix (codex round 3): control-character + HTML-bracket
+# stripper for `_sanitize_cid_for_tag`. Removes:
+#   * C0 control characters (`\x00`-`\x1f`) — includes ESC (`\x1b`),
+#     which would otherwise let an ANSI-aware terminal interpret
+#     escape sequences inside the staged Attachments tag.
+#   * DEL (`\x7f`).
+#   * C1 control characters (`\x80`-`\x9f`) — includes NEL (`\x85`),
+#     already collapsed by `splitlines()` but stripped here defensively
+#     in case future Python versions stop honoring it.
+#   * Bracket characters `[`, `]`, `<`, `>` — close the markdown tag
+#     OR allow raw-HTML pass-through (`<li>`-style injection) in
+#     downstream Markdown→HTML renderers.
+_CID_CONTROL_AND_BRACKET_RE = re.compile(
+    r"[\x00-\x1f\x7f-\x9f\[\]<>]"
+)
+
+
+def _sanitize_cid_for_tag(value: str) -> str:
+    """Sanitize a Content-ID value before embedding it in a markdown
+    attachment-row tag like `[inline cid:<value>]`.
+
+    A malformed/decoded `Content-ID` header may contain newlines,
+    angle brackets, control characters, or `]` characters. Embedding
+    such a value verbatim inside the tag would close the tag early,
+    break out of the attachment row entirely, allow HTML injection
+    via downstream Markdown→HTML rendering, OR drive ANSI terminal
+    control sequences when the staged file is `cat`/`tail`'d. A
+    malicious sender could thereby inject extra `- foo` lines or
+    spoof structural elements in the staged Attachments section.
+
+    v1.4.15 audit P1 fix:
+      1. Collapse ALL Unicode line separators (`\\r\\n`, `\\x85`,
+         `\\u2028`, `\\u2029`, etc. — anything `str.splitlines()`
+         honors) via `" ".join(value.splitlines())`.
+      2. Run through `_normalize_email_header_value` to fold runs of
+         horizontal whitespace into a single space.
+      3. Strip C0/C1 control characters AND bracket characters
+         `[ ] < >` via `_CID_CONTROL_AND_BRACKET_RE` (codex round 3).
+      4. Bound the result to 200 chars.
+    """
+    if not value:
+        return ""
+    line_collapsed = " ".join(value.splitlines())
+    collapsed = _normalize_email_header_value(line_collapsed)
+    if not collapsed:
+        return ""
+    cleaned = _CID_CONTROL_AND_BRACKET_RE.sub("", collapsed)
+    return cleaned[:200].strip()
+
+
 def _render_email_markdown(
     msg, source_name: str, *, max_output_chars: Optional[int] = None
 ) -> str:
@@ -1159,6 +1825,21 @@ def _render_email_markdown(
     # Body — walk MIME parts, prefer text/plain.
     plain_body: Optional[str] = None
     html_body: Optional[str] = None
+    # v1.4.15 audit P1 fix (codex round 4 of fix #3): kept hoisted
+    # `body_truncated` initialization (one source of truth). The
+    # flag is now set by the body-selection block ONLY for the body
+    # actually surfaced to the analyst, not at decode time. Earlier
+    # rounds tried capping plain/html bodies right after
+    # `part.get_content()` to bound conversion-time memory; that
+    # broke `_HTMLToMarkdown` when the cap landed inside a
+    # `<style>` / `<script>` / `<head>` block (visible body discarded,
+    # false `(no readable body)` placeholder) AND emitted false cap
+    # markers when an oversized html alternative in
+    # `multipart/alternative` was capped despite plain_body being
+    # the rendered choice. Truncation tracking lives at the
+    # parser/rendered-output level instead — see `_HTMLToMarkdown`
+    # for the html path and the post-selection cap below for plain.
+    body_truncated = False
     # v1.4.6 R1 MAJOR #3 tracking: list inline images (Content-
     # Disposition: inline + filename) so an image-only email's
     # staged body still records WHAT was attached, even if the
@@ -1171,7 +1852,15 @@ def _render_email_markdown(
     # evidence completeness requires every leaf appears SOMEWHERE
     # in the rendered body — even if just as a part-marker entry.
     attachments: list[tuple[str, str, int]] = []  # (filename, ctype, size)
-    inline_media: list[tuple[str, str, int]] = []  # same shape
+    # v1.4.15 audit P1 fix: inline_media shape grew a 4th `cid` element
+    # so the Content-ID relationship between an HTML `<img src="cid:X">`
+    # body reference and the staged image part survives into the
+    # rendered Attachments row. Pre-fix, an image part carrying ONLY
+    # `Content-ID:` (no `Content-Disposition: inline`) fell through to
+    # `other_parts` and the HTML→staged-image link was destroyed —
+    # analysts could no longer prove which CID the rendered HTML body
+    # was referencing.
+    inline_media: list[tuple[str, str, int, str]] = []  # + cid (may be "")
     other_parts: list[tuple[str, str, int, str]] = []  # + marker tag
     # MIME content-types worth a special tag in the Attachments line.
     _SPECIAL_PART_TAGS = {
@@ -1227,13 +1916,21 @@ def _render_email_markdown(
             continue
         if not container.is_multipart():
             continue
-        c_disp = (container.get_content_disposition() or "").lower()
         c_fname = container.get_filename()
-        if not (c_disp == "attachment" or c_fname):
-            # Inline-rendered rfc822 (rare but valid — e.g., quoted
-            # forward inside multipart/related). Don't intercept;
-            # let the main walk treat its children normally.
-            continue
+        # v1.4.15 audit P1 fix: capture EVERY message/rfc822 multipart
+        # container as a forwarded-message attachment, regardless of
+        # explicit `Content-Disposition: attachment` or filename. The
+        # earlier gate (disposition=attachment OR filename present)
+        # silently dropped containers in plain `multipart/mixed` parents
+        # — the inner text/plain leaked into the OUTER email's
+        # `other_parts`/body bucket as an `(unnamed text/plain)` row,
+        # losing both the `message/rfc822` content-type marker and the
+        # forwarded-message boundary the analyst needs for evidence
+        # binding. Inline-rendered rfc822 inside `multipart/related`
+        # (the original justification for the gate) is a niche concern;
+        # preserving the rfc822 boundary matters more than rendering
+        # the inner body inline. The synthetic filename
+        # `(forwarded message).eml` covers the no-filename case below.
         # Compute size by serializing the inner email payload. The
         # email package gives us `get_payload()` which returns a
         # list of inner Message objects for rfc822 containers.
@@ -1274,15 +1971,29 @@ def _render_email_markdown(
             continue
         disp = (part.get_content_disposition() or "").lower()
         fname = part.get_filename()
+        # v1.4.15 audit P1 fix: extract Content-ID early — it gates
+        # both the CID-routing branch below AND the attachment-
+        # classification carve-out (a non-text part with Content-ID
+        # is a CID-referenced inline media leaf, even if it also
+        # carries a `name=` parameter — Outlook/Gmail emit this shape
+        # for forwarded inline images).
+        cid_raw = part.get("Content-ID") or ""
+        # Normalize: strip whitespace + angle brackets per RFC 2045.
+        cid = cid_raw.strip().strip("<>").strip()
         # v1.4.6 R1 MAJOR #2 fix: a part with a filename + no
         # explicit "inline" disposition is an attachment regardless
         # of content-type. Real-world MIME like
         # `Content-Type: text/plain; name=note.txt` (no Content-
         # Disposition header) would otherwise be misclassified as
         # the email body, suppressing the actual body that follows.
+        # v1.4.15 audit P1 fix: carve out non-text parts with
+        # Content-ID — those are inline media regardless of `name=`,
+        # so they don't trip the filename→attachment shortcut. Only
+        # explicit `Content-Disposition: attachment` overrides this.
+        cid_routes_inline = bool(cid) and not ctype.startswith("text/")
         is_attachment = (
             disp == "attachment"
-            or (fname and disp != "inline")
+            or (fname and disp != "inline" and not cid_routes_inline)
         )
         if is_attachment:
             try:
@@ -1294,16 +2005,46 @@ def _render_email_markdown(
         # v1.4.6 R1 MAJOR #3: inline media (image/*, application/*
         # with disposition=inline) tracked separately so they
         # appear in the attachments section with an [inline] marker.
-        if disp == "inline" and not ctype.startswith("text/"):
+        # v1.4.15 audit P1 fix: ALSO route non-text parts that carry a
+        # `Content-ID:` header (typical CID-referenced inline images
+        # in HTML mail) through this branch even when the explicit
+        # `Content-Disposition: inline` is absent. Pre-fix, such parts
+        # fell through to `other_parts` and the HTML→image binding
+        # was lost (the analyst saw only `(unnamed image/png)` with no
+        # cid value, breaking provenance from `<img src="cid:X">` to
+        # the staged image leaf).
+        is_inline_media = (
+            (disp == "inline" and not ctype.startswith("text/"))
+            or cid_routes_inline
+        )
+        if is_inline_media:
             try:
                 payload = part.get_payload(decode=True) or b""
             except Exception:
                 payload = b""
             inline_media.append(
-                (fname or f"(inline {ctype})", ctype, len(payload))
+                (fname or f"(inline {ctype})", ctype, len(payload), cid)
             )
             continue
         # Inline body parts (text/plain or text/html, no filename).
+        # v1.4.15 audit P1 fix (codex round 4 of fix #3): the prior
+        # round's "cap immediately after get_content()" was reverted
+        # because slicing raw HTML at byte offset N (a) corrupted
+        # `_HTMLToMarkdown` rendering when the cap landed inside a
+        # `<style>` / `<script>` / `<head>` block (the visible body
+        # arrived after the cap and was discarded entirely, producing
+        # a false `(no readable body)` placeholder), and (b) in
+        # `multipart/alternative` mail the discarded oversized HTML
+        # alternative was setting `body_truncated=True` even though
+        # `plain_body` (short) was the body that actually got
+        # rendered, producing a false cap-marker footer.
+        # Truncation is now tracked at the parser/rendered-output
+        # level (see `_HTMLToMarkdown.render` for HTML, and the
+        # post-selection cap below for plain text), so it only
+        # applies to the body that is ACTUALLY surfaced to the
+        # analyst. The library-side decode allocation
+        # (`part.get_content()`) remains unavoidable; the trade-off
+        # is documented in `--max-output-chars` help.
         if ctype == "text/plain" and plain_body is None:
             try:
                 plain_body = part.get_content()
@@ -1340,9 +2081,27 @@ def _render_email_markdown(
     parts.append("## Body")
     parts.append("")
     rendered: Optional[str] = None
-    body_truncated = False
+    # v1.4.15 audit P1 fix (codex round 4 of fix #3): track body
+    # truncation per ACTUALLY-SELECTED body. Only the body that
+    # surfaces to the analyst can drive the cap-marker footer:
+    #   * plain_body selected → cap here, set body_truncated=True
+    #     for the outer footer below.
+    #   * html_body selected → `_HTMLToMarkdown.render()` bakes the
+    #     cap marker INSIDE its output when it truncates during
+    #     streaming accumulation, so we must NOT also set
+    #     body_truncated externally (would emit a duplicate footer).
+    # Pre-fix, an oversized HTML alternative in a multipart/alternative
+    # message could pre-cap and set body_truncated even though the
+    # short text/plain alternative was the body actually rendered —
+    # producing a false cap marker.
     if plain_body is not None and plain_body.strip():
         rendered = plain_body.rstrip()
+        if (
+            max_output_chars is not None
+            and len(rendered) > max_output_chars
+        ):
+            rendered = rendered[:max_output_chars].rstrip()
+            body_truncated = True
     elif html_body is not None and html_body.strip():
         # v1.4.6 SYNERGY with v1.4.5: route html-body emails through
         # the same _HTMLToMarkdown converter the html extractor uses.
@@ -1363,18 +2122,6 @@ def _render_email_markdown(
         # what WAS in the email even though the body collapsed.
         if rendered_html.strip():
             rendered = rendered_html
-    # v1.4.13 audit P2 #1 fix: cap the plain-text body inline so a
-    # crafted email with a 500MB plain-text part doesn't materialize
-    # the entire body string in `rendered` before truncation. The
-    # html-body branch above already streams via _HTMLToMarkdown so
-    # only the plain-text path needs explicit truncation here.
-    if (
-        rendered is not None
-        and max_output_chars is not None
-        and len(rendered) > max_output_chars
-    ):
-        rendered = rendered[:max_output_chars].rstrip()
-        body_truncated = True
     if rendered is not None:
         parts.append(rendered)
     else:
@@ -1393,14 +2140,28 @@ def _render_email_markdown(
     # signatures, calendar invites, vcards, second text alternatives,
     # etc.) with their part-marker tag — email evidence completeness
     # demands every MIME leaf appear somewhere in the staged body.
-    attach_rows: list[tuple[str, str, int, str]] = [
-        (fname, ctype, size, "") for fname, ctype, size in attachments
-    ] + [
-        (fname, ctype, size, "inline") for fname, ctype, size in inline_media
-    ] + [
-        (fname, ctype, size, tag)
-        for fname, ctype, size, tag in other_parts
-    ]
+    # v1.4.15 audit P1 fix: surface the `cid` in the tag suffix when
+    # present so the staged Attachments line preserves the
+    # HTML→image linkage (`[inline cid:img1]`). Empty cid keeps the
+    # legacy `[inline]` rendering for parts without Content-ID.
+    # Sanitize cid via `_sanitize_cid_for_tag` to neutralize newline
+    # / bracket characters that would otherwise close the markdown
+    # tag early and inject spoofed `- foo` rows below the attachment.
+    inline_rows = []
+    for fname, ctype, size, cid in inline_media:
+        safe_cid = _sanitize_cid_for_tag(cid)
+        tag = f"inline cid:{safe_cid}" if safe_cid else "inline"
+        inline_rows.append((fname, ctype, size, tag))
+    attach_rows: list[tuple[str, str, int, str]] = (
+        [
+            (fname, ctype, size, "") for fname, ctype, size in attachments
+        ]
+        + inline_rows
+        + [
+            (fname, ctype, size, tag)
+            for fname, ctype, size, tag in other_parts
+        ]
+    )
     if attach_rows:
         parts.append("## Attachments")
         parts.append("")
@@ -1461,9 +2222,21 @@ def _render_email_markdown_from_msg(
         except UnicodeDecodeError:
             html_body = html_body.decode("latin-1", errors="replace")
     body_truncated = False
+    # v1.4.15 audit P1 fix (codex round 4 of fix #3): same revert as
+    # the eml path. Track truncation per ACTUALLY-SELECTED body:
+    #   * `body` (plain) selected → cap here, set body_truncated=True
+    #     for the outer footer below.
+    #   * `html_body` selected → `_HTMLToMarkdown.render()` bakes the
+    #     cap marker INSIDE the rendered output, so we must NOT also
+    #     set body_truncated externally (would emit a duplicate
+    #     footer). The earlier "cap html_body right after retrieval"
+    #     attempt was reverted because slicing raw HTML at byte N
+    #     could land inside a `<style>`/`<script>`/`<head>` block
+    #     and discard the visible body that followed, AND it set
+    #     body_truncated for the html alternative even when `body`
+    #     was the actually-rendered choice (false cap marker).
     if body:
         body_text = body.rstrip()
-        # v1.4.13 audit P2 #1 fix: cap the plain-text body inline.
         if (
             max_output_chars is not None
             and len(body_text) > max_output_chars
@@ -1472,7 +2245,9 @@ def _render_email_markdown_from_msg(
             body_truncated = True
         parts.append(body_text)
     elif html_body and html_body.strip():
-        # v1.4.13 audit P2 #1 fix: thread cap into _HTMLToMarkdown.
+        # v1.4.13 audit P2 #1 fix: thread cap into _HTMLToMarkdown
+        # (streaming, accumulation-bounded). The renderer bakes its
+        # own cap marker in the output when truncation hits.
         h = _HTMLToMarkdown(max_output_chars=max_output_chars)
         h.feed(html_body)
         h.close()
@@ -3987,15 +4762,27 @@ def cmd_materials(args: argparse.Namespace) -> int:
             # marker is invisible in rendered markdown but trivially
             # distinguishes a real cap-applied footer from quoted text.
             if len(content) > max_output_chars:
-                if _OUTPUT_CAP_MARKER in content:
-                    # Streaming extractor already enforced the cap.
-                    # Total exceeds cap because of bounded structural
-                    # sections (attachments table, headers, etc.) that
-                    # carry per-leaf evidence value. Leave alone.
+                # v1.4.15 audit P1 fix (codex round 11 of fix #3):
+                # kind-aware safety net. Cap-aware extractors
+                # (`_CAP_AWARE_EXTRACTOR_KINDS`) own the marker
+                # contract — if THEIR body content was truncated
+                # they emit `_OUTPUT_CAP_MARKER` themselves; if
+                # their output exceeds the cap WITHOUT a marker
+                # the overflow is from structural sections
+                # (Attachments, headers) and MUST be preserved.
+                # Pre-fix, marker-absence triggered blind-chop and
+                # dropped Attachments when body content fit exactly.
+                if p.kind in _CAP_AWARE_EXTRACTOR_KINDS:
+                    # Trust the extractor's marker contract.
+                    pass
+                elif _OUTPUT_CAP_MARKER in content:
+                    # Belt-and-suspenders: marker present from any
+                    # path → leave alone.
                     pass
                 else:
-                    # Non-streaming extractor (pdf/docx/image) — apply
-                    # blind post-trim with the canonical footer.
+                    # Non-cap-aware extractor (pdf/docx/image/text/
+                    # csv/tsv/json/xlsx) — apply blind post-trim
+                    # with the canonical footer.
                     content = (
                         content[:max_output_chars].rstrip()
                         + _output_cap_footer(max_output_chars)
